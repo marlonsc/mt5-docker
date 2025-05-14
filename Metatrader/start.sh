@@ -105,35 +105,47 @@ else
 fi
 
 # Upgrade pip and install required packages
-show_message "[6/7] Installing Python libraries"
-$wine_executable python -m pip install --upgrade "$win_pip_opts" pip
+show_message "[6/8] Installing Python libraries"
+if [ -n "$win_pip_opts" ]; then
+    $wine_executable python -m pip install --upgrade "$win_pip_opts" pip
+else
+    $wine_executable python -m pip install --upgrade pip
+fi
 
 # Install MetaTrader5 library in Windows if not installed
-show_message "[6/7] Installing MetaTrader5 library in Windows"
+show_message "[7/8] Installing MetaTrader5 library in Windows"
 if ! is_wine_python_package_installed "MetaTrader5==$metatrader_version"; then
-    $wine_executable python -m pip install "$win_pip_opts" MetaTrader5==$metatrader_version
+    if [ -n "$win_pip_opts" ]; then
+        $wine_executable python -m pip install "$win_pip_opts" MetaTrader5==$metatrader_version
+    else
+        $wine_executable python -m pip install MetaTrader5==$metatrader_version
+    fi
 fi
 
 # Install mt5linux library in Windows if not installed
-show_message "[6/7] Checking and installing mt5linux library in Windows if necessary"
+show_message "[8/8] Checking and installing mt5linux library in Windows if necessary"
 if ! is_wine_python_package_installed "mt5linux"; then
-    $wine_executable python -m pip install "$win_pip_opts" $mt5linux_pip
+    if [ -n "$win_pip_opts" ]; then
+        $wine_executable python -m pip install "$win_pip_opts" $mt5linux_pip
+    else
+        $wine_executable python -m pip install $mt5linux_pip
+    fi
 fi
 
 # Install mt5linux library in Linux if not installed
-show_message "[6/7] Checking and installing mt5linux library in Linux if necessary"
+show_message "[8/8] Checking and installing mt5linux library in Linux if necessary"
 if ! is_python_package_installed "mt5linux"; then
     pip install --upgrade $lnx_pip_opts $mt5linux_pip
 fi
 
 # Install pyxdg library in Linux if not installed
-show_message "[6/7] Checking and installing pyxdg library in Linux if necessary"
+show_message "[8/8] Checking and installing pyxdg library in Linux if necessary"
 if ! is_python_package_installed "pyxdg"; then
     pip install --upgrade $lnx_pip_opts pyxdg
 fi
 
 # Start the MT5 server on Linux
-show_message "[7/7] Starting the mt5linux server..."
+show_message "[8/8] Starting the mt5linux server..."
 python3 -m mt5linux --host 0.0.0.0 -p $mt5server_port -w $wine_executable python.exe &
 
 # Give the server some time to start
@@ -141,7 +153,7 @@ sleep 5
 
 # Check if the server is running
 if ss -tuln | grep ":$mt5server_port" > /dev/null; then
-    show_message "[7/7] The mt5linux server is running on port $mt5server_port."
+    show_message "[8/8] The mt5linux server is running on port $mt5server_port."
 else
-    show_message "[7/7] Failed to start the mt5linux server on port $mt5server_port."
+    show_message "[8/8] Failed to start the mt5linux server on port $mt5server_port."
 fi
