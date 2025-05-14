@@ -4,7 +4,7 @@
 mt5file='/config/.wine/drive_c/Program Files/MetaTrader 5/terminal64.exe'
 export WINEPREFIX='/config/.wine'
 wine_executable="wine"
-metatrader_version="5.0.4993"
+metatrader_version="5.0.37"
 mt5server_port="8001"
 mono_url="https://dl.winehq.org/wine/wine-mono/8.0.0/wine-mono-8.0.0-x86.msi"
 python_url="https://www.python.org/ftp/python/3.9.0/python-3.9.0.exe"
