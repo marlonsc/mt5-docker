@@ -1,16 +1,16 @@
 services:
-  mt5:
-    build: .
-    image: gmag11/metatrader5_vnc
-    container_name: mt5
-    volumes:
-      - config_data:/config:uid=911,gid=911
-    ports:
-      - 3000:3000
-      - 8001:8001
+    mt5:
+        build: .
+        image: gmag11/metatrader5_vnc
+        container_name: mt5
+        volumes:
+            - config_data:/config:uid=911,gid=911
+        ports:
+            - 3000:3000
+            - 8001:8001
 
 volumes:
-  config_data:
-    driver: local
+    config_data:
+        driver: local
 
 
