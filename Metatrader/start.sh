@@ -3,11 +3,12 @@
 # Configuration variables
 mt5file='/config/.wine/drive_c/Program Files/MetaTrader 5/terminal64.exe'
 WINEPREFIX='/config/.wine'
+WINEDEBUG='-all'
 wine_executable="wine"
 metatrader_version="5.0.36"
 mt5server_port="8001"
-mono_url="https://dl.winehq.org/wine/wine-mono/8.0.0/wine-mono-8.0.0-x86.msi"
-python_url="https://www.python.org/ftp/python/3.9.0/python-3.9.0.exe"
+mono_url="https://dl.winehq.org/wine/wine-mono/10.3.0/wine-mono-10.3.0-x86.msi"
+python_url="https://www.python.org/ftp/python/3.9.13/python-3.9.13.exe"
 mt5setup_url="https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe"
 
 # Function to display a graphical message
@@ -97,19 +98,20 @@ fi
 # Install mt5linux library in Windows if not installed
 show_message "[6/7] Checking and installing mt5linux library in Windows if necessary"
 if ! is_wine_python_package_installed "mt5linux"; then
-    $wine_executable python -m pip install --no-cache-dir mt5linux
+    $wine_executable python -m pip install --no-cache-dir "mt5linux>=0.1.9"
 fi
 
 # Install mt5linux library in Linux if not installed
 show_message "[6/7] Checking and installing mt5linux library in Linux if necessary"
 if ! is_python_package_installed "mt5linux"; then
-    pip install --upgrade --no-cache-dir mt5linux
+    pip install --break-system-packages --no-cache-dir --no-deps mt5linux && \
+    pip install --break-system-packages --no-cache-dir rpyc plumbum numpy
 fi
 
 # Install pyxdg library in Linux if not installed
 show_message "[6/7] Checking and installing pyxdg library in Linux if necessary"
 if ! is_python_package_installed "pyxdg"; then
-    pip install --upgrade --no-cache-dir pyxdg
+    pip install --break-system-packages --no-cache-dir pyxdg
 fi
 
 # Start the MT5 server on Linux

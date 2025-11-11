@@ -8,6 +8,7 @@ LABEL maintainer="gmartin"
 
 ENV TITLE=Metatrader5
 ENV WINEPREFIX="/config/.wine"
+ENV WINEDEBUG=-all
 
 # Install all packages in a single layer to reduce image size
 RUN apt-get update \
