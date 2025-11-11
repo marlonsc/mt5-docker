@@ -1,4 +1,4 @@
-FROM ghcr.io/linuxserver/baseimage-kasmvnc:alpine318
+FROM ghcr.io/linuxserver/baseimage-kasmvnc:alpine321
 
 # set version label
 ARG BUILD_DATE
@@ -27,4 +27,4 @@ RUN apk del sudo
 EXPOSE 3000
 
 VOLUME /config
-    
+
