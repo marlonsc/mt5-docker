@@ -1,4 +1,4 @@
-FROM ghcr.io/linuxserver/baseimage-kasmvnc:debianbullseye
+FROM ghcr.io/linuxserver/baseimage-kasmvnc:debianbookworm
 
 # set version label
 ARG BUILD_DATE
@@ -9,30 +9,25 @@ LABEL maintainer="gmartin"
 ENV TITLE=Metatrader5
 ENV WINEPREFIX="/config/.wine"
 
-# Update package lists and upgrade packages
-RUN apt-get update && apt-get upgrade -y
-
-# Install required packages
-RUN apt-get install -y \
+# Install all packages in a single layer to reduce image size
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+    python3 \
     python3-pip \
+    python3-venv \
     wget \
-    && pip3 install --upgrade pip
-
-# Add WineHQ repository key and APT source
-RUN wget -q https://dl.winehq.org/wine-builds/winehq.key \
-    && apt-key add winehq.key \
-    && add-apt-repository 'deb https://dl.winehq.org/wine-builds/debian/ bullseye main' \
-    && rm winehq.key
-
-# Add i386 architecture and update package lists
-RUN dpkg --add-architecture i386 \
-    && apt-get update
-
-# Install WineHQ stable package and dependencies
-RUN apt-get install --install-recommends -y \
-    winehq-stable \
+    curl \
+    gnupg2 \
+    software-properties-common \
+    ca-certificates \
+    && mkdir -pm755 /etc/apt/keyrings \
+    && wget -O /etc/apt/keyrings/winehq-archive.key https://dl.winehq.org/wine-builds/winehq.key \
+    && wget -NP /etc/apt/sources.list.d/ https://dl.winehq.org/wine-builds/debian/dists/bookworm/winehq-bookworm.sources \
+    && dpkg --add-architecture i386 \
+    && apt-get update \
+    && apt-get install --install-recommends -y winehq-stable \
     && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* /etc/apt/keyrings/winehq-archive.key
 
 
 COPY /Metatrader /Metatrader
