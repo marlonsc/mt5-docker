@@ -89,7 +89,7 @@ by this one
 
 
 ```yaml
-image: gmag11/metatrader5_vnc:1.0
+image: gmag11/metatrader5_vnc:1.1
 ```
 
 3. Start the container
