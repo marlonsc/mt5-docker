@@ -101,6 +101,12 @@ if ! is_wine_python_package_installed "mt5linux"; then
     $wine_executable python -m pip install --no-cache-dir "mt5linux>=0.1.9"
 fi
 
+# Install python-dateutil if needed (datetime is built-in, but dateutil adds features)
+if ! is_wine_python_package_installed "python-dateutil"; then
+    show_message "[6/7] Installing python-dateutil library in Windows"
+    $wine_executable python -m pip install --no-cache-dir python-dateutil
+fi
+
 # Install mt5linux library in Linux if not installed
 show_message "[6/7] Checking and installing mt5linux library in Linux if necessary"
 if ! is_python_package_installed "mt5linux"; then
