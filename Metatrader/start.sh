@@ -7,6 +7,7 @@ source "$SCRIPTS_DIR/00_env.sh"
 
 log INFO "[0/7] Starting modular MT5 setup"
 
+"$SCRIPTS_DIR/05_config_unpack.sh"
 "$SCRIPTS_DIR/10_prefix_init.sh"
 "$SCRIPTS_DIR/20_winetricks.sh"
 "$SCRIPTS_DIR/30_mt5_install.sh"
