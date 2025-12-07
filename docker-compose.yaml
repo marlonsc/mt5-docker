@@ -1,13 +1,20 @@
 services:
   mt5:
     build: .
-    image: gmag11/metatrader5_vnc
+    image: glendekoning/mt5-docker:local
     container_name: mt5
     volumes:
+      - ./data:/data
       - ./config:/config
     ports:
       - 3000:3000
       - 8001:8001
     env_file:
       - .env
+    labels:
+      org.opencontainers.image.title: "MetaTrader5 Docker (fork)"
+      org.opencontainers.image.vendor: "glendekoning"
+      org.opencontainers.image.source: "https://github.com/glendekoning/mt5-docker"
+    environment:
+      - ENABLE_WIN_DOTNET=1
 

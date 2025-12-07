@@ -2,3 +2,6 @@
 .devcontainer/
 .env
 config/
+mt5
+data
+tmp

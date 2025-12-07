@@ -1,6 +1,10 @@
-# MetaTrader5 Docker Image
+# MetaTrader5 Docker Image (Fork)
 
-This project provides a Docker image for running MetaTrader5 with remote access via VNC, based on the [KasmVNC](https://github.com/kasmtech/KasmVNC) project and [KasmVNC Base Image from LinuxServer](https://github.com/linuxserver/docker-baseimage-kasmvnc).
+This is a fork of the original project by [gmag11](https://github.com/gmag11/MetaTrader5-Docker-Image). It provides a Docker image for running MetaTrader5 with remote access via VNC, based on the [KasmVNC](https://github.com/kasmtech/KasmVNC) project and [KasmVNC Base Image from LinuxServer](https://github.com/linuxserver/docker-baseimage-kasmvnc).
+
+Changes in this fork:
+- Updated image metadata and labels (OCI-compliant).
+- Minor adjustments to make it easier to build and publish under my namespace while honoring original authorship.
 
 ## Features
 
@@ -8,6 +12,8 @@ This project provides a Docker image for running MetaTrader5 with remote access 
 - Remote access to MetaTrader5 interface via an integrated VNC client accessible through a web browser.
 - Built on the reliable and secure [KasmVNC](https://github.com/kasmtech/KasmVNC) project.
 - RPyC server for remote access to Python MetaTrader Library from Windows or Linux using https://github.com/lucas-campagna/mt5linux
+- .NET support for Expert Advisors:
+  - Windows `.NET Framework 4.8` installed inside Wine for EA compatibility
 
 ![MetaTrader5 running inside container and controlled through web browser](https://imgur.com/v6Hm9pa.png)
 
@@ -29,25 +35,25 @@ If you just need to run Metatrader for running your MQL5 programs without any Py
 
 1. Clone this repository:
 ```bash
-git clone https://github.com/gmag11/MetaTrader5-Docker-Image
-cd MetaTrader5-Docker-Image
+git clone https://github.com/glendekoning/mt5-docker
+cd mt5-docker
 ```
 
 2. Build the Docker image:
 ```bash
-docker build -t mt5 .
+docker build -t glendekoning/mt5-docker:local .
 ```
 
 3. Run the Docker image:
 ```bash
-docker run -d -p 3000:3000 -p 8001:8001 -v config:/config mt5
+docker run -d -p 3000:3000 -p 8001:8001 -v config:/config glendekoning/mt5-docker:local
 ```
 
 Now you can access MetaTrader5 via a web browser at localhost:3000.
 
 On first run it may take a few minutes to get everything installed and running. Normally it takes less than 5 minutes. You don't need to do anything. All installation process is automatic and you should end up with MetaTrader5 running in your web session.
 
-## Usage with docker compose with image form Docker Registry (preferred way)
+## Usage with docker compose (preferred way)
 
 1. Create a folder in a path where you have permission. For instance in your home.
 ```bash
@@ -67,7 +73,7 @@ version: '3'
 
 services:
   mt5:
-    image: gmag11/metatrader5_vnc
+    image: glendekoning/mt5-docker
     container_name: mt5
     volumes:
       - ./config:/config
@@ -77,19 +83,27 @@ services:
     environment:
       - CUSTOM_USER=<Choose a user>
       - PASSWORD=<Choose a secure password>
+      - ENABLE_WIN_DOTNET=1   # install .NET Framework 4.8 in Wine
+## .NET Support
+
+- Windows `.NET Framework` inside Wine:
+  - Installed via `winetricks dotnet48` into `WINEPREFIX=/config/.wine`.
+  - Enables EAs that depend on .NET Framework when running MT5 under Wine.
+
+Disable by setting `ENABLE_WIN_DOTNET=0` in compose.
 ```
 
 **Notice**: If you do not need to do remote python programming you can get a much smaller installation changing this line:
 
 ```yaml
-image: gmag11/metatrader5_vnc
+image: glendekoning/mt5-docker
 ```
 
 by this one
 
 
 ```yaml
-image: gmag11/metatrader5_vnc:1.1
+image: glendekoning/mt5-docker:1.1
 ```
 
 3. Start the container
@@ -155,13 +169,10 @@ Feel free to contribute to this project. All contributions are welcome. Open an 
 
 ## License
 
-This project is licensed under the terms of the [MIT license](https://opensource.org/license/mit/). 
+This fork retains the original license: [MIT](LICENSE.md). Please review upstream licenses:
+- [KasmVNC GPLv2](https://github.com/kasmtech/KasmVNC/blob/master/LICENSE.TXT)
+- [LinuxServer KasmVNC Base GPLv3](https://github.com/linuxserver/docker-baseimage-kasmvnc/blob/master/LICENSE)
 
-The [**KasmVNC**](https://github.com/kasmtech/KasmVNC) project is licensed under the [GNU General Public License v2.0 (GPLv2)](https://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html). You can check the license details of KasmVNC [here](https://github.com/kasmtech/KasmVNC/blob/master/LICENSE.TXT).
-
-[**KasmVNC Base Image from LinuxServer**](https://github.com/linuxserver/docker-baseimage-kasmvnc) is licensed unther the GNU General Public License v3.0 (GPLv3). License is available [here](https://github.com/linuxserver/docker-baseimage-kasmvnc/blob/master/LICENSE)
-
-Please ensure to comply with the terms and conditions of the licenses while using or modifying this project.
-
-# Acknowledgments
-Acknowledgments to the [KasmVNC](https://github.com/kasmtech/KasmVNC) project, [KasmVNC Base Image from LinuxServer](https://github.com/linuxserver/docker-baseimage-kasmvnc/tree/master), [mt5linux library](https://github.com/lucas-campagna/mt5linux)  and any other project or individual that contributed to the realization of this project.
+## Acknowledgments
+- Original author: [gmag11](https://github.com/gmag11/MetaTrader5-Docker-Image)
+- Projects: [KasmVNC](https://github.com/kasmtech/KasmVNC), [LinuxServer KasmVNC Base](https://github.com/linuxserver/docker-baseimage-kasmvnc), [mt5linux](https://github.com/lucas-campagna/mt5linux)
