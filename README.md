@@ -6,7 +6,7 @@ Changes in this fork:
 - Added Expert Advisor (EA) automation support requiring full Windows .NET Framework under Wine. Mono is removed.
 - Split `start.sh` into modular scripts under `Metatrader/scripts/` for clearer install and runtime steps.
 - Added data sync: copies EA binaries from `data/ea/` into MT5 `MQL5/Experts`, and `.set` files from `data/set-files/` into the MT5 `Documents` directory.
-- Updated image metadata and labels (OCI-compliant) and general build quality-of-life improvements.
+- Updated image metadata and labels and general build quality-of-life improvements.
 
 ## Features
 
@@ -14,7 +14,7 @@ Changes in this fork:
 - Remote access to MetaTrader5 interface via an integrated VNC client accessible through a web browser.
 - Built on the reliable and secure [KasmVNC](https://github.com/kasmtech/KasmVNC) project.
 - RPyC server for remote access to Python MetaTrader Library from Windows or Linux using https://github.com/lucas-campagna/mt5linux
-- Expert Advisors (EAs):
+- Expert Advisors (EAs) support:
   - Full Windows `.NET Framework 4.8` installed inside Wine for EA compatibility.
   - Automatic sync of EA files and settings from the `data/` folder into the MT5 environment.
 
@@ -55,7 +55,7 @@ docker run -d -p 3000:3000 -p 8001:8001 -v config:/config glendekoning/mt5-docke
 
 Now you can access MetaTrader5 via a web browser at localhost:3000.
 
-On first run it may take a few minutes to install MT5, Wine dependencies, and optionally .NET Framework. The process is automatic and you should end up with MetaTrader5 running in your web session.
+On first run it may take a few minutes to install MT5, Wine dependencies, and optionally .NET Framework. Normally it takes less than 10 minutes The process is automatic and you should end up with MetaTrader5 running in your web session.
 
 ## Usage with docker compose (preferred way)
 
