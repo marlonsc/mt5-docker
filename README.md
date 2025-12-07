@@ -3,8 +3,10 @@
 This is a fork of the original project by [gmag11](https://github.com/gmag11/MetaTrader5-Docker-Image). It provides a Docker image for running MetaTrader5 with remote access via VNC, based on the [KasmVNC](https://github.com/kasmtech/KasmVNC) project and [KasmVNC Base Image from LinuxServer](https://github.com/linuxserver/docker-baseimage-kasmvnc).
 
 Changes in this fork:
-- Updated image metadata and labels (OCI-compliant).
-- Minor adjustments to make it easier to build and publish under my namespace while honoring original authorship.
+- Added Expert Advisor (EA) automation support requiring full Windows .NET Framework under Wine. Mono is removed.
+- Split `start.sh` into modular scripts under `Metatrader/scripts/` for clearer install and runtime steps.
+- Added data sync: copies EA binaries from `data/ea/` into MT5 `MQL5/Experts`, and `.set` files from `data/set-files/` into the MT5 `Documents` directory.
+- Updated image metadata and labels (OCI-compliant) and general build quality-of-life improvements.
 
 ## Features
 
@@ -12,8 +14,9 @@ Changes in this fork:
 - Remote access to MetaTrader5 interface via an integrated VNC client accessible through a web browser.
 - Built on the reliable and secure [KasmVNC](https://github.com/kasmtech/KasmVNC) project.
 - RPyC server for remote access to Python MetaTrader Library from Windows or Linux using https://github.com/lucas-campagna/mt5linux
-- .NET support for Expert Advisors:
-  - Windows `.NET Framework 4.8` installed inside Wine for EA compatibility
+- Expert Advisors (EAs):
+  - Full Windows `.NET Framework 4.8` installed inside Wine for EA compatibility.
+  - Automatic sync of EA files and settings from the `data/` folder into the MT5 environment.
 
 ![MetaTrader5 running inside container and controlled through web browser](https://imgur.com/v6Hm9pa.png)
 
@@ -30,6 +33,7 @@ If you just need to run Metatrader for running your MQL5 programs without any Py
 
 - Docker installed on your machine.
 - Only intelx86/amd64 host is supported
+ - Internet connectivity on first run (downloads MT5, Wine components, and optional .NET).
 
 ## Usage from repository
 
@@ -51,7 +55,7 @@ docker run -d -p 3000:3000 -p 8001:8001 -v config:/config glendekoning/mt5-docke
 
 Now you can access MetaTrader5 via a web browser at localhost:3000.
 
-On first run it may take a few minutes to get everything installed and running. Normally it takes less than 5 minutes. You don't need to do anything. All installation process is automatic and you should end up with MetaTrader5 running in your web session.
+On first run it may take a few minutes to install MT5, Wine dependencies, and optionally .NET Framework. The process is automatic and you should end up with MetaTrader5 running in your web session.
 
 ## Usage with docker compose (preferred way)
 
@@ -83,7 +87,9 @@ services:
     environment:
       - CUSTOM_USER=<Choose a user>
       - PASSWORD=<Choose a secure password>
-      - ENABLE_WIN_DOTNET=1   # install .NET Framework 4.8 in Wine
+      - ENABLE_WIN_DOTNET=1   # install .NET Framework 4.8 in Wine (required for .NET-dependent EAs)
+      - ENABLE_DATA_SYNC=1    # enable EA and .set file synchronization from /data
+      - TZ=UTC                # optional: set timezone for logs and MT5
 ## .NET Support
 
 - Windows `.NET Framework` inside Wine:
@@ -91,6 +97,30 @@ services:
   - Enables EAs that depend on .NET Framework when running MT5 under Wine.
 
 Disable by setting `ENABLE_WIN_DOTNET=0` in compose.
+
+## EA and Set File Sync
+
+When `ENABLE_DATA_SYNC=1` is set, the container will:
+- Copy EA binaries from `data/ea/` (e.g., `Dark Moon MT5.ex5`) into `config/.wine/drive_c/Program Files/MetaTrader 5/MQL5/Experts`.
+- Copy `.set` files from `data/set-files/` (e.g., `myfxbook.set`) into the MT5 `Documents` directory at `config/.wine/drive_c/users/<user>/Documents`.
+
+This is handled by the modular startup scripts (`Metatrader/scripts/35_data_sync.sh`) and runs at container start. Place your files in the `data/` folder before starting or restart the container to re-sync.
+
+Example `data/` folder structure:
+
+```
+data/
+  ea/
+    Dark Moon MT5.ex5
+    AnotherEA.ex5
+  set-files/
+    myfxbook.set
+    AnotherEA-EURUSD-M15.set
+```
+
+Mounted paths inside container:
+- `data/ea/*` -> `config/.wine/drive_c/Program Files/MetaTrader 5/MQL5/Experts/`
+- `data/set-files/*` -> `config/.wine/drive_c/users/<user>/Documents/`
 ```
 
 **Notice**: If you do not need to do remote python programming you can get a much smaller installation changing this line:
@@ -116,7 +146,7 @@ In some systems `docker compose` command does not exists. Try to use `docker-com
 4. Connect to web interface
    Start your browser pointing http://<your ip address>:3000
 
-On first run it may take a few minutes to get everything installed and running. Normally it takes less than 5 minutes. You don't need to do anything. All installation process is automatic and you should end up with MetaTrader5 running in your web session.
+On first run it may take a few minutes to install MT5, Wine dependencies, and optionally .NET Framework and should take aprox 5 minutes. The process is automatic and you should end up with MetaTrader5 running in your web session.
 
 ## Where to place MQ5 and EX5 files
 In the case you want to run your own MQL5 bots inside the container you can find MQL5 folder structure in 
@@ -162,7 +192,24 @@ True
 ```
 
 ## Configuration
-The port configuration can be adjusted as per the instructions in the KasmVNC repository. Any additional configuration or environment variables needed to customize MetaTrader5 and KasmVNC running settings should be described here.
+Key environment variables:
+- `CUSTOM_USER` / `PASSWORD`: web UI credentials for KasmVNC.
+- `ENABLE_WIN_DOTNET`: install Windows .NET Framework 4.8 inside Wine (required for .NET-dependent EAs). Default `1`.
+- `ENABLE_DATA_SYNC`: enable copying EA `.ex5` and `.set` files from `data/` into MT5 paths. Default `1`.
+- `TZ`: set container timezone.
+
+Ports:
+- `3000`: KasmVNC web interface.
+- `8001`: RPyC service for `mt5linux` remote control.
+
+Startup scripts:
+The container startup has been modularized. Key scripts under `Metatrader/scripts/` include:
+- `30_mt5_install.sh`: installs MetaTrader 5 under Wine.
+- `34_config_unpack.sh`: unpacks default config if needed.
+- `35_data_sync.sh`: copies EA and `.set` files from `data/` to their respective MT5 directories.
+- `36_myfxbook.sh`: optional integration.
+- `40_python_wine.sh` / `50_python_linux.sh`: Python environment setup.
+- `60_server.sh`: starts services (VNC, RPyC) and MT5.
 
 ## Contributions
 Feel free to contribute to this project. All contributions are welcome. Open an issue or create a pull request.
