@@ -24,7 +24,7 @@ ENV TITLE=Metatrader5
 ENV WINEPREFIX="/config/.wine"
 ENV WINEDEBUG=-all
 ENV ENABLE_WIN_DOTNET=1
-ENV WINEDLLOVERRIDES="mscoree,mscoreei=n,b"
+ENV WINEDLLOVERRIDES="mscoree=n,mscorlib=n"
 
 # Install all packages in a single layer to reduce image size
 RUN apt-get update \
@@ -32,6 +32,7 @@ RUN apt-get update \
     python3 \
     python3-pip \
     python3-venv \
+    python3-xdg \
     wget \
     curl \
     gnupg2 \
@@ -57,7 +58,7 @@ RUN apt-get update \
 
 
 COPY /Metatrader /Metatrader
-RUN chmod +x /Metatrader/start.sh
+RUN chmod +x /Metatrader/start.sh && chmod -R +x /Metatrader/scripts
 COPY /root /
 
 EXPOSE 3000 8001
