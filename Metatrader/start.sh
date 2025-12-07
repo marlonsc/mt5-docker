@@ -2,6 +2,7 @@
 set -euo pipefail
 
 # Orchestrator: source shared env and run modular steps
+START_TS=$(date +%s)
 SCRIPTS_DIR="$(dirname "$0")/scripts"
 source "$SCRIPTS_DIR/00_env.sh"
 
@@ -17,4 +18,6 @@ log INFO "[0/7] Starting modular MT5 setup"
 "$SCRIPTS_DIR/50_python_linux.sh"
 "$SCRIPTS_DIR/60_server.sh"
 
-log INFO "[done] MT5 setup completed"
+END_TS=$(date +%s)
+ELAPSED=$((END_TS - START_TS))
+log INFO "[done] MT5 setup completed in ${ELAPSED}s"
