@@ -102,7 +102,7 @@ MetaTrader5 running in your web session.
     by this one
 
     ```yaml
-    image: gmag11/metatrader5_vnc:1.0
+    image: gmag11/metatrader5_vnc:latest
     ```
 
 3. Start the container

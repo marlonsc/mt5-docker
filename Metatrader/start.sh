@@ -3,8 +3,11 @@ set -x
 
 # Configuration variables
 mt5file='/config/.wine/drive_c/Program Files/MetaTrader 5/terminal64.exe'
+
+# Wine configuration - combining both approaches
 export WINEPREFIX='/config/.wine'
 export WINEARCH=win64
+export WINEDEBUG='-all'
 export W_CACHE="/config/.winetricks-cache"
 
 wine_executable="wine"
@@ -25,8 +28,8 @@ mkdir -p "$PIP_CACHE_DIR" "$W_CACHE"
 mkdir -p /config/.cache/
 mkdir -p /config/.wine/drive_c/
 
-# Version variables for all installers
-MONO_VERSION="9.4.0"
+# Version variables for all installers - using latest upstream versions where available
+MONO_VERSION="10.3.0"
 GECKO_VERSION="2.47.4"
 MT5_VERSION="5.0.4993"
 GIT_VERSION="2.45.1"
@@ -36,6 +39,7 @@ PYTHON_VERSION="3.12.10"
 gecko_url="https://dl.winehq.org/wine/wine-gecko/${GECKO_VERSION}/wine-gecko-${GECKO_VERSION}-x86_64.msi"
 git_url="https://github.com/git-for-windows/git/releases/download/v${GIT_VERSION}.windows.1/Git-${GIT_VERSION}-64-bit.exe"
 mono_url="https://dl.winehq.org/wine/wine-mono/${MONO_VERSION}/wine-mono-${MONO_VERSION}-x86.msi"
+python_url="https://www.python.org/ftp/python/${PYTHON_VERSION}/python-${PYTHON_VERSION}-amd64.exe"
 mt5setup_url="https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe"
 python_url="https://www.python.org/ftp/python/${PYTHON_VERSION}/python-${PYTHON_VERSION}-amd64.exe"
 mt5linux_pip="mt5linux@git+https://github.com/marlonsc/mt5linux.git@master"
@@ -234,6 +238,7 @@ fi
 # Install mt5linux library in Windows if not installed
 show_message "[7/11] Checking and installing mt5linux library in Windows if necessary"
 if ! is_wine_python_package_installed "mt5linux"; then
+    # Use local version with proper pip options
     if [ -n "$win_pip_opts" ]; then
         $wine_executable python -m pip install "$win_pip_opts" $mt5linux_pip
     else
@@ -241,9 +246,20 @@ if ! is_wine_python_package_installed "mt5linux"; then
     fi
 fi
 
+# Install python-dateutil if needed (datetime is built-in, but dateutil adds features)
+if ! is_wine_python_package_installed "python-dateutil"; then
+    show_message "[6/7] Installing python-dateutil library in Windows"
+    if [ -n "$win_pip_opts" ]; then
+        $wine_executable python -m pip install "$win_pip_opts" python-dateutil
+    else
+        $wine_executable python -m pip install python-dateutil
+    fi
+fi
+
 # Install mt5linux library in Linux if not installed
 show_message "[8/11] Checking and installing mt5linux library in Linux if necessary"
 if ! is_python_package_installed "mt5linux"; then
+    # Use local version with proper options
     pip install --upgrade $lnx_pip_opts $mt5linux_pip
 fi
 
