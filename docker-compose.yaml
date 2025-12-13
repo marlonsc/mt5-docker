@@ -1,14 +1,22 @@
 services:
-    mt5:
-        build: .
-        image: gmag11/metatrader5_vnc
-        container_name: mt5
-        volumes:
+  mt5:
+    build: .
+    image: glendekoning/mt5-docker:local
+    container_name: mt5
+    volumes:
             - config_data:/config:uid=911,gid=911
             - downloads:/downloads:uid=911,gid=911
-        ports:
-            - 3000:3000
-            - 8001:8001
+    ports:
+      - 3000:3000
+      - 8001:8001
+    env_file:
+      - .env
+    labels:
+      org.opencontainers.image.title: "MetaTrader5 Docker (fork)"
+      org.opencontainers.image.vendor: "glendekoning"
+      org.opencontainers.image.source: "https://github.com/glendekoning/mt5-docker"
+    environment:
+      - ENABLE_WIN_DOTNET=1
 
 volumes:
     config_data:
@@ -17,5 +25,4 @@ volumes:
         driver: local
 # Volume 'downloads' persists all installer and download files for reuse and debugging.
 # by <marlonsc@gmail.com>
-
 
