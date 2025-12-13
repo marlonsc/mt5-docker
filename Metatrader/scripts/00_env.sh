@@ -7,9 +7,9 @@ export WINEPREFIX="${WINEPREFIX:-/config/.wine}"
 export WINEDEBUG="${WINEDEBUG:--all}"
 export WINEDLLOVERRIDES="${WINEDLLOVERRIDES:-mscoree=n,mscorlib=n}"
 export wine_executable="${wine_executable:-wine}"
-export metatrader_version="${metatrader_version:-5.0.36}"
+export metatrader_version="${metatrader_version:-5.0.4993}"
 export mt5server_port="${mt5server_port:-8001}"
-export python_url="${python_url:-https://www.python.org/ftp/python/3.9.13/python-3.9.13.exe}"
+export python_url="${python_url:-https://www.python.org/ftp/python/3.13.10/python-3.13.10-amd64.exe}"
 export mt5setup_url="${mt5setup_url:-https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe}"
 
 # Structured logging with timestamp and level

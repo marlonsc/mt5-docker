@@ -4,11 +4,13 @@ services:
     image: glendekoning/mt5-docker:local
     container_name: mt5
     volumes:
-            - config_data:/config:uid=911,gid=911
-            - downloads:/downloads:uid=911,gid=911
+      - config_data:/config:uid=911,gid=911
+      - downloads:/downloads:uid=911,gid=911
+      # Optional: Mount EA files and settings
+      # - ./data:/data:ro
     ports:
-      - 3000:3000
-      - 8001:8001
+      - 3000:3000  # KasmVNC web interface
+      - 8001:8001  # RPyC server for mt5linux
     env_file:
       - .env
     labels:
@@ -16,13 +18,37 @@ services:
       org.opencontainers.image.vendor: "glendekoning"
       org.opencontainers.image.source: "https://github.com/glendekoning/mt5-docker"
     environment:
-      - ENABLE_WIN_DOTNET=1
+      # Core settings
+      - ENABLE_WIN_DOTNET=1       # Enable .NET Framework for EAs
+      - ENABLE_DATA_SYNC=1        # Enable EA/.set file synchronization
+      - TZ=UTC                    # Container timezone
+
+      # Optional: Custom user credentials (override in .env)
+      # - CUSTOM_USER=mt5user
+      # - PASSWORD=secure_password
+
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
 
 volumes:
-    config_data:
-        driver: local
-    downloads:
-        driver: local
-# Volume 'downloads' persists all installer and download files for reuse and debugging.
+  config_data:
+    driver: local
+    labels:
+      description: "MT5 configuration and Wine prefix"
+  downloads:
+    driver: local
+    labels:
+      description: "Persistent downloads and cache for MT5 installers"
+
+# Usage notes:
+# - Volume 'config_data' stores MT5 configuration and Wine environment
+# - Volume 'downloads' persists all installer and download files for reuse and debugging
+# - Uncomment the data volume mount to enable EA and .set file synchronization
+# - Use .env file to set CUSTOM_USER and PASSWORD for web interface
 # by <marlonsc@gmail.com>
 

@@ -22,7 +22,9 @@ fi
 
 log INFO "[6/7] Checking and installing mt5linux library in Windows if necessary"
 if ! is_wine_python_package_installed "mt5linux"; then
-    "$wine_executable" python -m pip install --no-cache-dir "mt5linux>=0.1.9" || true
+    # Use local mt5linux installation for better compatibility
+    "$wine_executable" python -m pip install --no-cache-dir --no-deps mt5linux || true
+    "$wine_executable" python -m pip install --no-cache-dir rpyc plumbum numpy || true
 fi
 
 if ! is_wine_python_package_installed "python-dateutil"; then

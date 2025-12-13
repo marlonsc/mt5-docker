@@ -26,12 +26,12 @@ ENV WINEDEBUG=-all
 ENV ENABLE_WIN_DOTNET=1
 ENV WINEDLLOVERRIDES="mscoree=n,mscorlib=n"
 
-# Install all packages in a single layer to reduce image size
+# Install all packages in a single layer to reduce image size and ensure consistency
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-    python3 \
-    python3-pip \
-    python3-venv \
+    python3.13 \
+    python3.13-pip \
+    python3.13-venv \
     python3-xdg \
     wget \
     curl \
@@ -40,6 +40,8 @@ RUN apt-get update \
     ca-certificates \
     cabextract \
     winetricks \
+    git \
+    unzip \
     && mkdir -pm755 /etc/apt/keyrings \
     && wget -O /etc/apt/keyrings/winehq-archive.key https://dl.winehq.org/wine-builds/winehq.key \
     && wget -NP /etc/apt/sources.list.d/ https://dl.winehq.org/wine-builds/debian/dists/bookworm/winehq-bookworm.sources \
@@ -47,7 +49,8 @@ RUN apt-get update \
     && apt-get update \
     && apt-get install -y --install-recommends winehq-stable winetricks cabextract \
     && apt-get clean \
-    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* /etc/apt/keyrings/winehq-archive.key
+    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* /etc/apt/keyrings/winehq-archive.key \
+    && python3.13 -m pip install --upgrade --break-system-packages pip
 
 ## Mono/Gecko handling moved to Metatrader/start.sh to avoid duplication
 

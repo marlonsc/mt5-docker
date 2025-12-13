@@ -7,7 +7,9 @@ Changes in this fork:
 - Added Expert Advisor (EA) automation support requiring full Windows .NET Framework under Wine. Mono is removed.
 - Split `start.sh` into modular scripts under `Metatrader/scripts/` for clearer install and runtime steps.
 - Added data sync: copies EA binaries from `data/ea/` into MT5 `MQL5/Experts`, and `.set` files from `data/set-files/` into the MT5 `Documents` directory.
-- Updated image metadata and labels and general build quality-of-life improvements.
+- Updated to Python 3.13 for better performance and modern language features.
+- Updated image metadata and labels following OCI standards.
+- General build quality-of-life improvements and better documentation.
 
 ## Features
 
