@@ -178,6 +178,12 @@ You can access MetaEditor program clicking in `IDE` button in MetaTrader5 interf
 
 You need to install [mt5linux library](https://github.com/lucas-campagna/mt5linux) in your Python host. It may be in any OS, not only Linux.
 
+**Required library versions for compatibility:**
+- mt5linux == 0.2.1
+- numpy == 2.3.5
+- rpyc == 5.3.1
+- plumbum == 1.8.0
+
 This is a simple snippet to run your Python script fron any host
 
 ```python
@@ -191,14 +197,14 @@ Output should be something like this:
 
 ```
 (mt5linux) linux:~/$ python3
-Python 3.10.13 (main, Dec 26 2023, 20:21:41) [GCC 13.2.0] on linux
+Python 3.13.7 (main, Dec 13 2025, 14:30:45) [GCC 13.2.0] on linux
 Type "help", "copyright", "credits" or "license" for more information.
 >>> from mt5linux import MetaTrader5
 >>> mt5 = MetaTrader5(host='192.168.1.10',port=8001)
 >>> mt5.initialize()
 True
 >>> print(mt5.version())
-(500, 4120, '22 Dec 2023')
+(500, 4993, '22 Dec 2025')
 >>>
 ```
 

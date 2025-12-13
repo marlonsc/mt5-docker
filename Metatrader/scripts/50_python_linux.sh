@@ -4,9 +4,9 @@ source "$(dirname "$0")/00_env.sh"
 
 log INFO "[7/11] Checking and installing mt5linux library in Linux"
 if ! is_python_package_installed "mt5linux"; then
-    log INFO "[7/11] Installing mt5linux and dependencies"
+    log INFO "[7/11] Installing mt5linux and dependencies with specific versions"
     pip3 install --break-system-packages --no-cache-dir --no-deps mt5linux && \
-    pip3 install --break-system-packages --no-cache-dir rpyc plumbum numpy || {
+    pip3 install --break-system-packages --no-cache-dir "rpyc==5.3.1" "numpy==2.3.5" "plumbum==1.8.0" || {
         log ERROR "[7/11] Failed to install mt5linux dependencies"
         exit 1
     }

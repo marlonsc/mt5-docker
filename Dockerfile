@@ -50,6 +50,8 @@ RUN apt-get update \
     && apt-get install -y --install-recommends winehq-stable winetricks cabextract \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* /etc/apt/keyrings/winehq-archive.key \
+    && python3.13 -m pip install --upgrade --break-system-packages pip \
+    && python3.13 -m pip install --break-system-packages "numpy==2.3.5" "rpyc==5.3.1" "plumbum==1.8.0" \
     && python3.13 -m pip install --upgrade --break-system-packages pip
 
 ## Mono/Gecko handling moved to Metatrader/start.sh to avoid duplication
