@@ -31,8 +31,8 @@ RUN dpkg --add-architecture i386 \
 
 # Install WineHQ stable package and dependencies
 RUN apt-get install --install-recommends -y \
-    winehq-stable \
-    && apt-get clean \
+    winehq-stable winetricks aria2 \
+    && apt-get clean  \
     && rm -rf /var/lib/apt/lists/*
 
 

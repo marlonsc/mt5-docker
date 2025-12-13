@@ -5,6 +5,7 @@ services:
         container_name: mt5
         volumes:
             - config_data:/config:uid=911,gid=911
+            - downloads:/downloads:uid=911,gid=911
         ports:
             - 3000:3000
             - 8001:8001
@@ -12,5 +13,9 @@ services:
 volumes:
     config_data:
         driver: local
+    downloads:
+        driver: local
+# Volume 'downloads' persists all installer and download files for reuse and debugging.
+# by <marlonsc@gmail.com>
 
 
