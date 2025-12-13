@@ -179,6 +179,7 @@ You can access MetaEditor program clicking in `IDE` button in MetaTrader5 interf
 You need to install [mt5linux library](https://github.com/lucas-campagna/mt5linux) in your Python host. It may be in any OS, not only Linux.
 
 **Required library versions for compatibility:**
+
 - mt5linux == 0.2.1
 - numpy == 2.3.5
 - rpyc == 5.3.1
