@@ -21,9 +21,14 @@ if [ "$RPYC_RESILIENT" = "1" ]; then
         --max-connections "$RPYC_MAX_CONNECTIONS" \
         python.exe &
 else
-    log INFO "[9/9] Using basic server (no resilience)"
-    # mt5linux 0.2.0+ uses: python -m mt5linux server --host HOST --port PORT
-    python3 -m mt5linux server --host 0.0.0.0 --port "$mt5server_port" &
+    log INFO "[9/9] Using basic server via Wine (mt5linux code generator)"
+    # mt5linux Wine mode: generates server script and runs it via Wine with Windows Python
+    # This is required because MetaTrader5 API only works inside Wine
+    python3 -m mt5linux \
+        --host 0.0.0.0 \
+        -p "$mt5server_port" \
+        -w "$wine_executable" \
+        python.exe &
 fi
 
 # Wait for server to start
