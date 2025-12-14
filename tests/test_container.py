@@ -1,19 +1,24 @@
 """Tests for mt5docker test container isolation and functionality.
 
 These tests validate:
-1. Container isolation (correct name, ports)
-2. RPyC service availability
-3. mt5linux module accessibility
-4. Basic MT5 operations
+1. Container isolation (correct name, ports) - runs without container
+2. RPyC service availability - requires container
+3. mt5linux module accessibility - requires container
+4. Basic MT5 operations - requires container
+
+Tests that require the container will skip if MT5 credentials
+are not configured in .env file.
 """
 
 from __future__ import annotations
 
 import subprocess
 
+from tests.conftest import requires_container
 
-class TestContainerIsolation:
-    """Test container isolation from other environments."""
+
+class TestConfiguration:
+    """Test configuration values (no container needed)."""
 
     def test_container_name_is_isolated(self, container_name: str) -> None:
         """Verify test container uses isolated name."""
@@ -30,6 +35,21 @@ class TestContainerIsolation:
         assert rpyc_port != 18812  # Not neptor tests
         assert rpyc_port != 38812  # Not other tests
 
+    def test_vnc_port_is_isolated(self, vnc_port: int) -> None:
+        """Verify VNC uses isolated port."""
+        assert vnc_port == 43000
+        assert vnc_port != 3000  # Not production
+
+    def test_health_port_is_isolated(self, health_port: int) -> None:
+        """Verify health check uses isolated port."""
+        assert health_port == 48002
+        assert health_port != 8002  # Not production
+
+
+@requires_container
+class TestContainerRunning:
+    """Test container is running (requires container)."""
+
     def test_container_is_running(self, container_name: str) -> None:
         """Verify test container is actually running."""
         result = subprocess.run(
@@ -40,7 +60,9 @@ class TestContainerIsolation:
         )
         assert result.stdout.strip(), f"Container {container_name} not running"
 
-    def test_ports_are_exposed(self, rpyc_port: int, vnc_port: int, health_port: int) -> None:
+    def test_ports_are_exposed(
+        self, rpyc_port: int, vnc_port: int, health_port: int
+    ) -> None:
         """Verify all ports are exposed correctly."""
         result = subprocess.run(
             ["docker", "port", "mt5docker-test"],
@@ -55,8 +77,9 @@ class TestContainerIsolation:
         assert f"{health_port}" in output, f"Health port {health_port} not exposed"
 
 
+@requires_container
 class TestRPyCService:
-    """Test RPyC service functionality."""
+    """Test RPyC service functionality (requires container)."""
 
     def test_rpyc_connection_established(self, rpyc_connection) -> None:
         """Verify RPyC connection can be established."""
@@ -78,11 +101,12 @@ class TestRPyCService:
             assert mt5 is not None
         except Exception as e:
             # mt5linux might not be fully initialized, but module should exist
-            assert "MetaTrader5" in str(e) or mt5 is not None
+            assert "MetaTrader5" in str(e)
 
 
+@requires_container
 class TestMT5Operations:
-    """Test basic MT5 operations via RPyC."""
+    """Test basic MT5 operations via RPyC (requires container)."""
 
     def test_mt5_version(self, mt5_module) -> None:
         """Verify MT5 version can be retrieved."""
@@ -105,13 +129,14 @@ class TestMT5Operations:
         assert error is None or isinstance(error, tuple)
 
 
+@requires_container
 class TestWorkspaceDetection:
-    """Test workspace detection for local mt5linux."""
+    """Test workspace detection for local mt5linux (requires container)."""
 
-    def test_pythonpath_includes_local_mount(self) -> None:
+    def test_pythonpath_includes_local_mount(self, container_name: str) -> None:
         """Verify PYTHONPATH includes local mt5linux if mounted."""
         result = subprocess.run(
-            ["docker", "exec", "mt5docker-test", "printenv", "PYTHONPATH"],
+            ["docker", "exec", container_name, "printenv", "PYTHONPATH"],
             capture_output=True,
             text=True,
             check=False,
@@ -124,13 +149,16 @@ class TestWorkspaceDetection:
         # Just verify we can check it (don't fail if not using local mount)
         assert result.returncode == 0 or pythonpath == ""
 
-    def test_mt5linux_source_detection(self) -> None:
+    def test_mt5linux_source_detection(self, container_name: str) -> None:
         """Verify container can detect mt5linux source (local vs GitHub)."""
         result = subprocess.run(
             [
-                "docker", "exec", "mt5docker-test",
-                "python3", "-c",
-                "import mt5linux; print(getattr(mt5linux, '__file__', 'unknown'))"
+                "docker",
+                "exec",
+                container_name,
+                "python3",
+                "-c",
+                "import mt5linux; print(getattr(mt5linux, '__file__', 'unknown'))",
             ],
             capture_output=True,
             text=True,

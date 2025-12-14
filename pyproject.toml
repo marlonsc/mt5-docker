@@ -12,19 +12,21 @@ requires-python = ">=3.11"
 authors = [{ name = "marlonsc", email = "marlonsc@gmail.com" }]
 
 dependencies = [
-    "rpyc>=5.2.0,<6.0.0",  # Protocol compatibility with container
+    "rpyc>=5.2.0,<6.0.0", # Protocol compatibility with container
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0.0",
     "pytest-timeout>=2.0.0",
+    "pytest-dotenv>=0.5.0",  # Auto-load .env for tests
 ]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-v --tb=short"
-timeout = 300  # 5 min max per test (container startup can be slow)
+timeout = 300             # 5 min max per test (container startup can be slow)
+env_files = [".env"]      # Load .env file for tests (pytest-dotenv)
 
 [tool.ruff]
 line-length = 88
@@ -33,9 +35,9 @@ target-version = "py311"
 [tool.ruff.lint]
 select = ["ALL"]
 ignore = [
-    "D",       # pydocstyle - optional for tests
-    "COM812",  # missing-trailing-comma
-    "ISC001",  # single-line-implicit-string-concatenation
+    "D",      # pydocstyle - optional for tests
+    "COM812", # missing-trailing-comma
+    "ISC001", # single-line-implicit-string-concatenation
 ]
 
 [tool.ruff.lint.per-file-ignores]

@@ -1,21 +1,23 @@
 # docker-compose.test.yaml - Isolated test configuration for mt5docker
 #
+# Location: tests/fixtures/docker-compose.test.yaml
+#
 # This overlay provides an ISOLATED test container for mt5docker development.
 # Uses separate ports and container name to avoid conflicts with:
 # - Production container (mt5, port 8001)
 # - neptor tests (neptor-mt5-test, port 18812)
 # - mt5linux tests (mt5linux-test, port 28812)
 #
-# Workspace Detection:
-# - If ../mt5linux exists: mounts local code (faster development)
-# - If not: container uses GitHub-installed mt5linux (via 50_python_linux.sh)
+# mt5linux is installed from GitHub (github.com/marlonsc/mt5linux) via 50_python_linux.sh
 #
-# Usage:
-#   docker compose -f docker-compose.yaml -f docker-compose.test.yaml up -d
+# Usage (from project root):
+#   docker compose -f docker-compose.yaml -f tests/fixtures/docker-compose.test.yaml up -d
+#   # Or use the test script:
+#   ./scripts/test-container.sh
 #
 # Verify:
 #   docker ps  # Should show: mt5docker-test
-#   nc -zv localhost 38812  # RPyC service
+#   nc -zv localhost 48812  # RPyC service
 
 services:
   mt5:
@@ -28,12 +30,8 @@ services:
       - config_data_mt5docker_test:/config:uid=911,gid=911
       - downloads_mt5docker_test:/downloads:uid=911,gid=911
       - mt5_cache:/cache:uid=911,gid=911
-      - ./data:/data:ro
-      # Mount local mt5linux if in workspace (optional - falls back to GitHub)
-      - ../mt5linux/mt5linux:/opt/mt5linux-local:ro
+      - ../../data:/data:ro
     environment:
-      # Use local mt5linux if mounted, otherwise GitHub install is used
-      - PYTHONPATH=/opt/mt5linux-local:$PYTHONPATH
       # MT5 test credentials - REQUIRED: configure in .env file (see .env.example)
       - MT5_LOGIN=${MT5_LOGIN:?MT5_LOGIN required - copy .env.example to .env}
       - MT5_PASSWORD=${MT5_PASSWORD:?MT5_PASSWORD required - copy .env.example to .env}

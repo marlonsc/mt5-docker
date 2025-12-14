@@ -4,11 +4,13 @@
 # This script starts the ISOLATED test container (mt5docker-test)
 # and verifies the RPyC service is ready.
 #
+# mt5linux is installed from GitHub (github.com/marlonsc/mt5linux)
+#
 # Port allocation (to avoid conflicts):
-#   - Production:    mt5,            port 8001
-#   - neptor tests:  neptor-mt5-test, port 18812
-#   - mt5linux tests: mt5linux-test,  port 28812
-#   - mt5docker tests: mt5docker-test, port 38812
+#   - Production:     mt5,             port 8001
+#   - neptor tests:   neptor-mt5-test, port 18812
+#   - mt5linux tests: mt5linux-test,   port 28812
+#   - mt5docker tests: mt5docker-test, port 48812
 #
 # Usage:
 #   ./scripts/test-container.sh         # Start and verify
@@ -20,9 +22,11 @@ set -euo pipefail
 CONTAINER_NAME="mt5docker-test"
 RPYC_PORT=48812
 HEALTH_PORT=48002
+VNC_PORT=43000
 TIMEOUT=180  # seconds to wait for RPyC service
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+TEST_COMPOSE="${PROJECT_DIR}/tests/fixtures/docker-compose.test.yaml"
 
 # Colors for output
 RED='\033[0;31m'
@@ -80,7 +84,7 @@ wait_for_rpyc() {
 stop_container() {
     log_info "Stopping test container..."
     cd "$PROJECT_DIR"
-    docker compose -f docker-compose.yaml -f docker-compose.test.yaml down
+    docker compose -f docker-compose.yaml -f "$TEST_COMPOSE" down
     log_info "Test container stopped"
 }
 
@@ -134,16 +138,10 @@ start_container() {
     log_info "Starting test container: ${CONTAINER_NAME}"
     log_info "  RPyC port: ${RPYC_PORT}"
     log_info "  Health port: ${HEALTH_PORT}"
-
-    # Check for workspace mt5linux
-    if [ -d "../mt5linux/mt5linux" ]; then
-        log_info "  Using local mt5linux from ../mt5linux"
-    else
-        log_warn "  ../mt5linux not found - will use GitHub install"
-    fi
+    log_info "  mt5linux: GitHub (marlonsc/mt5linux)"
 
     # Start with overlay
-    docker compose -f docker-compose.yaml -f docker-compose.test.yaml up -d
+    docker compose -f docker-compose.yaml -f "$TEST_COMPOSE" up -d
 
     # Wait for service
     if ! wait_for_rpyc; then
@@ -157,7 +155,7 @@ start_container() {
     log_info "Connection info:"
     echo "  RPyC:   localhost:${RPYC_PORT}"
     echo "  Health: localhost:${HEALTH_PORT}"
-    echo "  VNC:    http://localhost:33000"
+    echo "  VNC:    http://localhost:${VNC_PORT}"
 }
 
 # Main
