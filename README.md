@@ -233,6 +233,79 @@ The container startup has been modularized. Key scripts under `Metatrader/script
 - `40_python_wine.sh` / `50_python_linux.sh`: Python environment setup.
 - `60_server.sh`: starts services (VNC, RPyC) and MT5.
 
+## Testing
+
+The project includes automated tests using pytest. Tests run against an isolated test container (`mt5docker-test`) with separate ports to avoid conflicts with production or other test environments.
+
+### Prerequisites
+
+1. **Configure credentials**: Copy the example file and fill in your MT5 credentials:
+
+```bash
+cp .env.example .env
+```
+
+2. **Edit `.env`** with your MetaTrader 5 credentials:
+
+```bash
+# Required for tests
+MT5_LOGIN=your_login_number
+MT5_PASSWORD=your_password
+MT5_SERVER=MetaQuotes-Demo
+```
+
+To create a MetaQuotes Demo account:
+- Open MT5 in the container (`http://localhost:3000`)
+- File → Open an Account → MetaQuotes-Demo
+- Fill in the registration form
+- Copy your login and password to `.env`
+
+3. **Install test dependencies**:
+
+```bash
+pip install pytest rpyc
+```
+
+### Running Tests
+
+```bash
+# Start the isolated test container
+./scripts/test-container.sh
+
+# Run all tests
+pytest tests/ -v
+
+# Run specific test class
+pytest tests/test_container.py::TestContainerIsolation -v
+
+# Stop test container when done
+./scripts/test-container.sh --stop
+```
+
+### Test Container Isolation
+
+The test container uses isolated ports to avoid conflicts:
+
+| Service | Production | mt5docker-test |
+|---------|------------|----------------|
+| VNC     | 3000       | 43000          |
+| RPyC    | 8001       | 48812          |
+| Health  | 8002       | 48002          |
+
+### Environment Variables
+
+All test configuration can be overridden via environment variables or `.env`:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MT5_LOGIN` | (required) | MT5 account login |
+| `MT5_PASSWORD` | (required) | MT5 account password |
+| `MT5_SERVER` | MetaQuotes-Demo | MT5 server name |
+| `MT5_CONTAINER_NAME` | mt5docker-test | Container name |
+| `MT5_RPYC_PORT` | 48812 | RPyC service port |
+| `MT5_VNC_PORT` | 43000 | VNC web interface port |
+| `MT5_HEALTH_PORT` | 48002 | Health check port |
+
 ## Contributions
 
 Feel free to contribute to this project. All contributions are welcome. Open an issue or create a pull request.

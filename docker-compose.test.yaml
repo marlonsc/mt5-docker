@@ -1,0 +1,50 @@
+# docker-compose.test.yaml - Isolated test configuration for mt5docker
+#
+# This overlay provides an ISOLATED test container for mt5docker development.
+# Uses separate ports and container name to avoid conflicts with:
+# - Production container (mt5, port 8001)
+# - neptor tests (neptor-mt5-test, port 18812)
+# - mt5linux tests (mt5linux-test, port 28812)
+#
+# Workspace Detection:
+# - If ../mt5linux exists: mounts local code (faster development)
+# - If not: container uses GitHub-installed mt5linux (via 50_python_linux.sh)
+#
+# Usage:
+#   docker compose -f docker-compose.yaml -f docker-compose.test.yaml up -d
+#
+# Verify:
+#   docker ps  # Should show: mt5docker-test
+#   nc -zv localhost 38812  # RPyC service
+
+services:
+  mt5:
+    container_name: ${MT5_CONTAINER_NAME:-mt5docker-test}
+    ports:
+      - "${MT5_VNC_PORT:-43000}:3000"     # VNC (isolated from prod:3000, neptor:13000, mt5linux:23000)
+      - "${MT5_RPYC_PORT:-48812}:8001"    # RPyC (isolated from prod:8001, neptor:18812, mt5linux:28812)
+      - "${MT5_HEALTH_PORT:-48002}:8002"  # Health (isolated from prod:8002, neptor:18002, mt5linux:28002)
+    volumes:
+      - config_data_mt5docker_test:/config:uid=911,gid=911
+      - downloads_mt5docker_test:/downloads:uid=911,gid=911
+      - mt5_cache:/cache:uid=911,gid=911
+      - ./data:/data:ro
+      # Mount local mt5linux if in workspace (optional - falls back to GitHub)
+      - ../mt5linux/mt5linux:/opt/mt5linux-local:ro
+    environment:
+      # Use local mt5linux if mounted, otherwise GitHub install is used
+      - PYTHONPATH=/opt/mt5linux-local:$PYTHONPATH
+      # MT5 test credentials - REQUIRED: configure in .env file (see .env.example)
+      - MT5_LOGIN=${MT5_LOGIN:?MT5_LOGIN required - copy .env.example to .env}
+      - MT5_PASSWORD=${MT5_PASSWORD:?MT5_PASSWORD required - copy .env.example to .env}
+      - MT5_SERVER=${MT5_SERVER:-MetaQuotes-Demo}
+
+volumes:
+  config_data_mt5docker_test:
+    driver: local
+    labels:
+      description: "MT5Docker test configuration"
+  downloads_mt5docker_test:
+    driver: local
+    labels:
+      description: "MT5Docker test downloads"

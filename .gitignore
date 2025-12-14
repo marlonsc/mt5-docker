@@ -5,3 +5,4 @@ config/
 mt5
 data
 tmp
+*.pyc

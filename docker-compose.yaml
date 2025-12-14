@@ -11,7 +11,7 @@ services:
         BUILD_DATE: "${BUILD_DATE:-}"
         VERSION: "${VERSION:-local}"
     image: glendekoning/mt5-docker:local
-    container_name: mt5
+    container_name: ${MT5_CONTAINER_NAME:-mt5}
     volumes:
       - config_data:/config:uid=911,gid=911
       - downloads:/downloads:uid=911,gid=911
@@ -20,9 +20,9 @@ services:
       # Mount data directory for EA files and settings
       - ./data:/data:ro
     ports:
-      - 3000:3000  # KasmVNC web interface
-      - 8001:8001  # RPyC server for mt5linux
-      - 8002:8002  # Health check endpoint
+      - "${MT5_VNC_PORT:-3000}:3000"    # KasmVNC web interface
+      - "${MT5_RPYC_PORT:-8001}:8001"   # RPyC server for mt5linux
+      - "${MT5_HEALTH_PORT:-8002}:8002" # Health check endpoint
     env_file:
       - .env
     labels:
