@@ -61,9 +61,9 @@ def get_test_container_config() -> DockerContainerConfig:
         rpyc_port=int(os.getenv("MT5_RPYC_PORT", "48812")),
         vnc_port=int(os.getenv("MT5_VNC_PORT", "43000")),
         health_port=int(os.getenv("MT5_HEALTH_PORT", "48002")),
-        # Timeouts
+        # Timeouts (Wine/Python RPyC can be slow)
         startup_timeout=180,  # seconds to wait for container
-        rpyc_timeout=30,  # seconds for RPyC operations
+        rpyc_timeout=60,  # seconds for RPyC operations
         # MT5 credentials (required for auth tests, loaded from .env)
         mt5_login=os.getenv("MT5_LOGIN"),
         mt5_password=os.getenv("MT5_PASSWORD"),

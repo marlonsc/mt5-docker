@@ -130,27 +130,11 @@ class TestMT5Operations:
 
 
 @requires_container
-class TestWorkspaceDetection:
-    """Test workspace detection for local mt5linux (requires container)."""
+class TestMT5LinuxInstallation:
+    """Test mt5linux is installed from GitHub (requires container)."""
 
-    def test_pythonpath_includes_local_mount(self, container_name: str) -> None:
-        """Verify PYTHONPATH includes local mt5linux if mounted."""
-        result = subprocess.run(
-            ["docker", "exec", container_name, "printenv", "PYTHONPATH"],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-
-        # If ../mt5linux exists, PYTHONPATH should include /opt/mt5linux-local
-        # Otherwise, it might be empty (using pip-installed version)
-        pythonpath = result.stdout.strip()
-
-        # Just verify we can check it (don't fail if not using local mount)
-        assert result.returncode == 0 or pythonpath == ""
-
-    def test_mt5linux_source_detection(self, container_name: str) -> None:
-        """Verify container can detect mt5linux source (local vs GitHub)."""
+    def test_mt5linux_installed(self, container_name: str) -> None:
+        """Verify mt5linux is installed and importable."""
         result = subprocess.run(
             [
                 "docker",
@@ -158,14 +142,29 @@ class TestWorkspaceDetection:
                 container_name,
                 "python3",
                 "-c",
-                "import mt5linux; print(getattr(mt5linux, '__file__', 'unknown'))",
+                "import mt5linux; print(mt5linux.__file__)",
             ],
             capture_output=True,
             text=True,
             check=False,
         )
+        assert result.returncode == 0, f"mt5linux not installed: {result.stderr}"
+        assert "mt5linux" in result.stdout
 
-        # Should either show local path or pip-installed path
-        assert result.returncode == 0
-        output = result.stdout.strip()
-        assert "mt5linux" in output or output == "unknown"
+    def test_mt5linux_has_metatrader5_class(self, container_name: str) -> None:
+        """Verify mt5linux has MetaTrader5 class."""
+        result = subprocess.run(
+            [
+                "docker",
+                "exec",
+                container_name,
+                "python3",
+                "-c",
+                "from mt5linux import MetaTrader5; print(MetaTrader5)",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == 0, f"MetaTrader5 class not found: {result.stderr}"
+        assert "MetaTrader5" in result.stdout

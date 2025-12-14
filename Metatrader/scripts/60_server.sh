@@ -22,7 +22,8 @@ if [ "$RPYC_RESILIENT" = "1" ]; then
         python.exe &
 else
     log INFO "[9/9] Using basic server (no resilience)"
-    python3 -m mt5linux --host 0.0.0.0 -p "$mt5server_port" -w "$wine_executable" python.exe &
+    # mt5linux 0.2.0+ uses: python -m mt5linux server --host HOST --port PORT
+    python3 -m mt5linux server --host 0.0.0.0 --port "$mt5server_port" &
 fi
 
 # Wait for server to start

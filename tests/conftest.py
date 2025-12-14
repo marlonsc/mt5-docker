@@ -71,13 +71,16 @@ def is_container_running(name: str | None = None) -> bool:
 
 
 def is_rpyc_service_ready(host: str = "localhost", port: int | None = None) -> bool:
-    """Check if RPyC service is ready (actual handshake, not just port)."""
+    """Check if RPyC service is ready (actual handshake, not just port).
+
+    Uses a 60 second timeout because Wine/Python RPyC server can be slow.
+    """
     rpyc_port = port or _config.rpyc_port
     try:
         from rpyc.utils.classic import connect
 
         conn = connect(host, rpyc_port)
-        conn._config["sync_request_timeout"] = 5
+        conn._config["sync_request_timeout"] = 60  # Wine Python is slow
         _ = conn.modules
         conn.close()
         return True
