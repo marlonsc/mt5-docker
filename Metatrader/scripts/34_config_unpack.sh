@@ -7,17 +7,17 @@ MARKER_PATH="/config/.config-unpacked"
 
 # Only run once per persistent /config
 if [ -f "$MARKER_PATH" ]; then
-  log INFO "Config already unpacked; skipping"
+  log INFO "[4/9] Config already unpacked; skipping"
   exit 0
 fi
 
 if [ -f "$ARCHIVE_PATH" ]; then
-  log INFO "Unpacking full /config from archive $ARCHIVE_PATH before any setup"
+  log INFO "[4/9] Unpacking full /config from archive $ARCHIVE_PATH before any setup"
   mkdir -p /config
   # Extract the tarball which contains top-level 'config/' directory into /
-  tar --zstd -xpf "$ARCHIVE_PATH" -C / || { log ERROR "Failed to unpack config archive"; exit 1; }
+  tar --zstd -xpf "$ARCHIVE_PATH" -C / || { log ERROR "[4/9] Failed to unpack config archive"; exit 1; }
   touch "$MARKER_PATH"
-  log INFO "Config unpack complete"
+  log INFO "[4/9] Config unpack complete"
 else
-  log INFO "No config archive found at $ARCHIVE_PATH; skipping"
+  log INFO "[4/9] No config archive found at $ARCHIVE_PATH; skipping"
 fi

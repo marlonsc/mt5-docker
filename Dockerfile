@@ -1,11 +1,125 @@
-FROM ghcr.io/linuxserver/baseimage-kasmvnc:debianbookworm
+# syntax=docker/dockerfile:1.4
+# Enable BuildKit features for cache mounts
 
-# set version label
+# ============================================================
+# BASE IMAGE
+# ============================================================
+FROM ghcr.io/linuxserver/baseimage-kasmvnc:debianbookworm AS base
+
+# Version ARGs for cache invalidation and pinning
 ARG BUILD_DATE
 ARG VERSION
+ARG PYTHON_VERSION=3.12.8
+ARG GECKO_VERSION=2.47.4
+ARG MT5_PYPI_VERSION=5.0.5430
+
+# ============================================================
+# Stage 1: DOWNLOADER - Pre-download large files
+# ============================================================
+FROM base AS downloader
+
+ARG PYTHON_VERSION
+ARG GECKO_VERSION
+ARG MT5_PYPI_VERSION
+
+WORKDIR /staging
+
+# Download all large files with BuildKit cache
+# Files cached in /downloads AND copied to /staging for embedding
+RUN --mount=type=cache,target=/downloads,id=mt5-downloads,sharing=locked \
+    set -ex && \
+    # MT5 Setup (~300MB)
+    if [ ! -f /downloads/mt5setup.exe ]; then \
+        echo "Downloading MT5 setup..." && \
+        curl -fSL -o /downloads/mt5setup.exe \
+            "https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe"; \
+    fi && \
+    cp /downloads/mt5setup.exe /staging/ && \
+    # Python Installer (~30MB)
+    if [ ! -f /downloads/python-${PYTHON_VERSION}-amd64.exe ]; then \
+        echo "Downloading Python ${PYTHON_VERSION}..." && \
+        curl -fSL -o /downloads/python-${PYTHON_VERSION}-amd64.exe \
+            "https://www.python.org/ftp/python/${PYTHON_VERSION}/python-${PYTHON_VERSION}-amd64.exe"; \
+    fi && \
+    cp /downloads/python-${PYTHON_VERSION}-amd64.exe /staging/python-installer.exe && \
+    # Gecko x64 (~50MB)
+    if [ ! -f /downloads/wine-gecko-${GECKO_VERSION}-x86_64.msi ]; then \
+        echo "Downloading Gecko x64..." && \
+        curl -fSL -o /downloads/wine-gecko-${GECKO_VERSION}-x86_64.msi \
+            "https://dl.winehq.org/wine/wine-gecko/${GECKO_VERSION}/wine-gecko-${GECKO_VERSION}-x86_64.msi"; \
+    fi && \
+    cp /downloads/wine-gecko-${GECKO_VERSION}-x86_64.msi /staging/ && \
+    # Gecko x86 (~30MB)
+    if [ ! -f /downloads/wine-gecko-${GECKO_VERSION}-x86.msi ]; then \
+        echo "Downloading Gecko x86..." && \
+        curl -fSL -o /downloads/wine-gecko-${GECKO_VERSION}-x86.msi \
+            "https://dl.winehq.org/wine/wine-gecko/${GECKO_VERSION}/wine-gecko-${GECKO_VERSION}-x86.msi"; \
+    fi && \
+    cp /downloads/wine-gecko-${GECKO_VERSION}-x86.msi /staging/ && \
+    # Create version manifest for runtime
+    echo "PYTHON_VERSION=${PYTHON_VERSION}" > /staging/.versions && \
+    echo "GECKO_VERSION=${GECKO_VERSION}" >> /staging/.versions && \
+    echo "MT5_PYPI_VERSION=${MT5_PYPI_VERSION}" >> /staging/.versions && \
+    echo "BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> /staging/.versions && \
+    ls -la /staging/
+
+# ============================================================
+# Stage 2: BUILDER - System packages with optimal caching
+# ============================================================
+FROM base AS builder
+
+# Layer 1: Base packages (rarely changes)
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
+    rm -f /etc/apt/apt.conf.d/docker-clean && \
+    echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends \
+        python3 python3-pip python3-venv python3-xdg \
+        wget curl gnupg2 software-properties-common \
+        ca-certificates cabextract git unzip rsync
+
+# Layer 2: Wine repository setup (rarely changes)
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
+    mkdir -pm755 /etc/apt/keyrings && \
+    wget -q -O /etc/apt/keyrings/winehq-archive.key \
+        "https://dl.winehq.org/wine-builds/winehq.key" && \
+    wget -qNP /etc/apt/sources.list.d/ \
+        "https://dl.winehq.org/wine-builds/debian/dists/bookworm/winehq-bookworm.sources" && \
+    dpkg --add-architecture i386
+
+# Layer 3: Wine installation (rarely changes, largest layer ~2GB)
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
+    apt-get update && \
+    apt-get install -y --install-recommends \
+        winehq-stable winetricks cabextract
+
+# Layer 4: Linux Python packages (occasionally changes)
+ARG MT5_PYPI_VERSION
+RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
+    python3 -m pip install --upgrade --break-system-packages pip && \
+    python3 -m pip install --break-system-packages \
+        "numpy>=2.1.0" "rpyc>=5.2.0" "plumbum>=1.8.0" "pyparsing>=3.0.0" pyxdg && \
+    python3 -m pip install --break-system-packages \
+        "git+https://github.com/marlonsc/mt5linux.git@master"
+
+# ============================================================
+# Stage 3: RUNTIME - Final image
+# ============================================================
+FROM builder AS runtime
+
+# Version ARGs for labels
+ARG BUILD_DATE
+ARG VERSION
+ARG PYTHON_VERSION
+ARG GECKO_VERSION
+ARG MT5_PYPI_VERSION
+
 # OCI-compliant image metadata
 LABEL org.opencontainers.image.title="MetaTrader5 Docker (fork)"
-LABEL org.opencontainers.image.description="Fork of MetaTrader5 Docker image with minor tweaks and attribution."
+LABEL org.opencontainers.image.description="Fork of MetaTrader5 Docker image with optimized build caching"
 LABEL org.opencontainers.image.version="${VERSION}"
 LABEL org.opencontainers.image.created="${BUILD_DATE}"
 LABEL org.opencontainers.image.authors="glendekoning"
@@ -14,57 +128,31 @@ LABEL org.opencontainers.image.source="https://github.com/glendekoning/mt5-docke
 LABEL org.opencontainers.image.licenses="MIT"
 LABEL org.opencontainers.image.ref.name="mt5-docker"
 LABEL org.opencontainers.image.vendor="glendekoning"
-# Preserve original attribution
 LABEL org.opencontainers.image.base.name="ghcr.io/linuxserver/baseimage-kasmvnc:debianbookworm"
 LABEL org.opencontainers.image.revision="forked from gmag11/MetaTrader5-Docker-Image"
 LABEL build_version="Metatrader Docker:- ${VERSION} Build-date:- ${BUILD_DATE}"
 LABEL maintainer="glendekoning"
+LABEL mt5.python.version="${PYTHON_VERSION}"
+LABEL mt5.gecko.version="${GECKO_VERSION}"
+LABEL mt5.pypi.version="${MT5_PYPI_VERSION}"
 
+# Environment variables
 ENV TITLE=Metatrader5
 ENV WINEPREFIX="/config/.wine"
 ENV WINEDEBUG=-all
 ENV ENABLE_WIN_DOTNET=1
 ENV WINEDLLOVERRIDES="mscoree=n,mscorlib=n"
+ENV STAGING_DIR="/opt/mt5-staging"
+ENV CACHE_DIR="/cache"
 
-# Install all packages in a single layer to reduce image size and ensure consistency
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
-    python3.13 \
-    python3.13-pip \
-    python3.13-venv \
-    python3-xdg \
-    wget \
-    curl \
-    gnupg2 \
-    software-properties-common \
-    ca-certificates \
-    cabextract \
-    winetricks \
-    git \
-    unzip \
-    && mkdir -pm755 /etc/apt/keyrings \
-    && wget -O /etc/apt/keyrings/winehq-archive.key https://dl.winehq.org/wine-builds/winehq.key \
-    && wget -NP /etc/apt/sources.list.d/ https://dl.winehq.org/wine-builds/debian/dists/bookworm/winehq-bookworm.sources \
-    && dpkg --add-architecture i386 \
-    && apt-get update \
-    && apt-get install -y --install-recommends winehq-stable winetricks cabextract \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* /etc/apt/keyrings/winehq-archive.key \
-    && python3.13 -m pip install --upgrade --break-system-packages pip \
-    && python3.13 -m pip install --break-system-packages "numpy==2.3.5" "rpyc==5.3.1" "plumbum==1.8.0" \
-    && python3.13 -m pip install --upgrade --break-system-packages pip
+# Copy pre-downloaded files to staging location (embedded in image)
+COPY --from=downloader /staging /opt/mt5-staging
 
-## Mono/Gecko handling moved to Metatrader/start.sh to avoid duplication
-
-## NOTE: Runtime installation strategy
-## Installing .NET and Winetricks components at build-time conflicts with a full `/config` bind mount.
-## We now install all Windows dependencies in `Metatrader/start.sh` with an idempotent marker.
-## This keeps the image generic and lets the mounted prefix persist everything.
-
-
+# Copy scripts (last for best cache reuse on code changes)
 COPY /Metatrader /Metatrader
 RUN chmod +x /Metatrader/start.sh && chmod -R +x /Metatrader/scripts
+
 COPY /root /
 
 EXPOSE 3000 8001
-VOLUME /config
+VOLUME /config /cache
