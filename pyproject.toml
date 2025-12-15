@@ -14,10 +14,8 @@ authors = [{ name = "marlonsc", email = "marlonsc@gmail.com" }]
 # Dependencies - versions must match 00_env.sh centralized config
 dependencies = [
     "rpyc==6.0.2",              # RPYC_VERSION in 00_env.sh
-    "pydantic>=2.12,<3.0",      # PYDANTIC_VERSION in 00_env.sh
-    "pydantic-settings>=2.0,<3.0",
     "plumbum>=1.8.0",           # PLUMBUM_VERSION in 00_env.sh
-    "structlog>=25.5.0,<26.0.0",
+    "python-dotenv>=1.0.0",     # For loading .env files
 ]
 
 [project.optional-dependencies]
@@ -35,6 +33,7 @@ timeout = 300             # 5 min max per test (container startup can be slow)
 env_files = [".env"]      # Load .env file for tests (pytest-dotenv)
 markers = [
     "requires_container: marks tests that require the Docker container to be running",
+    "slow: marks tests that may take longer to execute",
 ]
 
 [tool.ruff]

@@ -19,13 +19,13 @@ Test Categories:
 from __future__ import annotations
 
 import logging
+import os
 import subprocess
 import time
 from pathlib import Path
 
 import pytest
 import rpyc
-from rpyc.utils.classic import os
 
 from tests.fixtures.docker import DockerContainerConfig, get_test_container_config
 
@@ -46,7 +46,7 @@ SKIP_NO_CREDENTIALS = (
 
 def has_mt5_credentials() -> bool:
     """Check if MT5 credentials are configured."""
-    return bool(_config.mt5_login and _config.mt5_password)
+    return bool(_config.login and _config.password)
 
 
 # =============================================================================
@@ -74,17 +74,16 @@ def is_container_running(name: str | None = None) -> bool:
 def is_rpyc_service_ready(host: str = "localhost", port: int | None = None) -> bool:
     """Check if RPyC service is ready (actual handshake, not just port).
 
-    Uses RPyC 6.x rpyc.classic.connect() - the modern method for
-    connecting to servers running ClassicService.
+    Uses rpyc.connect() for our custom MT5Service.
     Uses a 60 second timeout because Wine/Python RPyC server can be slow.
     """
     rpyc_port = port or _config.rpyc_port
     try:
-        conn = rpyc.classic.connect(host, rpyc_port)
-        conn._config["sync_request_timeout"] = 60
-        _ = conn.modules.sys  # Verify connection works
+        conn = rpyc.connect(host, rpyc_port, config={"sync_request_timeout": 60})
+        # Verify connection works by calling health_check
+        _ = conn.root.health_check()
         conn.close()
-    except (OSError, ConnectionError, TimeoutError, EOFError):
+    except (OSError, ConnectionError, TimeoutError, EOFError, AttributeError):
         return False
     else:
         return True
@@ -110,10 +109,10 @@ def wait_for_rpyc_service(
 
 
 def start_test_container() -> None:
-    """Start ISOLATED test container using docker-compose overlay.
+    """Start ISOLATED test container using environment variables.
 
-    Always starts with a clean container to ensure test isolation.
-    Credentials are required to start the container.
+    Uses the main docker-compose.yaml with environment variables
+    to configure test-specific container name, ports, and volumes.
 
     Raises:
         pytest.skip: If MT5 credentials are not configured.
@@ -132,48 +131,37 @@ def start_test_container() -> None:
             check=False,
         )
 
-    # Clean up test volumes to ensure complete isolation
-    test_volumes = ["config_data_mt5docker_test", "downloads_mt5docker_test"]
-    for volume in test_volumes:
-        _logger.info("Cleaning test volume: %s", volume)
-        subprocess.run(
-            ["docker", "volume", "rm", volume],
-            capture_output=True,
-            check=False,
-        )
-
     # Always require credentials for clean test environment
     if not has_mt5_credentials():
         pytest.skip(SKIP_NO_CREDENTIALS)
 
-    # Check compose files exist
-    base_compose = project_root / "docker-compose.yaml"
-    test_compose = project_root / "tests" / "fixtures" / "docker-compose.yaml"
-
-    if not base_compose.exists():
+    # Check compose file exists
+    compose_file = project_root / "docker-compose.yaml"
+    if not compose_file.exists():
         pytest.skip(f"docker-compose.yaml not found at {project_root}")
 
-    if not test_compose.exists():
-        pytest.skip(f"docker-compose.yaml not found at {test_compose}")
+    # Build environment with test-specific values
+    # These override the defaults in docker-compose.yaml
+    test_env = os.environ.copy()
+    test_env.update({
+        "MT5_CONTAINER_NAME": _config.container_name,
+        "MT5_RPYC_PORT": str(_config.rpyc_port),
+        "MT5_VNC_PORT": str(_config.vnc_port),
+        "MT5_HEALTH_PORT": str(_config.health_port),
+        "MT5_VOLUME_NAME": f"{_config.container_name}-data",
+        "MT5_NETWORK_NAME": f"{_config.container_name}-network",
+    })
 
-    # Start container with overlay
+    # Start container with test environment
     _logger.info("Starting test container %s...", _config.container_name)
 
     result = subprocess.run(
-        [
-            "docker",
-            "compose",
-            "-f",
-            str(base_compose),
-            "-f",
-            str(test_compose),
-            "up",
-            "-d",
-        ],
+        ["docker", "compose", "up", "-d"],
         cwd=project_root,
         capture_output=True,
         text=True,
         check=False,
+        env=test_env,
     )
 
     if result.returncode != 0:
@@ -241,15 +229,14 @@ def _cleanup_test_container() -> None:
             check=False,
         )
 
-    # Clean up test volumes
-    test_volumes = ["config_data_mt5docker_test", "downloads_mt5docker_test"]
-    for volume in test_volumes:
-        _logger.info("Cleaning up test volume: %s", volume)
-        subprocess.run(
-            ["docker", "volume", "rm", volume],
-            capture_output=True,
-            check=False,
-        )
+    # Clean up test volume (name matches MT5_VOLUME_NAME set in start_test_container)
+    volume_name = f"{_config.container_name}-data"
+    _logger.info("Cleaning up test volume: %s", volume_name)
+    subprocess.run(
+        ["docker", "volume", "rm", volume_name],
+        capture_output=True,
+        check=False,
+    )
 
 
 # Pytest marker for tests requiring container
@@ -293,32 +280,37 @@ def mt5_credentials() -> dict[str, str | int]:
     Credentials must be configured in .env file.
     See .env.example for setup instructions.
     """
-    if not _config.mt5_login or not _config.mt5_password:
+    if not _config.login or not _config.password:
         pytest.skip(
             "MT5 credentials not configured. "
             "Copy .env.example to .env and fill in MT5_LOGIN and MT5_PASSWORD."
         )
     return {
-        "login": int(_config.mt5_login),
-        "password": _config.mt5_password,
-        "server": _config.mt5_server,
+        "login": int(_config.login),
+        "password": _config.password,
+        "server": _config.server,
     }
 
 
 @pytest.fixture
-def rpyc_connection(_docker_container: None):
-    """Provide RPyC 6.x connection to test container.
+def rpyc_connection(docker_container: None):
+    """Provide RPyC connection to test container.
 
-    Uses rpyc.classic.connect() which is the modern RPyC 6.x method
-    for connecting to servers running ClassicService.
+    Uses rpyc.connect() for our custom MT5Service.
     """
-    conn = rpyc.classic.connect("localhost", _config.rpyc_port)
-    conn._config["sync_request_timeout"] = _config.rpyc_timeout
+    conn = rpyc.connect("localhost", _config.rpyc_port,
+                        config={"sync_request_timeout": _config.rpyc_timeout})
     yield conn
     conn.close()
 
 
 @pytest.fixture
+def mt5_service(rpyc_connection):
+    """Provide MT5Service root object via RPyC."""
+    return rpyc_connection.root
+
+
+@pytest.fixture
 def mt5_module(rpyc_connection):
     """Provide remote MetaTrader5 module via RPyC."""
-    return rpyc_connection.modules.MetaTrader5
+    return rpyc_connection.root.get_mt5()
