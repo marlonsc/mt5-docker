@@ -13,7 +13,7 @@ if ! is_python_package_installed "mt5linux"; then
 
     # Install dependencies first
     pip3 install --break-system-packages --no-cache-dir \
-        "numpy>=2.1.0" "rpyc>=5.2.0,<6.0.0" "plumbum>=1.8.0" "pyparsing>=3.0.0" || {
+        "numpy>=2.1.0" "rpyc==6.0.2" "plumbum>=1.8.0" "pyparsing>=3.0.0" || {
         log ERROR "[python-linux] Failed to install dependencies"
         exit 1
     }
