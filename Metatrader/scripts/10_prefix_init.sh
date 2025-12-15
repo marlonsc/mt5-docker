@@ -4,9 +4,27 @@ source "$(dirname "$0")/00_env.sh"
 
 log INFO "[wine] Initializing Wine prefix (WINEPREFIX=$WINEPREFIX)"
 
-if ! mkdir -p "$PREFIX_CACHE_DIR" 2>/dev/null; then
-    log WARN "[wine] Could not create cache dir: $PREFIX_CACHE_DIR"
+# Create all required cache directories upfront
+# These MUST succeed - no fallbacks allowed
+WINETRICKS_CACHE_DIR="/config/.cache/winetricks"
+
+log INFO "[wine] Creating cache directories..."
+
+# Wine prefix cache (for Gecko MSIs, etc)
+if ! mkdir -p "$PREFIX_CACHE_DIR"; then
+    log ERROR "[wine] Failed to create Wine cache dir: $PREFIX_CACHE_DIR"
+    exit 1
 fi
+
+# Winetricks cache (for vcrun, dotnet, etc)
+if ! mkdir -p "$WINETRICKS_CACHE_DIR"; then
+    log ERROR "[wine] Failed to create winetricks cache dir: $WINETRICKS_CACHE_DIR"
+    log ERROR "[wine] Check /config volume ownership (should be PUID:PGID)"
+    exit 1
+fi
+
+# Export for winetricks script
+export XDG_CACHE_HOME="/config/.cache"
 
 # Check if Wine prefix is already fully initialized
 if [ -f "$INIT_MARKER" ] && [ -f "$DEPS_MARKER" ]; then

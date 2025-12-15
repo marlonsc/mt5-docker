@@ -19,14 +19,13 @@ export DISPLAY="${DISPLAY:-:0}"
 # Suppress all Wine debug output for cleaner logs
 export WINEDEBUG="${WINEDEBUG:--all}"
 
-# Ensure winetricks cache directory exists with proper permissions
-# Try /config/.cache first, fallback to user home if permission denied
-if mkdir -p /config/.cache/winetricks 2>/dev/null; then
-    chmod 755 /config/.cache/winetricks 2>/dev/null || true
-    export XDG_CACHE_HOME="/config/.cache"
-else
-    mkdir -p "$HOME/.cache/winetricks" 2>/dev/null || true
-    export XDG_CACHE_HOME="$HOME/.cache"
+# Winetricks cache directory was created in 10_prefix_init.sh
+# No fallback - if it doesn't exist, fail fast
+export XDG_CACHE_HOME="/config/.cache"
+if [ ! -d "/config/.cache/winetricks" ]; then
+    log ERROR "[winetricks] Cache directory not found: /config/.cache/winetricks"
+    log ERROR "[winetricks] 10_prefix_init.sh should have created this"
+    exit 1
 fi
 
 log INFO "[winetricks] Upgrading Wine dependencies (silent mode)..."
