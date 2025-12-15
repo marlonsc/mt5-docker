@@ -23,23 +23,17 @@ export WINEDLLOVERRIDES="mscoree=n,mshtml=n"
 export DISPLAY="${DISPLAY:-:0}"
 export WINEDEBUG="${WINEDEBUG:--all}"
 
-# Helper function
-run_winetricks() {
-    local component="$1"
-    log INFO "[winetricks] Installing: ${component}..."
-    winetricks -q "$component" 2>/dev/null || {
-        log WARN "[winetricks] ${component} failed (non-critical)"
-        return 0
-    }
-}
+# Install Visual C++ runtime (required by MT5)
+log INFO "[winetricks] Installing Visual C++ runtime..."
+winetricks -q vcrun2019 2>/dev/null || log WARN "[winetricks] vcrun2019 failed (non-critical)"
 
-# Install components required for MT5 installer
-# vcrun2019/2022: Visual C++ runtime (required by MT5)
-# corefonts: Windows fonts (required for UI)
-log INFO "[winetricks] Installing Visual C++ runtime and fonts..."
-run_winetricks vcrun2019
-run_winetricks vcrun2022
-run_winetricks corefonts
+# Fonts: Liberation fonts installed in Docker base image (fonts-liberation package)
+# No need to download fonts via winetricks
+
+# IMPORTANT: Restore Windows 10 version after vcrun installation
+# vcrun2019 changes Windows version to win7 which breaks MT5
+log INFO "[winetricks] Restoring Windows 10 version..."
+winetricks -q win10 2>/dev/null || log WARN "[winetricks] win10 restore failed"
 
 # Mark as done
 touch "$DEPS_MARKER"

@@ -13,13 +13,14 @@ services:
     image: marlonsc/mt5-docker:local
     container_name: ${MT5_CONTAINER_NAME:-mt5}
     volumes:
-      - config_data:/config:uid=911,gid=911
+      - ${MT5_VOLUME_NAME:-config_data}:/config:uid=911,gid=911
     ports:
       - "${MT5_VNC_PORT:-3000}:3000"    # KasmVNC web interface
       - "${MT5_RPYC_PORT:-8001}:8001"   # RPyC server for mt5linux
       - "${MT5_HEALTH_PORT:-8002}:8002" # Health check endpoint
     env_file:
-      - .env
+      - path: .env
+        required: true
     labels:
       org.opencontainers.image.title: "MetaTrader5 Docker (fork)"
       org.opencontainers.image.vendor: "marlonsc"
@@ -79,12 +80,13 @@ services:
 networks:
   mt5-network:
     driver: bridge
-    name: mt5-network
+    name: ${MT5_NETWORK_NAME:-mt5-network}
     labels:
       description: "Isolated network for MT5 container"
 
 volumes:
   config_data:
+    name: ${MT5_VOLUME_NAME:-config_data}
     driver: local
     labels:
       description: "MT5 data: Wine prefix, terminal settings, EAs, indicators, history"

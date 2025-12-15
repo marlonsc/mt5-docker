@@ -41,12 +41,8 @@ log INFO "[startup] MT5 setup completed in ${ELAPSED}s (all scripts passed)"
 touch "$STARTUP_MARKER"
 export STARTUP_MARKER
 
-# Run MT5 Python API login (after all scripts, since it needs Python installed)
-# This is optional - only runs if credentials are provided
-if [ -n "${MT5_LOGIN:-}" ]; then
-    log INFO "[startup] Running MT5 Python API login..."
-    "$SCRIPTS_DIR/30_mt5.sh" login || log WARN "[startup] MT5 login failed - you can login manually via VNC"
-fi
+# Note: MT5 login is handled by 30_mt5.sh via generate_config + launch_mt5
+# No additional login step needed here
 
 # Start health monitor in background if auto-recovery is enabled and startup succeeded
 if [ "${AUTO_RECOVERY_ENABLED:-1}" = "1" ] && [ -f "$STARTUP_MARKER" ]; then

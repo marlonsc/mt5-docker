@@ -207,19 +207,18 @@ def start_test_container() -> None:
 
 
 @pytest.fixture(scope="session", autouse=True)
-def check_docker_skip():
-    """Check if Docker tests should be skipped."""
+def ensure_docker_ready():
+    """Ensure Docker tests can run or skip if disabled."""
     if os.getenv("SKIP_DOCKER", "0") == "1":
         _logger.info("SKIP_DOCKER=1 - Docker container tests will be skipped")
         pytest.skip("Docker tests skipped via SKIP_DOCKER=1")
-    else:
-        pytest.skip("Docker tests can be skipped by setting SKIP_DOCKER=1")
+    # Continue with normal test execution when SKIP_DOCKER is not set
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="session", autouse=True)
 def docker_container():
     """Ensure ISOLATED test container is running (session-scoped).
 
-    Tests that need the container should depend on this fixture.
+    Automatically starts before any tests run and cleans up after.
     Container will be cleaned up after the test session.
 
     Skips if MT5 credentials are not configured in .env file.

@@ -4,7 +4,7 @@
 # This script starts the ISOLATED test container (mt5docker-test)
 # and verifies the RPyC service is ready.
 #
-# mt5linux is installed from GitHub (github.com/marlonsc/mt5linux)
+# Uses the SAME docker-compose.yaml with .env.test for test-specific values.
 #
 # Port allocation (to avoid conflicts):
 #   - Production:     mt5,             port 8001
@@ -18,15 +18,15 @@
 
 set -euo pipefail
 
-# Configuration
-CONTAINER_NAME="mt5docker-test"
-RPYC_PORT=48812
-HEALTH_PORT=48002
-VNC_PORT=43000
+# Configuration (defaults, can be overridden by .env.test)
+CONTAINER_NAME="${MT5_CONTAINER_NAME:-mt5docker-test}"
+RPYC_PORT="${MT5_RPYC_PORT:-48812}"
+HEALTH_PORT="${MT5_HEALTH_PORT:-48002}"
+VNC_PORT="${MT5_VNC_PORT:-43000}"
 TIMEOUT=180  # seconds to wait for RPyC service
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-TEST_COMPOSE="${PROJECT_DIR}/tests/fixtures/docker-compose.yaml"
+ENV_FILE="${PROJECT_DIR}/.env.test"
 
 # Colors for output
 RED='\033[0;31m'
@@ -84,35 +84,45 @@ wait_for_rpyc() {
 stop_container() {
     log_info "Stopping test container..."
     cd "$PROJECT_DIR"
-    docker compose -f docker-compose.yaml -f "$TEST_COMPOSE" down
+    docker compose --env-file "$ENV_FILE" down
     log_info "Test container stopped"
 }
 
-# Check for .env file
+# Check for .env.test file
 check_env_file() {
-    if [ ! -f "$PROJECT_DIR/.env" ]; then
-        log_error ".env file not found!"
+    if [ ! -f "$ENV_FILE" ]; then
+        log_error ".env.test file not found!"
         echo ""
-        echo "Please configure your MT5 credentials:"
-        echo "  1. cp .env.example .env"
-        echo "  2. Edit .env with your MT5_LOGIN and MT5_PASSWORD"
+        echo "Please configure your MT5 test credentials:"
+        echo "  1. cp .env.test.example .env.test"
+        echo "  2. Edit .env.test with your MT5_LOGIN and MT5_PASSWORD"
         echo ""
         echo "See README.md for details on creating a MetaQuotes Demo account."
         return 1
     fi
 
+    # Load test environment
+    set -a
+    source "$ENV_FILE"
+    set +a
+
+    # Update local variables from env
+    CONTAINER_NAME="${MT5_CONTAINER_NAME:-mt5docker-test}"
+    RPYC_PORT="${MT5_RPYC_PORT:-48812}"
+    HEALTH_PORT="${MT5_HEALTH_PORT:-48002}"
+    VNC_PORT="${MT5_VNC_PORT:-43000}"
+
     # Verify required variables are set (not just placeholders)
-    source "$PROJECT_DIR/.env"
-    if [ -z "$MT5_LOGIN" ] || [ "$MT5_LOGIN" = "your_login_number" ]; then
-        log_error "MT5_LOGIN not configured in .env"
+    if [ -z "${MT5_LOGIN:-}" ] || [ "$MT5_LOGIN" = "your_login_number" ]; then
+        log_error "MT5_LOGIN not configured in .env.test"
         return 1
     fi
-    if [ -z "$MT5_PASSWORD" ] || [ "$MT5_PASSWORD" = "your_password" ]; then
-        log_error "MT5_PASSWORD not configured in .env"
+    if [ -z "${MT5_PASSWORD:-}" ] || [ "$MT5_PASSWORD" = "your_password" ]; then
+        log_error "MT5_PASSWORD not configured in .env.test"
         return 1
     fi
 
-    log_info "Credentials loaded from .env"
+    log_info "Test config loaded from .env.test"
     return 0
 }
 
@@ -120,7 +130,7 @@ check_env_file() {
 start_container() {
     cd "$PROJECT_DIR"
 
-    # Check .env file first
+    # Check .env.test file first
     if ! check_env_file; then
         return 1
     fi
@@ -138,10 +148,10 @@ start_container() {
     log_info "Starting test container: ${CONTAINER_NAME}"
     log_info "  RPyC port: ${RPYC_PORT}"
     log_info "  Health port: ${HEALTH_PORT}"
-    log_info "  mt5linux: GitHub (marlonsc/mt5linux)"
+    log_info "  VNC port: ${VNC_PORT}"
 
-    # Start with overlay
-    docker compose -f docker-compose.yaml -f "$TEST_COMPOSE" up -d
+    # Start with test env file
+    docker compose --env-file "$ENV_FILE" up -d
 
     # Wait for service
     if ! wait_for_rpyc; then
