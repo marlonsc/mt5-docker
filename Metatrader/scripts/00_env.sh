@@ -9,7 +9,8 @@ set -euo pipefail
 export mt5file="${mt5file:-/config/.wine/drive_c/Program Files/MetaTrader 5/terminal64.exe}"
 export WINEPREFIX="${WINEPREFIX:-/config/.wine}"
 export WINEDEBUG="${WINEDEBUG:--all}"
-export WINEDLLOVERRIDES="${WINEDLLOVERRIDES:-mscoree=n,mscorlib=n}"
+# DLL overrides: disable Mono, use native ucrtbase for numpy 2.x (crealf fix)
+export WINEDLLOVERRIDES="${WINEDLLOVERRIDES:-mscoree=n,mscorlib=n,ucrtbase=n}"
 export wine_executable="${wine_executable:-wine}"
 export mt5server_port="${mt5server_port:-8001}"
 

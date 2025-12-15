@@ -160,7 +160,8 @@ ENV TITLE=Metatrader5
 ENV WINEPREFIX="/config/.wine"
 ENV WINEDEBUG=-all
 ENV ENABLE_WIN_DOTNET=1
-ENV WINEDLLOVERRIDES="mscoree=n,mscorlib=n"
+# DLL overrides: disable Mono, use native ucrtbase for numpy 2.x (crealf fix)
+ENV WINEDLLOVERRIDES="mscoree=n,mscorlib=n,ucrtbase=n"
 ENV STAGING_DIR="/opt/mt5-staging"
 ENV CACHE_DIR="/cache"
 

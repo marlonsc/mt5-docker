@@ -15,8 +15,9 @@ from __future__ import annotations
 
 import subprocess
 
-import pytest
 import rpyc
+
+from tests.conftest import requires_container
 
 
 class TestConfiguration:
@@ -48,7 +49,7 @@ class TestConfiguration:
         assert health_port != 8002  # Not production
 
 
-@pytest.mark.requires_container
+@requires_container
 class TestContainerRunning:
     """Test container is running (requires container)."""
 
@@ -79,7 +80,7 @@ class TestContainerRunning:
         assert f"{health_port}" in output, f"Health port {health_port} not exposed"
 
 
-@pytest.mark.requires_container
+@requires_container
 class TestRPyCService:
     """Test RPyC service functionality (requires container)."""
 
@@ -103,7 +104,7 @@ class TestRPyCService:
         assert mt5 is not None
 
 
-@pytest.mark.requires_container
+@requires_container
 class TestMT5Operations:
     """Test basic MT5 operations via RPyC (requires container)."""
 
@@ -128,7 +129,7 @@ class TestMT5Operations:
         assert error is None or isinstance(error, tuple)
 
 
-@pytest.mark.requires_container
+@requires_container
 class TestMT5LinuxInstallation:
     """Test mt5linux is installed from GitHub (requires container)."""
 
@@ -169,7 +170,7 @@ class TestMT5LinuxInstallation:
         assert "MetaTrader5" in result.stdout
 
 
-@pytest.mark.requires_container
+@requires_container
 class TestRPyC6Compatibility:
     """Test RPyC 6.x specific behavior (requires container)."""
 
@@ -221,11 +222,9 @@ class TestRPyC6Compatibility:
         assert timeout >= 60, f"Timeout should be >= 60s, got {timeout}"
 
     def test_python_version_in_wine(self, container_name: str) -> None:
-        """Verify Python 3.12+ is installed in Wine.
+        """Verify Python 3.13 is installed in Wine.
 
-        Note: Fresh installs get Python 3.13.11 from Dockerfile.
-        Existing volumes may have Python 3.12.x from previous builds.
-        Both are supported for RPyC 6.x operations.
+        Python 3.13.11 is required - NO FALLBACKS to older versions.
         """
         result = subprocess.run(
             [
@@ -244,10 +243,8 @@ class TestRPyC6Compatibility:
         )
         assert result.returncode == 0, f"Python not found in Wine: {result.stderr}"
         version_str = result.stdout.strip()
-        # Accept 3.12+ (existing volumes) or 3.13+ (fresh installs)
-        assert "3.12" in version_str or "3.13" in version_str, (
-            f"Expected Python 3.12.x or 3.13.x, got {version_str}"
-        )
+        # Python 3.13 required - NO FALLBACKS
+        assert "3.13" in version_str, f"Expected Python 3.13.x, got {version_str}"
 
     def test_pydantic_in_wine(self, container_name: str) -> None:
         """Verify Pydantic 2 is installed in Wine Python."""

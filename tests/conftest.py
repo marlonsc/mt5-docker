@@ -26,13 +26,13 @@ from pathlib import Path
 import pytest
 import rpyc
 
-from tests.fixtures.docker import DockerContainerConfig, get_test_containerconfig
+from tests.fixtures.docker import DockerContainerConfig, get_test_container_config
 
 # =============================================================================
 # CONFIGURATION - loaded from tests/fixtures/docker.py
 # =============================================================================
 
-config = get_test_containerconfig()
+_config = get_test_container_config()
 _logger = logging.getLogger(__name__)
 
 # Skip message for tests requiring credentials
@@ -45,7 +45,7 @@ SKIP_NO_CREDENTIALS = (
 
 def has_mt5_credentials() -> bool:
     """Check if MT5 credentials are configured."""
-    return bool(config.mt5_login and config.mt5_password)
+    return bool(_config.mt5_login and _config.mt5_password)
 
 
 # =============================================================================
@@ -60,7 +60,7 @@ def _get_project_root() -> Path:
 
 def is_container_running(name: str | None = None) -> bool:
     """Check if container is running."""
-    container_name = name or config.container_name
+    container_name = name or _config.container_name
     result = subprocess.run(
         ["docker", "ps", "-q", "-f", f"name=^{container_name}$"],
         capture_output=True,
@@ -77,10 +77,10 @@ def is_rpyc_service_ready(host: str = "localhost", port: int | None = None) -> b
     connecting to servers running ClassicService.
     Uses a 60 second timeout because Wine/Python RPyC server can be slow.
     """
-    rpyc_port = port or config.rpyc_port
+    rpyc_port = port or _config.rpyc_port
     try:
         conn = rpyc.classic.connect(host, rpyc_port)
-        conn.config["sync_request_timeout"] = 60
+        conn._config["sync_request_timeout"] = 60  # noqa: SLF001
         _ = conn.modules.sys  # Verify connection works
         conn.close()
     except (OSError, ConnectionError, TimeoutError, EOFError):
@@ -95,8 +95,8 @@ def wait_for_rpyc_service(
     timeout: int | None = None,
 ) -> bool:
     """Wait for RPyC service to become ready."""
-    rpyc_port = port or config.rpyc_port
-    wait_timeout = timeout or config.startup_timeout
+    rpyc_port = port or _config.rpyc_port
+    wait_timeout = timeout or _config.startup_timeout
     start = time.time()
     check_interval = 3
 
@@ -123,13 +123,13 @@ def start_test_container() -> None:
     if is_container_running():
         if is_rpyc_service_ready():
             _logger.info(
-                "Test container %s already running", config.container_name
+                "Test container %s already running", _config.container_name
             )
             return
         # Running but not responding - restart (needs credentials)
         _logger.warning("Container running but RPyC not responding. Restarting...")
         subprocess.run(
-            ["docker", "rm", "-f", config.container_name],
+            ["docker", "rm", "-f", _config.container_name],
             capture_output=True,
             check=False,
         )
@@ -149,7 +149,7 @@ def start_test_container() -> None:
         pytest.skip(f"docker-compose.test.yaml not found at {test_compose}")
 
     # Start container with overlay
-    _logger.info("Starting test container %s...", config.container_name)
+    _logger.info("Starting test container %s...", _config.container_name)
 
     result = subprocess.run(
         [
@@ -172,24 +172,24 @@ def start_test_container() -> None:
         pytest.skip(f"Failed to start container: {result.stderr}")
 
     # Wait for RPyC service
-    _logger.info("Waiting for RPyC service on port %s...", config.rpyc_port)
+    _logger.info("Waiting for RPyC service on port %s...", _config.rpyc_port)
 
     if not wait_for_rpyc_service():
         logs = subprocess.run(
-            ["docker", "logs", config.container_name, "--tail", "50"],
+            ["docker", "logs", _config.container_name, "--tail", "50"],
             capture_output=True,
             text=True,
             check=False,
         )
         pytest.skip(
-            f"RPyC service not ready after {config.startup_timeout}s.\n"
+            f"RPyC service not ready after {_config.startup_timeout}s.\n"
             f"Logs: {logs.stdout[-500:] if logs.stdout else logs.stderr[-500:]}"
         )
 
     _logger.info(
         "Test container %s ready on port %s",
-        config.container_name,
-        config.rpyc_port,
+        _config.container_name,
+        _config.rpyc_port,
     )
 
 
@@ -216,33 +216,33 @@ requires_container = pytest.mark.usefixtures("docker_container")
 
 
 @pytest.fixture(scope="session")
-def containerconfig() -> DockerContainerConfig:
+def container_config() -> DockerContainerConfig:
     """Provide complete container configuration."""
-    return config
+    return _config
 
 
 @pytest.fixture(scope="session")
 def container_name() -> str:
     """Provide test container name."""
-    return config.container_name
+    return _config.container_name
 
 
 @pytest.fixture(scope="session")
 def rpyc_port() -> int:
     """Provide test RPyC port."""
-    return config.rpyc_port
+    return _config.rpyc_port
 
 
 @pytest.fixture(scope="session")
 def health_port() -> int:
     """Provide test health port."""
-    return config.health_port
+    return _config.health_port
 
 
 @pytest.fixture(scope="session")
 def vnc_port() -> int:
     """Provide test VNC port."""
-    return config.vnc_port
+    return _config.vnc_port
 
 
 @pytest.fixture(scope="session")
@@ -252,27 +252,27 @@ def mt5_credentials() -> dict[str, str | int]:
     Credentials must be configured in .env file.
     See .env.example for setup instructions.
     """
-    if not config.mt5_login or not config.mt5_password:
+    if not _config.mt5_login or not _config.mt5_password:
         pytest.skip(
             "MT5 credentials not configured. "
             "Copy .env.example to .env and fill in MT5_LOGIN and MT5_PASSWORD."
         )
     return {
-        "login": int(config.mt5_login),
-        "password": config.mt5_password,
-        "server": config.mt5_server,
+        "login": int(_config.mt5_login),
+        "password": _config.mt5_password,
+        "server": _config.mt5_server,
     }
 
 
 @pytest.fixture
-def rpyc_connection(docker_container: None):
+def rpyc_connection(docker_container: None):  # noqa: ARG001
     """Provide RPyC 6.x connection to test container.
 
     Uses rpyc.classic.connect() which is the modern RPyC 6.x method
     for connecting to servers running ClassicService.
     """
-    conn = rpyc.classic.connect("localhost", config.rpyc_port)
-    conn.config["sync_request_timeout"] = config.rpyc_timeout
+    conn = rpyc.classic.connect("localhost", _config.rpyc_port)
+    conn._config["sync_request_timeout"] = _config.rpyc_timeout  # noqa: SLF001
     yield conn
     conn.close()
 
