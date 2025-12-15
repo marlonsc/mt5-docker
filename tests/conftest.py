@@ -122,9 +122,7 @@ def start_test_container() -> None:
     # If already running and service ready, reuse (no credentials needed)
     if is_container_running():
         if is_rpyc_service_ready():
-            _logger.info(
-                "Test container %s already running", _config.container_name
-            )
+            _logger.info("Test container %s already running", _config.container_name)
             return
         # Running but not responding - restart (needs credentials)
         _logger.warning("Container running but RPyC not responding. Restarting...")

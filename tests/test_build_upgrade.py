@@ -28,8 +28,12 @@ class TestVersionCentralization:
     def test_env_script_has_all_versions(self) -> None:
         """Verify 00_env.sh defines all required version variables."""
         result = subprocess.run(
-            ["grep", "-E", "^export.*VERSION|^export.*SPEC",
-             "Metatrader/scripts/00_env.sh"],
+            [
+                "grep",
+                "-E",
+                "^export.*VERSION|^export.*SPEC",
+                "Metatrader/scripts/00_env.sh",
+            ],
             capture_output=True,
             text=True,
             check=False,
@@ -79,8 +83,7 @@ class TestVersionCentralization:
     def test_pyproject_references_centralized_versions(self) -> None:
         """Verify pyproject.toml comments reference 00_env.sh."""
         result = subprocess.run(
-            ["grep", "-E", "00_env.sh|RPYC_VERSION|PYDANTIC_VERSION",
-             "pyproject.toml"],
+            ["grep", "-E", "00_env.sh|RPYC_VERSION|PYDANTIC_VERSION", "pyproject.toml"],
             capture_output=True,
             text=True,
             check=False,
@@ -94,15 +97,21 @@ class TestVersionCentralization:
 class TestUpgradeScenarios:
     """Test upgrade scenarios with existing volumes."""
 
-    def test_python_packages_at_required_versions(
-        self, container_name: str
-    ) -> None:
+    def test_python_packages_at_required_versions(self, container_name: str) -> None:
         """Verify all Python packages are at required versions after startup."""
         # Check RPyC version
         result = subprocess.run(
-            ["docker", "exec", "-u", "abc", container_name,
-             "wine", "python", "-c",
-             "import rpyc; print(rpyc.__version__)"],
+            [
+                "docker",
+                "exec",
+                "-u",
+                "abc",
+                container_name,
+                "wine",
+                "python",
+                "-c",
+                "import rpyc; print(rpyc.__version__)",
+            ],
             capture_output=True,
             text=True,
             check=False,
@@ -114,9 +123,17 @@ class TestUpgradeScenarios:
 
         # Check Pydantic version
         result = subprocess.run(
-            ["docker", "exec", "-u", "abc", container_name,
-             "wine", "python", "-c",
-             "import pydantic; print(pydantic.__version__)"],
+            [
+                "docker",
+                "exec",
+                "-u",
+                "abc",
+                container_name,
+                "wine",
+                "python",
+                "-c",
+                "import pydantic; print(pydantic.__version__)",
+            ],
             capture_output=True,
             text=True,
             check=False,
@@ -128,9 +145,17 @@ class TestUpgradeScenarios:
 
         # Check plumbum version
         result = subprocess.run(
-            ["docker", "exec", "-u", "abc", container_name,
-             "wine", "python", "-c",
-             "import plumbum; print(plumbum.__version__)"],
+            [
+                "docker",
+                "exec",
+                "-u",
+                "abc",
+                container_name,
+                "wine",
+                "python",
+                "-c",
+                "import plumbum; print(plumbum.__version__)",
+            ],
             capture_output=True,
             text=True,
             check=False,
@@ -149,9 +174,14 @@ class TestUpgradeScenarios:
         Wine Python has MetaTrader5 (the Windows API wrapper).
         """
         result = subprocess.run(
-            ["docker", "exec", container_name,
-             "python3", "-c",
-             "import mt5linux; print(mt5linux.__file__)"],
+            [
+                "docker",
+                "exec",
+                container_name,
+                "python3",
+                "-c",
+                "import mt5linux; print(mt5linux.__file__)",
+            ],
             capture_output=True,
             text=True,
             check=False,
@@ -159,21 +189,25 @@ class TestUpgradeScenarios:
         assert result.returncode == 0, f"mt5linux check failed: {result.stderr}"
         assert "mt5linux" in result.stdout
 
-    def test_metatrader5_at_required_version(
-        self, container_name: str
-    ) -> None:
+    def test_metatrader5_at_required_version(self, container_name: str) -> None:
         """Verify MetaTrader5 package is at required version."""
         result = subprocess.run(
-            ["docker", "exec", "-u", "abc", container_name,
-             "wine", "python", "-c",
-             "import MetaTrader5; print(MetaTrader5.__version__)"],
+            [
+                "docker",
+                "exec",
+                "-u",
+                "abc",
+                container_name,
+                "wine",
+                "python",
+                "-c",
+                "import MetaTrader5; print(MetaTrader5.__version__)",
+            ],
             capture_output=True,
             text=True,
             check=False,
         )
-        assert result.returncode == 0, (
-            f"MetaTrader5 check failed: {result.stderr}"
-        )
+        assert result.returncode == 0, f"MetaTrader5 check failed: {result.stderr}"
         # Should be 5.0.x
         assert result.stdout.strip().startswith("5.0"), (
             f"MetaTrader5 should be 5.0.x, got {result.stdout.strip()}"
@@ -184,9 +218,7 @@ class TestUpgradeScenarios:
 class TestStartupUpgradeLogic:
     """Test that startup scripts perform upgrades correctly."""
 
-    def test_startup_script_exists_and_executable(
-        self, container_name: str
-    ) -> None:
+    def test_startup_script_exists_and_executable(self, container_name: str) -> None:
         """Verify startup scripts exist and are executable."""
         scripts = [
             "/Metatrader/scripts/00_env.sh",
@@ -206,8 +238,7 @@ class TestStartupUpgradeLogic:
     def test_versions_file_created(self, container_name: str) -> None:
         """Verify .versions file is created with all version info."""
         result = subprocess.run(
-            ["docker", "exec", container_name, "cat",
-             "/opt/mt5-staging/.versions"],
+            ["docker", "exec", container_name, "cat", "/opt/mt5-staging/.versions"],
             capture_output=True,
             text=True,
             check=False,
@@ -222,9 +253,7 @@ class TestStartupUpgradeLogic:
         ]
 
         for version in required_versions:
-            assert version in result.stdout, (
-                f".versions missing: {version}"
-            )
+            assert version in result.stdout, f".versions missing: {version}"
 
 
 class TestCleanBuildRequirements:
@@ -244,16 +273,20 @@ class TestCleanBuildRequirements:
     def test_compose_files_valid(self) -> None:
         """Verify docker-compose files are valid."""
         result = subprocess.run(
-            ["docker", "compose", "-f", "docker-compose.yaml",
-             "-f", "tests/fixtures/docker-compose.test.yaml",
-             "config"],
+            [
+                "docker",
+                "compose",
+                "-f",
+                "docker-compose.yaml",
+                "-f",
+                "tests/fixtures/docker-compose.test.yaml",
+                "config",
+            ],
             capture_output=True,
             text=True,
             check=False,
         )
-        assert result.returncode == 0, (
-            f"Compose config invalid: {result.stderr}"
-        )
+        assert result.returncode == 0, f"Compose config invalid: {result.stderr}"
 
     def test_scripts_have_no_syntax_errors(self) -> None:
         """Verify shell scripts have no syntax errors."""
@@ -271,23 +304,24 @@ class TestCleanBuildRequirements:
                 text=True,
                 check=False,
             )
-            assert result.returncode == 0, (
-                f"Syntax error in {script}: {result.stderr}"
-            )
+            assert result.returncode == 0, f"Syntax error in {script}: {result.stderr}"
 
 
 @requires_container
 class TestWinetricksSilentMode:
     """Test that winetricks runs in silent mode."""
 
-    def test_winetricks_unattended_env_set(
-        self, container_name: str
-    ) -> None:
+    def test_winetricks_unattended_env_set(self, container_name: str) -> None:
         """Verify WINETRICKS_UNATTENDED is used in script."""
         result = subprocess.run(
-            ["docker", "exec", container_name, "grep",
-             "WINETRICKS_UNATTENDED",
-             "/Metatrader/scripts/20_winetricks.sh"],
+            [
+                "docker",
+                "exec",
+                container_name,
+                "grep",
+                "WINETRICKS_UNATTENDED",
+                "/Metatrader/scripts/20_winetricks.sh",
+            ],
             capture_output=True,
             text=True,
             check=False,
@@ -299,9 +333,14 @@ class TestWinetricksSilentMode:
     def test_winetricks_quiet_flags(self, container_name: str) -> None:
         """Verify winetricks uses -q -f flags for silent operation."""
         result = subprocess.run(
-            ["docker", "exec", container_name, "grep",
-             "winetricks -q -f",
-             "/Metatrader/scripts/20_winetricks.sh"],
+            [
+                "docker",
+                "exec",
+                container_name,
+                "grep",
+                "winetricks -q -f",
+                "/Metatrader/scripts/20_winetricks.sh",
+            ],
             capture_output=True,
             text=True,
             check=False,
