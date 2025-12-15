@@ -103,7 +103,7 @@ RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
     python3 -m pip install --break-system-packages \
         "numpy>=2.1.0" "rpyc==6.0.2" "plumbum>=1.8.0" "pyparsing>=3.0.0" \
         "pydantic>=2.0,<3.0" "pydantic-settings>=2.0,<3.0" pyxdg && \
-    python3 -m pip install --break-system-packages \
+    python3 -m pip install --break-system-packages --ignore-requires-python \
         "git+https://github.com/marlonsc/mt5linux.git@master"
 
 # ============================================================
