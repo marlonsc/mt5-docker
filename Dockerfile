@@ -18,7 +18,7 @@ ARG PLUMBUM_VERSION=1.8.0
 # NumPy 1.26.4: Wine compatible (2.x uses ucrtbase functions Wine hasn't implemented)
 ARG NUMPY_VERSION=1.26.4
 
-# Feature flags
+# Feature flags - non-free components installed at runtime for MT5
 ARG ENABLE_WINETRICKS_NONFREE=0
 
 # ============================================================

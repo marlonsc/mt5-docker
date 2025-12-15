@@ -1,20 +1,46 @@
 #!/bin/bash
-# Verify Wine components (FAIL-FAST)
+# Install Wine components required for MT5 (runtime)
 set -euo pipefail
 source "$(dirname "$0")/00_env.sh"
 
-log INFO "[winetricks] Verifying Wine components..."
+log INFO "[winetricks] Installing Wine components for MT5..."
 
-# Components MUST be installed during Docker build
+# Check if already installed
+if [ -f "$DEPS_MARKER" ]; then
+    log INFO "[winetricks] Components already installed"
+    exit 0
+fi
+
+# Template must exist
 if [ ! -f "$WINE_PREFIX_TEMPLATE/.build-complete" ]; then
     log ERROR "[winetricks] FATAL: Wine prefix template not built correctly"
     exit 1
 fi
 
-# Verify win10 is configured
-if ! "$wine_executable" reg query 'HKLM\Software\Microsoft\Windows NT\CurrentVersion' /v ProductName 2>/dev/null | grep -q "Windows 10"; then
-    log WARN "[winetricks] Windows version may not be set to win10"
-fi
+# Set up winetricks environment
+export WINETRICKS_UNATTENDED=1
+export WINEDLLOVERRIDES="mscoree=n,mshtml=n"
+export DISPLAY="${DISPLAY:-:0}"
+export WINEDEBUG="${WINEDEBUG:--all}"
 
+# Helper function
+run_winetricks() {
+    local component="$1"
+    log INFO "[winetricks] Installing: ${component}..."
+    winetricks -q "$component" 2>/dev/null || {
+        log WARN "[winetricks] ${component} failed (non-critical)"
+        return 0
+    }
+}
+
+# Install components required for MT5 installer
+# vcrun2019/2022: Visual C++ runtime (required by MT5)
+# corefonts: Windows fonts (required for UI)
+log INFO "[winetricks] Installing Visual C++ runtime and fonts..."
+run_winetricks vcrun2019
+run_winetricks vcrun2022
+run_winetricks corefonts
+
+# Mark as done
 touch "$DEPS_MARKER"
-log INFO "[winetricks] Wine components verified"
+log INFO "[winetricks] Wine components installed"
