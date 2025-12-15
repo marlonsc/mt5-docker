@@ -26,6 +26,28 @@ if [ -z "${mt5server_port:-}" ]; then
     exit 1
 fi
 
+# Wait for startup scripts to complete (especially Python installation)
+# The startup scripts create this marker when all initialization is done
+STARTUP_MARKER="${WINEPREFIX:-/config/.wine}/.startup-complete"
+MAX_WAIT=600  # 10 minutes max (MT5 install + Python install can be slow)
+WAITED=0
+
+echo "[svc-mt5server] Waiting for startup scripts to complete..."
+while [ ! -f "$STARTUP_MARKER" ] && [ $WAITED -lt $MAX_WAIT ]; do
+    sleep 10
+    WAITED=$((WAITED + 10))
+    if [ $((WAITED % 60)) -eq 0 ]; then
+        echo "[svc-mt5server] Still waiting for startup... (${WAITED}s/${MAX_WAIT}s)"
+    fi
+done
+
+if [ ! -f "$STARTUP_MARKER" ]; then
+    echo "[svc-mt5server] ERROR: Startup did not complete within ${MAX_WAIT}s"
+    echo "[svc-mt5server] Check logs for startup script errors"
+    exit 1
+fi
+echo "[svc-mt5server] Startup complete, starting RPyC server..."
+
 # Ensure server directory exists
 mkdir -p /tmp/mt5linux
 
