@@ -26,30 +26,47 @@ if [ -z "${mt5server_port:-}" ]; then
     exit 1
 fi
 
-# Wait for startup scripts to complete (especially Python installation)
-# The startup scripts create this marker when all initialization is done
+# Check if Wine prefix was built during Docker build (fast path)
+BUILD_MARKER="${WINEPREFIX:-/config/.wine}/.build-complete"
 STARTUP_MARKER="${WINEPREFIX:-/config/.wine}/.startup-complete"
-MAX_WAIT=600  # 10 minutes max (MT5 install + Python install can be slow)
-WAITED=0
 
-echo "[svc-mt5server] Waiting for startup scripts to complete..."
-while [ ! -f "$STARTUP_MARKER" ] && [ $WAITED -lt $MAX_WAIT ]; do
-    sleep 10
-    WAITED=$((WAITED + 10))
-    if [ $((WAITED % 60)) -eq 0 ]; then
-        echo "[svc-mt5server] Still waiting for startup... (${WAITED}s/${MAX_WAIT}s)"
+if [ -f "$BUILD_MARKER" ]; then
+    echo "[svc-mt5server] Wine prefix pre-built during Docker build"
+    # Quick verification that Python works
+    if ! ${wine_executable} python --version 2>/dev/null; then
+        echo "[svc-mt5server] ERROR: Wine Python not working despite build marker"
+        exit 1
     fi
-done
+    echo "[svc-mt5server] Wine Python verified, starting RPyC server..."
+else
+    # Fallback: Wait for startup scripts to complete
+    MAX_WAIT=600
+    WAITED=0
+    echo "[svc-mt5server] No build marker - waiting for startup scripts..."
+    while [ ! -f "$STARTUP_MARKER" ] && [ $WAITED -lt $MAX_WAIT ]; do
+        sleep 10
+        WAITED=$((WAITED + 10))
+        if [ $((WAITED % 60)) -eq 0 ]; then
+            echo "[svc-mt5server] Still waiting for startup... (${WAITED}s/${MAX_WAIT}s)"
+        fi
+    done
 
-if [ ! -f "$STARTUP_MARKER" ]; then
-    echo "[svc-mt5server] ERROR: Startup did not complete within ${MAX_WAIT}s"
-    echo "[svc-mt5server] Check logs for startup script errors"
-    exit 1
+    if [ ! -f "$STARTUP_MARKER" ]; then
+        echo "[svc-mt5server] ERROR: Startup did not complete within ${MAX_WAIT}s"
+        exit 1
+    fi
+    echo "[svc-mt5server] Startup complete, starting RPyC server..."
 fi
-echo "[svc-mt5server] Startup complete, starting RPyC server..."
 
 # Ensure server directory exists
 mkdir -p /tmp/mt5linux
+
+# Ensure all required directories have correct ownership (run as root before switching to abc user)
+echo "[svc-mt5server] Ensuring directory permissions..."
+if [ -d "/config" ]; then
+    chown -R abc:abc "/config" 2>/dev/null || echo "[svc-mt5server] Warning: Failed to chown /config"
+fi
+echo "[svc-mt5server] Directory permissions set"
 
 # Generate the RPyC server script with modern MT5Service (NO SlaveService/ClassicService)
 python3 << 'PYTHON_EOF'

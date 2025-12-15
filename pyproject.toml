@@ -57,6 +57,7 @@ ignore = [
     "S607",    # partial path ok in tests
     "PLR2004", # magic values ok in tests
     "ANN",     # annotations optional in tests
+    "SLF001",  # private member access ok for rpyc internals
 ]
 
 [tool.mypy]
@@ -64,3 +65,6 @@ python_version = "3.13"
 warn_return_any = true
 warn_unused_configs = true
 ignore_missing_imports = true  # rpyc and numpy lack type stubs
+[[tool.mypy.overrides]]
+module = "tests.*"
+ignore_errors = true  # pytest fixtures and test-specific imports

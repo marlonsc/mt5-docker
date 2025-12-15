@@ -7,18 +7,13 @@ services:
         # Pin versions for reproducibility (update in versions.env)
         PYTHON_VERSION: "3.13.11"
         GECKO_VERSION: "2.47.4"
-        MT5_PYPI_VERSION: "5.0.5430"
+        # MT5 pip package installed at runtime (always latest)
         BUILD_DATE: "${BUILD_DATE:-}"
         VERSION: "${VERSION:-local}"
     image: marlonsc/mt5-docker:local
     container_name: ${MT5_CONTAINER_NAME:-mt5}
     volumes:
       - config_data:/config:uid=911,gid=911
-      - downloads:/downloads:uid=911,gid=911
-      # External cache volume - survives docker system prune
-      - mt5_cache:/cache:uid=911,gid=911
-      # Mount data directory for EA files and settings
-      - ./data:/data:ro
     ports:
       - "${MT5_VNC_PORT:-3000}:3000"    # KasmVNC web interface
       - "${MT5_RPYC_PORT:-8001}:8001"   # RPyC server for mt5linux
@@ -33,9 +28,8 @@ services:
       # Core settings
       - ENABLE_WIN_DOTNET=1       # Enable .NET Framework for EAs
       - TZ=UTC                    # Container timezone
-      # Cache configuration
+      # Staging configuration
       - STAGING_DIR=/opt/mt5-staging
-      - CACHE_DIR=/cache
       # MT5 Auto-login credentials (from .env file)
       - MT5_LOGIN=${MT5_LOGIN:-}
       - MT5_PASSWORD=${MT5_PASSWORD:-}
@@ -93,30 +87,4 @@ volumes:
   config_data:
     driver: local
     labels:
-      description: "MT5 configuration and Wine prefix"
-
-  downloads:
-    driver: local
-    labels:
-      description: "Persistent downloads for debugging"
-
-  # Cache volume with explicit name - survives docker system prune
-  # Only removed with: docker volume rm mt5_cache
-  # Or: docker system prune --volumes
-  mt5_cache:
-    driver: local
-    name: mt5_cache
-    labels:
-      description: "Persistent cache for MT5 installers (survives prune)"
-      prune.protect: "true"
-      managed.by: "mt5docker"
-
-# Build with: DOCKER_BUILDKIT=1 docker compose build
-# Or set in daemon.json: { "features": { "buildkit": true } }
-#
-# Usage notes:
-# - Volume 'config_data' stores MT5 configuration and Wine environment
-# - Volume 'downloads' persists all installer and download files for debugging
-# - Volume 'mt5_cache' survives docker system prune (explicit name)
-# - Use .env file to set CUSTOM_USER and PASSWORD for web interface
-# by <marlonsc@gmail.com>
+      description: "MT5 data: Wine prefix, terminal settings, EAs, indicators, history"

@@ -1,0 +1,15 @@
+#!/bin/bash
+# Directory initialization - runs as root during container startup
+# Creates required directories and sets initial ownership
+
+set -e
+
+echo "[init] Initializing directories..."
+
+# Create essential directories
+mkdir -p "/config" 2>/dev/null || echo "[init] /config already exists"
+
+# Set initial ownership (will be verified by service later)
+chown -R abc:abc "/config" 2>/dev/null || echo "[init] Warning: Failed to chown /config"
+
+echo "[init] Directory initialization complete"

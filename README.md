@@ -1,6 +1,8 @@
 # MetaTrader5 Docker Image (Fork)
 
-This is a fork of the original project by [gmag11](https://github.com/gmag11/MetaTrader5-Docker-Image). It provides a Docker image for running MetaTrader5 with remote access via VNC, based on the [KasmVNC](https://github.com/kasmtech/KasmVNC) project and [KasmVNC Base Image from LinuxServer](https://github.com/linuxserver/docker-baseimage-kasmvnc).
+This is a fork of the original project by [gmag11](https://github.com/gmag11/MetaTrader5-Docker-Image).
+It provides a Docker image for running MetaTrader5 with remote access via VNC, based on the
+[KasmVNC](https://github.com/kasmtech/KasmVNC) project and [KasmVNC Base Image from LinuxServer](https://github.com/linuxserver/docker-baseimage-kasmvnc).
 
 Changes in this fork:
 
@@ -28,11 +30,12 @@ Changes in this fork:
 ----------
 
 **NOTICE:**
-Due to some compatibility issued, version 2 has switched its base from Alpine to Debian Linux. This and adding Python environment makes that container size is considerably bigger from about 600 MB to 4 GB.
+Due to some compatibility issued, version 2 has switched its base from Alpine to Debian Linux.
+This and adding Python environment makes that container size is considerably bigger from about 600 MB to 4 GB.
 
-If you just need to run Metatrader for running your MQL5 programs without any Python programming I recommend to go on using version 1.0. MetaTrader program is updated independently from image so you will always have latest MT5 version.
-
------------
+If you just need to run Metatrader for running your MQL5 programs without any Python programming
+I recommend to go on using version 1.0. MetaTrader program is updated independently from image so you will
+always have latest MT5 version.
 
 ## Requirements
 
@@ -134,7 +137,7 @@ docker compose up -d
 In some systems `docker compose` command does not exists. Try to use `docker-compose up -d` instead.
 
 4. Connect to web interface
-   Start your browser pointing http://<your ip address>:3000
+   Start your browser pointing http://&lt;your ip address&gt;:3000
 
 On first run it may take a few minutes to install MT5, Wine dependencies, and optionally .NET Framework and should take aprox 5 minutes. The process is automatic and you should end up with MetaTrader5 running in your web session.
 
@@ -142,7 +145,7 @@ On first run it may take a few minutes to install MT5, Wine dependencies, and op
 
 In the case you want to run your own MQL5 bots inside the container you can find MQL5 folder structure in
 
-```
+```text
 config/.wine/drive_c/Program Files/MetaTrader 5/MQL5
 ```
 
@@ -183,7 +186,7 @@ print(mt5.version())
 
 **Expected output:**
 
-```
+```python
 >>> from mt5linux import MetaTrader5
 >>> mt5 = MetaTrader5(host='192.168.1.10', port=8001)
 >>> mt5.initialize()

@@ -17,7 +17,7 @@ import subprocess
 
 import rpyc
 
-from tests.conftest import requires_container
+from tests.conftest import requires_container  # type: ignore[import]
 
 
 class TestConfiguration:

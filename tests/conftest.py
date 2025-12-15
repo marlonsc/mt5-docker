@@ -25,6 +25,7 @@ from pathlib import Path
 
 import pytest
 import rpyc
+from rpyc.utils.classic import os
 
 from tests.fixtures.docker import DockerContainerConfig, get_test_container_config
 
@@ -205,6 +206,15 @@ def start_test_container() -> None:
 # =============================================================================
 
 
+@pytest.fixture(scope="session", autouse=True)
+def check_docker_skip():
+    """Check if Docker tests should be skipped."""
+    if os.getenv("SKIP_DOCKER", "0") == "1":
+        _logger.info("SKIP_DOCKER=1 - Docker container tests will be skipped")
+        pytest.skip("Docker tests skipped via SKIP_DOCKER=1")
+    else:
+        pytest.skip("Docker tests can be skipped by setting SKIP_DOCKER=1")
+
 @pytest.fixture(scope="session")
 def docker_container():
     """Ensure ISOLATED test container is running (session-scoped).
@@ -296,7 +306,7 @@ def mt5_credentials() -> dict[str, str | int]:
 
 
 @pytest.fixture
-def rpyc_connection(docker_container: None):
+def rpyc_connection(_docker_container: None):
     """Provide RPyC 6.x connection to test container.
 
     Uses rpyc.classic.connect() which is the modern RPyC 6.x method

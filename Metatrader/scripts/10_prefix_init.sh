@@ -1,104 +1,31 @@
 #!/bin/bash
+# Initialize Wine prefix from template (FAIL-FAST)
 set -euo pipefail
 source "$(dirname "$0")/00_env.sh"
 
-log INFO "[wine] Initializing Wine prefix (WINEPREFIX=$WINEPREFIX)"
+log INFO "[wine] Initializing Wine prefix..."
 
-# Create all required cache directories upfront with proper ownership
-log INFO "[wine] Creating cache directories..."
-
-# Ensure base cache directory exists and is owned by abc user (PUID/PGID)
-BASE_CACHE_DIR="/config/.cache"
-if ! mkdir -p "$BASE_CACHE_DIR"; then
-    log ERROR "[wine] Failed to create base cache dir: $BASE_CACHE_DIR"
+# Template MUST exist
+if [ ! -f "$WINE_PREFIX_TEMPLATE/.build-complete" ]; then
+    log ERROR "[wine] FATAL: Wine prefix template not found"
     exit 1
 fi
 
-# Set ownership to abc user (911:911) so the service can write to it
-# The service runs as abc user via s6-setuidgid
-if ! chown -R abc:abc "$BASE_CACHE_DIR" 2>/dev/null; then
-    log WARN "[wine] Failed to chown cache dir, continuing anyway"
-fi
-
-# Wine prefix cache (for Gecko MSIs, etc) - inside Wine prefix, owned by abc
-if ! mkdir -p "$PREFIX_CACHE_DIR" 2>/dev/null; then
-    log WARN "[wine] Failed to create Wine cache dir: $PREFIX_CACHE_DIR"
-    # Non-fatal - Gecko can be downloaded directly
-fi
-
-# Winetricks cache (for vcrun, dotnet, etc)
-# Must succeed - permissions should be correct on /config volume
-WINETRICKS_CACHE_DIR="$BASE_CACHE_DIR/winetricks"
-if ! mkdir -p "$WINETRICKS_CACHE_DIR"; then
-    log ERROR "[wine] Failed to create winetricks cache: $WINETRICKS_CACHE_DIR"
-    log ERROR "[wine] Check /config volume ownership/permissions (should be PUID:PGID)"
-    exit 1
-fi
-
-# Ensure winetricks cache is also owned by abc user
-if ! chown -R abc:abc "$WINETRICKS_CACHE_DIR" 2>/dev/null; then
-    log WARN "[wine] Failed to chown winetricks cache dir, continuing anyway"
-fi
-
-export XDG_CACHE_HOME="$BASE_CACHE_DIR"
-log INFO "[wine] Using winetricks cache: $WINETRICKS_CACHE_DIR"
-
-# Check if Wine prefix is already fully initialized
-# Force re-initialization if markers are missing or if we're doing a clean rebuild
-if [ -f "$INIT_MARKER" ] && [ -f "$DEPS_MARKER" ] && [ ! -f "/tmp/force_wine_reinit" ]; then
-    log INFO "[wine] Prefix already initialized; skipping wineboot"
+# Copy template to /config/.wine if not initialized
+if [ ! -f "$WINEPREFIX/.build-complete" ]; then
+    log INFO "[wine] Copying template to $WINEPREFIX..."
+    mkdir -p "$WINEPREFIX"
+    cp -a "$WINE_PREFIX_TEMPLATE/." "$WINEPREFIX/"
+    log INFO "[wine] Wine prefix initialized"
 else
-    log INFO "[wine] Initializing Wine prefix (forced or first run)..."
-    if ! "$wine_executable" wineboot -i; then
-        log ERROR "[wine] wineboot -i failed"
-        exit 1
-    fi
+    log INFO "[wine] Wine prefix already initialized"
 fi
 
-# Gecko MSI filenames (based on version)
-GECKO_X64_FILE="wine-gecko-${GECKO_VERSION}-x86_64.msi"
-GECKO_X86_FILE="wine-gecko-${GECKO_VERSION}-x86.msi"
-GECKO_X64="$PREFIX_CACHE_DIR/$GECKO_X64_FILE"
-GECKO_X86="$PREFIX_CACHE_DIR/$GECKO_X86_FILE"
-
-# Get Gecko files using prioritized cache
-if [ ! -f "$GECKO_X64" ]; then
-    get_file "$GECKO_X64_FILE" \
-        "https://dl.winehq.org/wine/wine-gecko/${GECKO_VERSION}/$GECKO_X64_FILE" \
-        "$GECKO_X64"
-fi
-
-if [ ! -f "$GECKO_X86" ]; then
-    get_file "$GECKO_X86_FILE" \
-        "https://dl.winehq.org/wine/wine-gecko/${GECKO_VERSION}/$GECKO_X86_FILE" \
-        "$GECKO_X86"
-fi
-
-# Install Gecko if not already done
-if [ ! -f "$GECKO_MARKER" ]; then
-    if [ -f "$GECKO_X64" ]; then
-        log INFO "[wine] Installing Gecko x64 into prefix"
-        if ! "$wine_executable" msiexec /i "$GECKO_X64" /quiet; then
-            log ERROR "[wine] Gecko x64 install failed"
-            exit 1
-        fi
-    fi
-    if [ -f "$GECKO_X86" ]; then
-        log INFO "[wine] Installing Gecko x86 into prefix"
-        if ! "$wine_executable" msiexec /i "$GECKO_X86" /quiet; then
-            log ERROR "[wine] Gecko x86 install failed"
-            exit 1
-        fi
-    fi
-    touch "$GECKO_MARKER"
-else
-    log INFO "[wine] Gecko already installed; skipping"
-fi
-
-# Update the Wine prefix after installs (always run to ensure proper setup)
-log INFO "[wine] Updating Wine prefix..."
-if ! "$wine_executable" wineboot -u; then
-    log ERROR "[wine] wineboot -u failed"
+# Wine Python MUST exist
+if [ ! -f "$WINE_PYTHON_PATH" ]; then
+    log ERROR "[wine] FATAL: Wine Python not found at $WINE_PYTHON_PATH"
     exit 1
 fi
+
 touch "$INIT_MARKER"
+log INFO "[wine] Ready"

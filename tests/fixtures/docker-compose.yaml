@@ -51,9 +51,7 @@ services:
       - "${MT5_HEALTH_PORT:-48002}:8002"  # Health (isolated from prod:8002, neptor:18002, mt5linux:28002)
     volumes:
       - config_data_mt5docker_test:/config:uid=911,gid=911
-      - downloads_mt5docker_test:/downloads:uid=911,gid=911
       - mt5_cache:/cache:uid=911,gid=911
-      - ../../data:/data:ro
     environment:
       # MT5 test credentials - OPTIONAL: configure in .env file for full tests
       # Without credentials, container starts but MT5 login tests are skipped
