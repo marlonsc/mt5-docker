@@ -18,7 +18,7 @@ ARG RPYC_VERSION=6.0.2
 ARG PYDANTIC_MIN_VERSION=2.0.0
 ARG PYDANTIC_MAX_VERSION=3.0.0
 ARG PLUMBUM_MIN_VERSION=1.8.0
-ARG NUMPY_MAX_VERSION=2
+ARG NUMPY_MIN_VERSION=2.1
 
 # ============================================================
 # Stage 1: DOWNLOADER - Pre-download large files
@@ -73,7 +73,7 @@ RUN --mount=type=cache,target=/downloads,id=mt5-downloads,sharing=locked \
     echo "RPYC_VERSION=${RPYC_VERSION}" >> /staging/.versions && \
     echo "PYDANTIC_VERSION=${PYDANTIC_MIN_VERSION}" >> /staging/.versions && \
     echo "PLUMBUM_VERSION=${PLUMBUM_MIN_VERSION}" >> /staging/.versions && \
-    echo "NUMPY_VERSION=1.26" >> /staging/.versions && \
+    echo "NUMPY_VERSION=2.1" >> /staging/.versions && \
     echo "BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> /staging/.versions && \
     ls -la /staging/
 
@@ -141,16 +141,16 @@ LABEL org.opencontainers.image.title="MetaTrader5 Docker (fork)"
 LABEL org.opencontainers.image.description="Fork of MetaTrader5 Docker image with optimized build caching"
 LABEL org.opencontainers.image.version="${VERSION}"
 LABEL org.opencontainers.image.created="${BUILD_DATE}"
-LABEL org.opencontainers.image.authors="glendekoning"
-LABEL org.opencontainers.image.url="https://github.com/glendekoning/mt5-docker"
-LABEL org.opencontainers.image.source="https://github.com/glendekoning/mt5-docker"
+LABEL org.opencontainers.image.authors="marlonsc"
+LABEL org.opencontainers.image.url="https://github.com/marlonsc/mt5-docker"
+LABEL org.opencontainers.image.source="https://github.com/marlonsc/mt5-docker"
 LABEL org.opencontainers.image.licenses="MIT"
 LABEL org.opencontainers.image.ref.name="mt5-docker"
-LABEL org.opencontainers.image.vendor="glendekoning"
+LABEL org.opencontainers.image.vendor="marlonsc"
 LABEL org.opencontainers.image.base.name="ghcr.io/linuxserver/baseimage-kasmvnc:debianbookworm"
 LABEL org.opencontainers.image.revision="forked from gmag11/MetaTrader5-Docker-Image"
 LABEL build_version="Metatrader Docker:- ${VERSION} Build-date:- ${BUILD_DATE}"
-LABEL maintainer="glendekoning"
+LABEL maintainer="marlonsc"
 LABEL mt5.python.version="${PYTHON_VERSION}"
 LABEL mt5.gecko.version="${GECKO_VERSION}"
 LABEL mt5.pypi.version="${MT5_PYPI_VERSION}"

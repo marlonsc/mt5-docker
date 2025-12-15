@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.conftest import requires_container
+from tests.markers import requires_container
 
 # Mark all tests in this module as slow
 pytestmark = pytest.mark.slow
@@ -143,10 +143,14 @@ class TestUpgradeScenarios:
         assert int(minor) >= 8, f"plumbum minor should be >= 8, got {version}"
 
     def test_mt5linux_from_github_main(self, container_name: str) -> None:
-        """Verify mt5linux is installed from GitHub main branch."""
+        """Verify mt5linux is installed in Linux Python from GitHub main branch.
+
+        Note: mt5linux is installed in Linux Python, not Wine Python.
+        Wine Python has MetaTrader5 (the Windows API wrapper).
+        """
         result = subprocess.run(
-            ["docker", "exec", "-u", "abc", container_name,
-             "wine", "python", "-c",
+            ["docker", "exec", container_name,
+             "python3", "-c",
              "import mt5linux; print(mt5linux.__file__)"],
             capture_output=True,
             text=True,

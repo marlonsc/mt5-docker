@@ -42,10 +42,10 @@ fi
 echo ""
 
 # Check Python 3.12.x versions
-echo "Python 3.12:"
+echo "Python 3.13:"
 echo "  Current: $CURRENT_PYTHON"
 LATEST_PYTHON=$(curl -s "https://www.python.org/ftp/python/" 2>/dev/null | \
-    grep -oP '3\.12\.\d+' | sort -V | tail -1 || echo "error")
+    grep -oP '3\.13\.\d+' | sort -V | tail -1 || echo "error")
 echo "  Latest:  $LATEST_PYTHON"
 if [ "$LATEST_PYTHON" != "$CURRENT_PYTHON" ] && [ "$LATEST_PYTHON" != "error" ] && [ -n "$LATEST_PYTHON" ]; then
     echo "  [UPDATE AVAILABLE]"

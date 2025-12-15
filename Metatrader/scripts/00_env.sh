@@ -37,18 +37,19 @@ export MT5_PYPI_VERSION="${MT5_PYPI_VERSION:-5.0.5430}"
 export RPYC_VERSION="${RPYC_VERSION:-6.0.2}"
 export PYDANTIC_VERSION="${PYDANTIC_VERSION:-2.12}"
 export PLUMBUM_VERSION="${PLUMBUM_VERSION:-1.8.0}"
-export NUMPY_VERSION="${NUMPY_VERSION:-1.26}"
+export NUMPY_VERSION="${NUMPY_VERSION:-2.1}"
 
-# mt5linux - always use main branch from GitHub
-export MT5LINUX_REPO="${MT5LINUX_REPO:-https://github.com/marlonsc/mt5linux.git}"
+# mt5linux - always use main branch from GitHub (via tarball, not git+)
+export MT5LINUX_REPO="${MT5LINUX_REPO:-https://github.com/marlonsc/mt5linux}"
 export MT5LINUX_BRANCH="${MT5LINUX_BRANCH:-master}"
 
 # pip install specifiers (derived from versions above)
 export RPYC_SPEC="rpyc==${RPYC_VERSION}"
 export PYDANTIC_SPEC="pydantic>=${PYDANTIC_VERSION},<3.0.0"
 export PLUMBUM_SPEC="plumbum>=${PLUMBUM_VERSION}"
-export NUMPY_SPEC="numpy>=${NUMPY_VERSION},<2"
-export MT5LINUX_SPEC="git+${MT5LINUX_REPO}@${MT5LINUX_BRANCH}"
+export NUMPY_SPEC="numpy>=${NUMPY_VERSION}"
+# Use tarball URL (works without git installed in Wine)
+export MT5LINUX_SPEC="${MT5LINUX_REPO}/archive/refs/heads/${MT5LINUX_BRANCH}.tar.gz"
 
 # Construct URLs from versions
 export python_url="https://www.python.org/ftp/python/${PYTHON_VERSION}/python-${PYTHON_VERSION}-amd64.exe"

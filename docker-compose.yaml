@@ -5,12 +5,12 @@ services:
       dockerfile: Dockerfile
       args:
         # Pin versions for reproducibility (update in versions.env)
-        PYTHON_VERSION: "3.12.8"
+        PYTHON_VERSION: "3.13.11"
         GECKO_VERSION: "2.47.4"
         MT5_PYPI_VERSION: "5.0.5430"
         BUILD_DATE: "${BUILD_DATE:-}"
         VERSION: "${VERSION:-local}"
-    image: glendekoning/mt5-docker:local
+    image: marlonsc/mt5-docker:local
     container_name: ${MT5_CONTAINER_NAME:-mt5}
     volumes:
       - config_data:/config:uid=911,gid=911
@@ -27,8 +27,8 @@ services:
       - .env
     labels:
       org.opencontainers.image.title: "MetaTrader5 Docker (fork)"
-      org.opencontainers.image.vendor: "glendekoning"
-      org.opencontainers.image.source: "https://github.com/glendekoning/mt5-docker"
+      org.opencontainers.image.vendor: "marlonsc"
+      org.opencontainers.image.source: "https://github.com/marlonsc/mt5-docker"
     environment:
       # Core settings
       - ENABLE_WIN_DOTNET=1       # Enable .NET Framework for EAs

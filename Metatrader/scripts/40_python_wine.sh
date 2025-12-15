@@ -95,13 +95,6 @@ if ! "$wine_executable" python -m pip install --no-cache-dir --upgrade --quiet "
     exit 1
 fi
 
-# mt5linux - ALWAYS pull from main branch (force reinstall)
-log INFO "[python-wine] Upgrading mt5linux from ${MT5LINUX_REPO}@${MT5LINUX_BRANCH}..."
-if ! "$wine_executable" python -m pip install --no-cache-dir --upgrade --force-reinstall --no-deps --quiet "${MT5LINUX_SPEC}"; then
-    log ERROR "[python-wine] mt5linux upgrade failed"
-    exit 1
-fi
-
 # RPyC - required for async compatibility
 log INFO "[python-wine] Upgrading ${RPYC_SPEC}..."
 if ! "$wine_executable" python -m pip install --no-cache-dir --upgrade --quiet "${RPYC_SPEC}"; then
@@ -123,7 +116,7 @@ if ! "$wine_executable" python -m pip install --no-cache-dir --upgrade --quiet "
     exit 1
 fi
 
-# numpy - required for MT5 compatibility (must be <2 for MT5)
+# numpy - required for MT5 compatibility (must be >=2.1 for modern MT5)
 log INFO "[python-wine] Upgrading ${NUMPY_SPEC}..."
 if ! "$wine_executable" python -m pip install --no-cache-dir --upgrade --quiet "${NUMPY_SPEC}"; then
     log ERROR "[python-wine] numpy upgrade failed"
@@ -134,6 +127,21 @@ fi
 log INFO "[python-wine] Upgrading python-dateutil..."
 if ! "$wine_executable" python -m pip install --no-cache-dir --upgrade --quiet python-dateutil; then
     log ERROR "[python-wine] python-dateutil upgrade failed"
+    exit 1
+fi
+
+# structlog - required for mt5linux logging
+log INFO "[python-wine] Upgrading structlog..."
+if ! "$wine_executable" python -m pip install --no-cache-dir --upgrade --quiet "structlog>=25.5.0"; then
+    log ERROR "[python-wine] structlog upgrade failed"
+    exit 1
+fi
+
+# mt5linux - ALWAYS pull from main branch (force reinstall)
+# Install AFTER all dependencies (rpyc, pydantic, plumbum, numpy, structlog)
+log INFO "[python-wine] Upgrading mt5linux from ${MT5LINUX_REPO}@${MT5LINUX_BRANCH}..."
+if ! "$wine_executable" python -m pip install --no-cache-dir --upgrade --force-reinstall --no-deps --quiet "${MT5LINUX_SPEC}"; then
+    log ERROR "[python-wine] mt5linux upgrade failed"
     exit 1
 fi
 

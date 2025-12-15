@@ -15,9 +15,8 @@ from __future__ import annotations
 
 import subprocess
 
+import pytest
 import rpyc
-
-from tests.conftest import requires_container
 
 
 class TestConfiguration:
@@ -49,7 +48,7 @@ class TestConfiguration:
         assert health_port != 8002  # Not production
 
 
-@requires_container
+@pytest.mark.requires_container
 class TestContainerRunning:
     """Test container is running (requires container)."""
 
@@ -80,7 +79,7 @@ class TestContainerRunning:
         assert f"{health_port}" in output, f"Health port {health_port} not exposed"
 
 
-@requires_container
+@pytest.mark.requires_container
 class TestRPyCService:
     """Test RPyC service functionality (requires container)."""
 
@@ -104,7 +103,7 @@ class TestRPyCService:
         assert mt5 is not None
 
 
-@requires_container
+@pytest.mark.requires_container
 class TestMT5Operations:
     """Test basic MT5 operations via RPyC (requires container)."""
 
@@ -129,7 +128,7 @@ class TestMT5Operations:
         assert error is None or isinstance(error, tuple)
 
 
-@requires_container
+@pytest.mark.requires_container
 class TestMT5LinuxInstallation:
     """Test mt5linux is installed from GitHub (requires container)."""
 
@@ -170,7 +169,7 @@ class TestMT5LinuxInstallation:
         assert "MetaTrader5" in result.stdout
 
 
-@requires_container
+@pytest.mark.requires_container
 class TestRPyC6Compatibility:
     """Test RPyC 6.x specific behavior (requires container)."""
 
@@ -205,12 +204,14 @@ class TestRPyC6Compatibility:
         """Test numpy array data transfer using modern RPyC 6.x pattern.
 
         RPyC 6.x blocks __array__ access for security.
-        Use tolist() on remote to transfer data without rpyc.classic.
+        Use tolist() on remote to transfer data, then convert to local list.
         """
         np = rpyc_connection.modules.numpy
         remote_array = np.array([1, 2, 3])
-        # Modern RPyC 6.x: Convert to list on remote side, then transfer
-        local_list = remote_array.tolist()
+        # Modern RPyC 6.x: Convert to list on remote side
+        remote_list = remote_array.tolist()
+        # Convert netref list to local Python list
+        local_list = [int(x) for x in remote_list]
         assert local_list == [1, 2, 3]
 
     def test_rpyc_connection_timeout_config(self, rpyc_connection) -> None:

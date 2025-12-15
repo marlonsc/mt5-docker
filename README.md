@@ -45,20 +45,20 @@ If you just need to run Metatrader for running your MQL5 programs without any Py
 1. Clone this repository:
 
 ```bash
-git clone https://github.com/glendekoning/mt5-docker
+git clone https://github.com/marlonsc/mt5-docker
 cd mt5-docker
 ```
 
 2. Build the Docker image:
 
 ```bash
-docker build -t glendekoning/mt5-docker:local .
+docker build -t marlonsc/mt5-docker:local .
 ```
 
 3. Run the Docker image:
 
 ```bash
-docker run -d -p 3000:3000 -p 8001:8001 -v config:/config glendekoning/mt5-docker:local
+docker run -d -p 3000:3000 -p 8001:8001 -v config:/config marlonsc/mt5-docker:local
 ```
 
 Now you can access MetaTrader5 via a web browser at localhost:3000.
@@ -87,7 +87,7 @@ version: '3'
 
 services:
   mt5:
-    image: glendekoning/mt5-docker
+    image: marlonsc/mt5-docker
     container_name: mt5
     volumes:
       - ./config:/config
@@ -113,17 +113,16 @@ services:
 
 Disable by setting `ENABLE_WIN_DOTNET=0` in compose.
 
-
 **Notice**: If you do not need to do remote python programming you can get a much smaller installation changing this line:
 
 ```yaml
-image: glendekoning/mt5-docker
+image: marlonsc/mt5-docker
 ```
 
 by this one
 
 ```yaml
-image: glendekoning/mt5-docker:1.1
+image: marlonsc/mt5-docker:1.1
 ```
 
 3. Start the container
@@ -239,16 +238,19 @@ print(local_array)  # [1 2 3]
 ### Environment Variables
 
 **Auto-Login (optional):**
+
 - `MT5_LOGIN`: MetaTrader 5 account number
 - `MT5_PASSWORD`: Account password
 - `MT5_SERVER`: Broker server (default: MetaQuotes-Demo)
 
 **Optional Features:**
+
 - `ENABLE_WIN_DOTNET`: Install .NET Framework 4.8 for .NET EAs (default: `1`)
 - `AUTO_RECOVERY_ENABLED`: Auto-restart on failures (default: `1`)
 - `HEALTH_CHECK_INTERVAL`: Health check interval in seconds (default: `30`)
 
 **Advanced (usually no need to change):**
+
 - `WINEPREFIX`: Wine environment directory (default: `/config/.wine`)
 - `WINEDEBUG`: Wine debug output (default: `-all` for silent)
 - `TZ`: Container timezone
@@ -283,11 +285,13 @@ Dependencies are categorized by criticality:
 | **OPTIONAL** | Debug log if skipped | corefonts, gdiplus, msxml6 |
 
 **Winetricks dependencies** (vcrun2019, corefonts, gdiplus, msxml6, win10):
+
 - All are optional - MT5 can run without them
 - Failures are logged as warnings but don't stop startup
 - Some EAs may require vcrun2019 or dotnet48
 
 **Python packages** (MetaTrader5, rpyc):
+
 - Required for RPyC server functionality
 - Installation is verified before proceeding
 
@@ -327,6 +331,7 @@ MT5_SERVER=MetaQuotes-Demo
 ```
 
 To create a MetaQuotes Demo account:
+
 - Open MT5 in the container (`http://localhost:3000`)
 - File → Open an Account → MetaQuotes-Demo
 - Fill in the registration form

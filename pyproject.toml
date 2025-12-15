@@ -33,6 +33,9 @@ testpaths = ["tests"]
 addopts = "-v --tb=short"
 timeout = 300             # 5 min max per test (container startup can be slow)
 env_files = [".env"]      # Load .env file for tests (pytest-dotenv)
+markers = [
+    "requires_container: marks tests that require the Docker container to be running",
+]
 
 [tool.ruff]
 line-length = 88
