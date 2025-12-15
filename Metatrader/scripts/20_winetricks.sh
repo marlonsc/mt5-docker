@@ -18,15 +18,13 @@ export DISPLAY="${DISPLAY:-:0}"
 # Suppress all Wine debug output for cleaner logs
 export WINEDEBUG="${WINEDEBUG:--all}"
 
-# Winetricks cache directory - use /config/.cache or fallback to $HOME/.cache
-# (10_prefix_init.sh sets XDG_CACHE_HOME, but we handle both cases)
-if [ -d "/config/.cache/winetricks" ] && [ -w "/config/.cache/winetricks" ]; then
-    export XDG_CACHE_HOME="/config/.cache"
-else
-    # Fallback to home directory cache
-    mkdir -p "$HOME/.cache/winetricks" 2>/dev/null || true
-    export XDG_CACHE_HOME="$HOME/.cache"
-    log WARN "[winetricks] Using fallback cache: $HOME/.cache/winetricks"
+# Winetricks cache directory was created in 10_prefix_init.sh
+# NO FALLBACKS - cache directory must exist
+export XDG_CACHE_HOME="/config/.cache"
+if [ ! -d "/config/.cache/winetricks" ]; then
+    log ERROR "[winetricks] Cache directory not found: /config/.cache/winetricks"
+    log ERROR "[winetricks] 10_prefix_init.sh should have created this during startup"
+    exit 1
 fi
 
 log INFO "[winetricks] Upgrading Wine dependencies (silent mode)..."

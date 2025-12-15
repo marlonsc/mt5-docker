@@ -13,19 +13,16 @@ if ! mkdir -p "$PREFIX_CACHE_DIR" 2>/dev/null; then
     # Non-fatal - Gecko can be downloaded directly
 fi
 
-# Winetricks cache (for vcrun, dotnet, etc)
-# Try /config/.cache first, fall back to $HOME/.cache if permission denied
+# Winetricks cache (for vcrun, dotnet, etc) - NO FALLBACKS
+# Must succeed - permissions should be correct on /config volume
 WINETRICKS_CACHE_DIR="/config/.cache/winetricks"
-if mkdir -p "$WINETRICKS_CACHE_DIR" 2>/dev/null && [ -w "$WINETRICKS_CACHE_DIR" ]; then
-    export XDG_CACHE_HOME="/config/.cache"
-    log INFO "[wine] Using winetricks cache: $WINETRICKS_CACHE_DIR"
-else
-    log WARN "[wine] /config/.cache not writable, using fallback"
-    WINETRICKS_CACHE_DIR="$HOME/.cache/winetricks"
-    mkdir -p "$WINETRICKS_CACHE_DIR" 2>/dev/null || true
-    export XDG_CACHE_HOME="$HOME/.cache"
-    log INFO "[wine] Using winetricks cache: $WINETRICKS_CACHE_DIR"
+if ! mkdir -p "$WINETRICKS_CACHE_DIR"; then
+    log ERROR "[wine] Failed to create winetricks cache: $WINETRICKS_CACHE_DIR"
+    log ERROR "[wine] Check /config volume ownership/permissions (should be PUID:PGID)"
+    exit 1
 fi
+export XDG_CACHE_HOME="/config/.cache"
+log INFO "[wine] Using winetricks cache: $WINETRICKS_CACHE_DIR"
 
 # Check if Wine prefix is already fully initialized
 if [ -f "$INIT_MARKER" ] && [ -f "$DEPS_MARKER" ]; then
