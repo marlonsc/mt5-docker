@@ -111,8 +111,9 @@ start_mt5_terminal() {
 
     if [ -f "$MT5_CONFIG_PATH" ]; then
         echo "[svc-mt5server] Using config file for auto-login: $MT5_CONFIG_PATH"
-        # Windows path - note: MT5 handles the path internally, no extra quotes needed
-        run_as_abc ${wine_executable} "$mt5file" /portable '/config:C:\Program Files\MetaTrader 5\Config\startup.ini' &
+        # Per MT5 docs: Use double quotes around path with spaces in /config argument
+        # Format: /config:"C:\path with spaces\config.ini"
+        run_as_abc ${wine_executable} "$mt5file" /portable '/config:"C:\Program Files\MetaTrader 5\Config\startup.ini"' &
     else
         echo "[svc-mt5server] No config file found - starting without auto-login"
         run_as_abc ${wine_executable} "$mt5file" /portable &

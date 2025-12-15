@@ -214,6 +214,7 @@ def ensure_docker_ready():
         pytest.skip("Docker tests skipped via SKIP_DOCKER=1")
     # Continue with normal test execution when SKIP_DOCKER is not set
 
+
 @pytest.fixture(scope="session", autouse=True)
 def docker_container():
     """Ensure ISOLATED test container is running (session-scoped).

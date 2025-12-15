@@ -88,23 +88,26 @@ stop_container() {
     log_info "Test container stopped"
 }
 
-# Check for .env.test file
+# Check for env files and load configuration
 check_env_file() {
-    if [ ! -f "$ENV_FILE" ]; then
-        log_error ".env.test file not found!"
-        echo ""
-        echo "Please configure your MT5 test credentials:"
-        echo "  1. cp .env.test.example .env.test"
-        echo "  2. Edit .env.test with your MT5_LOGIN and MT5_PASSWORD"
-        echo ""
-        echo "See README.md for details on creating a MetaQuotes Demo account."
+    # Load main .env for credentials (required)
+    if [ ! -f "${PROJECT_DIR}/.env" ]; then
+        log_error ".env file not found - credentials required"
         return 1
     fi
-
-    # Load test environment
     set -a
-    source "$ENV_FILE"
+    source "${PROJECT_DIR}/.env"
     set +a
+
+    # Load .env.test for test container settings (optional overrides)
+    if [ -f "$ENV_FILE" ]; then
+        set -a
+        source "$ENV_FILE"
+        set +a
+        log_info "Test config loaded from .env.test (container settings only)"
+    else
+        log_warn ".env.test not found, using default test ports"
+    fi
 
     # Update local variables from env
     CONTAINER_NAME="${MT5_CONTAINER_NAME:-mt5docker-test}"
@@ -112,17 +115,17 @@ check_env_file() {
     HEALTH_PORT="${MT5_HEALTH_PORT:-48002}"
     VNC_PORT="${MT5_VNC_PORT:-43000}"
 
-    # Verify required variables are set (not just placeholders)
+    # Verify credentials from .env (not .env.test)
     if [ -z "${MT5_LOGIN:-}" ] || [ "$MT5_LOGIN" = "your_login_number" ]; then
-        log_error "MT5_LOGIN not configured in .env.test"
+        log_error "MT5_LOGIN not configured in .env"
         return 1
     fi
     if [ -z "${MT5_PASSWORD:-}" ] || [ "$MT5_PASSWORD" = "your_password" ]; then
-        log_error "MT5_PASSWORD not configured in .env.test"
+        log_error "MT5_PASSWORD not configured in .env"
         return 1
     fi
 
-    log_info "Test config loaded from .env.test"
+    log_info "Credentials loaded from .env"
     return 0
 }
 
