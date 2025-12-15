@@ -491,4 +491,4 @@ dev = ["hypothesis", "pytest", "pytest-dotenv", "pytest-timeout"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11"
-content-hash = "41741058bce0a59a70b641508131923cb567610c175be28a7d7118f1b3acbf26"
+content-hash = "56e234194cc5e5d62532cf05faf612d87d74791b4f8656209e15263d037b706d"

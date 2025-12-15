@@ -279,7 +279,7 @@ class TestCleanBuildRequirements:
                 "-f",
                 "docker-compose.yaml",
                 "-f",
-                "tests/fixtures/docker-compose.test.yaml",
+                "tests/fixtures/docker-compose.yaml",
                 "config",
             ],
             capture_output=True,

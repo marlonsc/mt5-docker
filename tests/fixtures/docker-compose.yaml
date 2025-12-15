@@ -1,6 +1,6 @@
-# docker-compose.test.yaml - Isolated test configuration for mt5docker
+# docker-compose.yaml - Isolated test configuration for mt5docker
 #
-# Location: tests/fixtures/docker-compose.test.yaml
+# Location: tests/fixtures/docker-compose.yaml
 #
 # This overlay provides an ISOLATED test container for mt5docker development.
 # Uses separate ports and container name to avoid conflicts with:
@@ -11,7 +11,7 @@
 # mt5linux is installed from GitHub (github.com/marlonsc/mt5linux) via 50_python_linux.sh
 #
 # Usage (from project root):
-#   docker compose -f docker-compose.yaml -f tests/fixtures/docker-compose.test.yaml up -d
+#   docker compose -f docker-compose.yaml -f tests/fixtures/docker-compose.yaml up -d
 #   # Or use the test script:
 #   ./scripts/test-container.sh
 #

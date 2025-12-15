@@ -19,12 +19,18 @@ export DISPLAY="${DISPLAY:-:0}"
 export WINEDEBUG="${WINEDEBUG:--all}"
 
 # Winetricks cache directory was created in 10_prefix_init.sh
-# NO FALLBACKS - cache directory must exist
+# NO FALLBACKS - cache directory must exist and be writable
 export XDG_CACHE_HOME="/config/.cache"
-if [ ! -d "/config/.cache/winetricks" ]; then
-    log ERROR "[winetricks] Cache directory not found: /config/.cache/winetricks"
+WINETRICKS_CACHE_DIR="/config/.cache/winetricks"
+if [ ! -d "$WINETRICKS_CACHE_DIR" ]; then
+    log ERROR "[winetricks] Cache directory not found: $WINETRICKS_CACHE_DIR"
     log ERROR "[winetricks] 10_prefix_init.sh should have created this during startup"
     exit 1
+fi
+
+# Ensure cache directory is writable by abc user
+if ! chown -R abc:abc "$WINETRICKS_CACHE_DIR" 2>/dev/null; then
+    log WARN "[winetricks] Failed to chown cache directory, continuing anyway"
 fi
 
 log INFO "[winetricks] Upgrading Wine dependencies (silent mode)..."

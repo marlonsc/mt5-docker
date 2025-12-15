@@ -4,30 +4,51 @@ source "$(dirname "$0")/00_env.sh"
 
 log INFO "[wine] Initializing Wine prefix (WINEPREFIX=$WINEPREFIX)"
 
-# Create all required cache directories upfront
+# Create all required cache directories upfront with proper ownership
 log INFO "[wine] Creating cache directories..."
 
-# Wine prefix cache (for Gecko MSIs, etc)
+# Ensure base cache directory exists and is owned by abc user (PUID/PGID)
+BASE_CACHE_DIR="/config/.cache"
+if ! mkdir -p "$BASE_CACHE_DIR"; then
+    log ERROR "[wine] Failed to create base cache dir: $BASE_CACHE_DIR"
+    exit 1
+fi
+
+# Set ownership to abc user (911:911) so the service can write to it
+# The service runs as abc user via s6-setuidgid
+if ! chown -R abc:abc "$BASE_CACHE_DIR" 2>/dev/null; then
+    log WARN "[wine] Failed to chown cache dir, continuing anyway"
+fi
+
+# Wine prefix cache (for Gecko MSIs, etc) - inside Wine prefix, owned by abc
 if ! mkdir -p "$PREFIX_CACHE_DIR" 2>/dev/null; then
     log WARN "[wine] Failed to create Wine cache dir: $PREFIX_CACHE_DIR"
     # Non-fatal - Gecko can be downloaded directly
 fi
 
-# Winetricks cache (for vcrun, dotnet, etc) - NO FALLBACKS
+# Winetricks cache (for vcrun, dotnet, etc)
 # Must succeed - permissions should be correct on /config volume
-WINETRICKS_CACHE_DIR="/config/.cache/winetricks"
+WINETRICKS_CACHE_DIR="$BASE_CACHE_DIR/winetricks"
 if ! mkdir -p "$WINETRICKS_CACHE_DIR"; then
     log ERROR "[wine] Failed to create winetricks cache: $WINETRICKS_CACHE_DIR"
     log ERROR "[wine] Check /config volume ownership/permissions (should be PUID:PGID)"
     exit 1
 fi
-export XDG_CACHE_HOME="/config/.cache"
+
+# Ensure winetricks cache is also owned by abc user
+if ! chown -R abc:abc "$WINETRICKS_CACHE_DIR" 2>/dev/null; then
+    log WARN "[wine] Failed to chown winetricks cache dir, continuing anyway"
+fi
+
+export XDG_CACHE_HOME="$BASE_CACHE_DIR"
 log INFO "[wine] Using winetricks cache: $WINETRICKS_CACHE_DIR"
 
 # Check if Wine prefix is already fully initialized
-if [ -f "$INIT_MARKER" ] && [ -f "$DEPS_MARKER" ]; then
+# Force re-initialization if markers are missing or if we're doing a clean rebuild
+if [ -f "$INIT_MARKER" ] && [ -f "$DEPS_MARKER" ] && [ ! -f "/tmp/force_wine_reinit" ]; then
     log INFO "[wine] Prefix already initialized; skipping wineboot"
 else
+    log INFO "[wine] Initializing Wine prefix (forced or first run)..."
     if ! "$wine_executable" wineboot -i; then
         log ERROR "[wine] wineboot -i failed"
         exit 1
@@ -74,13 +95,10 @@ else
     log INFO "[wine] Gecko already installed; skipping"
 fi
 
-# Update the Wine prefix after installs (only if not already done)
-if [ ! -f "$INIT_MARKER" ]; then
-    if ! "$wine_executable" wineboot -u; then
-        log ERROR "[wine] wineboot -u failed"
-        exit 1
-    fi
-    touch "$INIT_MARKER"
-else
-    log INFO "[wine] Prefix already updated; skipping wineboot -u"
+# Update the Wine prefix after installs (always run to ensure proper setup)
+log INFO "[wine] Updating Wine prefix..."
+if ! "$wine_executable" wineboot -u; then
+    log ERROR "[wine] wineboot -u failed"
+    exit 1
 fi
+touch "$INIT_MARKER"

@@ -26,7 +26,7 @@ VNC_PORT=43000
 TIMEOUT=180  # seconds to wait for RPyC service
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-TEST_COMPOSE="${PROJECT_DIR}/tests/fixtures/docker-compose.test.yaml"
+TEST_COMPOSE="${PROJECT_DIR}/tests/fixtures/docker-compose.yaml"
 
 # Colors for output
 RED='\033[0;31m'

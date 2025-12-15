@@ -119,10 +119,16 @@ install_mt5() {
 
     # Install/Upgrade MT5 silently
     log INFO "[mt5] Running installer (silent mode)..."
-    "$wine_executable" "$MT5_SETUP" "/auto" &
-    INSTALLER_PID=$!
-    if ! wait $INSTALLER_PID; then
-        log WARN "[mt5] Installer process returned non-zero (may be OK for upgrades)"
+    log INFO "[mt5] Wine executable: $wine_executable"
+    log INFO "[mt5] Setup file: $MT5_SETUP"
+    log INFO "[mt5] Setup file exists: $([ -f "$MT5_SETUP" ] && echo "YES" || echo "NO")"
+
+    # Run installer and capture output
+    if "$wine_executable" "$MT5_SETUP" "/auto" 2>&1; then
+        log INFO "[mt5] Installer completed successfully"
+    else
+        INSTALLER_EXIT_CODE=$?
+        log WARN "[mt5] Installer process returned non-zero (code: $INSTALLER_EXIT_CODE, may be OK for upgrades)"
     fi
 
     # Cleanup installer

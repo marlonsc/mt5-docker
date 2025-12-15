@@ -111,40 +111,49 @@ def wait_for_rpyc_service(
 def start_test_container() -> None:
     """Start ISOLATED test container using docker-compose overlay.
 
-    If container is already running, reuse it (no credentials needed).
-    If container is not running, credentials are required to start it.
+    Always starts with a clean container to ensure test isolation.
+    Credentials are required to start the container.
 
     Raises:
-        pytest.skip: If container not running and no credentials configured.
+        pytest.skip: If MT5 credentials are not configured.
     """
     project_root = _get_project_root()
 
-    # If already running and service ready, reuse (no credentials needed)
+    # Always clean up any existing container for test isolation
     if is_container_running():
-        if is_rpyc_service_ready():
-            _logger.info("Test container %s already running", _config.container_name)
-            return
-        # Running but not responding - restart (needs credentials)
-        _logger.warning("Container running but RPyC not responding. Restarting...")
+        _logger.info(
+            "Cleaning existing test container %s for fresh start",
+            _config.container_name,
+        )
         subprocess.run(
             ["docker", "rm", "-f", _config.container_name],
             capture_output=True,
             check=False,
         )
 
-    # Container not running - need credentials to start it
+    # Clean up test volumes to ensure complete isolation
+    test_volumes = ["config_data_mt5docker_test", "downloads_mt5docker_test"]
+    for volume in test_volumes:
+        _logger.info("Cleaning test volume: %s", volume)
+        subprocess.run(
+            ["docker", "volume", "rm", volume],
+            capture_output=True,
+            check=False,
+        )
+
+    # Always require credentials for clean test environment
     if not has_mt5_credentials():
         pytest.skip(SKIP_NO_CREDENTIALS)
 
     # Check compose files exist
     base_compose = project_root / "docker-compose.yaml"
-    test_compose = project_root / "tests" / "fixtures" / "docker-compose.test.yaml"
+    test_compose = project_root / "tests" / "fixtures" / "docker-compose.yaml"
 
     if not base_compose.exists():
         pytest.skip(f"docker-compose.yaml not found at {project_root}")
 
     if not test_compose.exists():
-        pytest.skip(f"docker-compose.test.yaml not found at {test_compose}")
+        pytest.skip(f"docker-compose.yaml not found at {test_compose}")
 
     # Start container with overlay
     _logger.info("Starting test container %s...", _config.container_name)
@@ -197,16 +206,40 @@ def start_test_container() -> None:
 
 
 @pytest.fixture(scope="session")
-def docker_container() -> None:
+def docker_container():
     """Ensure ISOLATED test container is running (session-scoped).
 
     Tests that need the container should depend on this fixture.
-    Container remains active after tests for reuse.
+    Container will be cleaned up after the test session.
 
     Skips if MT5 credentials are not configured in .env file.
     """
     start_test_container()
-    # Container stays running for reuse
+    # Yield to allow tests to run
+    yield
+    # Clean up container after session
+    _cleanup_test_container()
+
+
+def _cleanup_test_container() -> None:
+    """Clean up test container and volumes after session."""
+    if is_container_running():
+        _logger.info("Cleaning up test container %s", _config.container_name)
+        subprocess.run(
+            ["docker", "rm", "-f", _config.container_name],
+            capture_output=True,
+            check=False,
+        )
+
+    # Clean up test volumes
+    test_volumes = ["config_data_mt5docker_test", "downloads_mt5docker_test"]
+    for volume in test_volumes:
+        _logger.info("Cleaning up test volume: %s", volume)
+        subprocess.run(
+            ["docker", "volume", "rm", volume],
+            capture_output=True,
+            check=False,
+        )
 
 
 # Pytest marker for tests requiring container
