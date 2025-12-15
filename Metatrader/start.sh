@@ -4,11 +4,17 @@ set -euo pipefail
 # Orchestrator: source shared env and run all scripts in order
 START_TS=$(date +%s)
 SCRIPTS_DIR="$(dirname "$0")/scripts"
-STARTUP_MARKER="$WINEPREFIX/.startup-complete"
+
+# Markers in /tmp/ - container-local, always exists, not persistent
+STARTUP_MARKER="/tmp/.mt5-startup-complete"
+STARTUP_IN_PROGRESS="/tmp/.mt5-startup-in-progress"
 
 source "$SCRIPTS_DIR/00_env.sh"
 
-# Remove stale startup marker (from previous runs)
+# Create in-progress marker FIRST (prevents race with svc-mt5server)
+touch "$STARTUP_IN_PROGRESS"
+
+# Remove stale startup marker (shouldn't exist in /tmp/ after container restart, but be safe)
 rm -f "$STARTUP_MARKER"
 
 # Count executable scripts (excluding 00_env.sh)
@@ -39,6 +45,7 @@ ELAPSED=$((END_TS - START_TS))
 # If we reach here, all scripts passed (fail-fast exits on first failure)
 log INFO "[startup] MT5 setup completed in ${ELAPSED}s (all scripts passed)"
 touch "$STARTUP_MARKER"
+rm -f "$STARTUP_IN_PROGRESS"  # Remove in-progress marker - svc-mt5server can now proceed
 export STARTUP_MARKER
 
 # Note: MT5 login is handled by 30_mt5.sh via generate_config + launch_mt5

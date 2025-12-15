@@ -32,7 +32,10 @@ fi
 
 # Check if Wine prefix was built during Docker build (fast path)
 BUILD_MARKER="${WINEPREFIX:-/config/.wine}/.build-complete"
-STARTUP_MARKER="${WINEPREFIX:-/config/.wine}/.startup-complete"
+
+# Startup markers in /tmp/ - container-local, always exists, not persistent
+STARTUP_MARKER="/tmp/.mt5-startup-complete"
+STARTUP_IN_PROGRESS="/tmp/.mt5-startup-in-progress"
 
 # ============================================================
 # Helper: Run command as user abc (owner of Wine prefix)
@@ -108,8 +111,8 @@ start_mt5_terminal() {
 
     if [ -f "$MT5_CONFIG_PATH" ]; then
         echo "[svc-mt5server] Using config file for auto-login: $MT5_CONFIG_PATH"
-        # Windows path with proper quoting - required for paths with spaces
-        run_as_abc ${wine_executable} "$mt5file" /portable "/config:C:\\Program Files\\MetaTrader 5\\Config\\startup.ini" &
+        # Windows path - note: MT5 handles the path internally, no extra quotes needed
+        run_as_abc ${wine_executable} "$mt5file" /portable '/config:C:\Program Files\MetaTrader 5\Config\startup.ini' &
     else
         echo "[svc-mt5server] No config file found - starting without auto-login"
         run_as_abc ${wine_executable} "$mt5file" /portable &
@@ -155,19 +158,31 @@ echo "[svc-mt5server] DISPLAY=$DISPLAY"
 # ============================================================
 # Wait for startup scripts to complete
 # The startup scripts properly initialize Wine prefix and install MT5
+# Must wait for:
+#   1. No STARTUP_IN_PROGRESS marker (startup is not running)
+#   2. STARTUP_MARKER exists (startup completed successfully)
+# This prevents race condition with stale markers from previous runs
 # ============================================================
 MAX_WAIT=600
 WAITED=0
 echo "[svc-mt5server] Waiting for startup scripts to complete..."
-while [ ! -f "$STARTUP_MARKER" ] && [ $WAITED -lt $MAX_WAIT ]; do
+while [ $WAITED -lt $MAX_WAIT ]; do
+    # Check both conditions: startup NOT in progress AND startup completed
+    if [ ! -f "$STARTUP_IN_PROGRESS" ] && [ -f "$STARTUP_MARKER" ]; then
+        break
+    fi
     sleep 5
     WAITED=$((WAITED + 5))
     if [ $((WAITED % 30)) -eq 0 ]; then
-        echo "[svc-mt5server] Still waiting for startup... (${WAITED}s/${MAX_WAIT}s)"
+        if [ -f "$STARTUP_IN_PROGRESS" ]; then
+            echo "[svc-mt5server] Still waiting for startup to finish... (${WAITED}s/${MAX_WAIT}s)"
+        else
+            echo "[svc-mt5server] Waiting for startup marker... (${WAITED}s/${MAX_WAIT}s)"
+        fi
     fi
 done
 
-if [ ! -f "$STARTUP_MARKER" ]; then
+if [ -f "$STARTUP_IN_PROGRESS" ] || [ ! -f "$STARTUP_MARKER" ]; then
     echo "[svc-mt5server] ERROR: Startup did not complete within ${MAX_WAIT}s"
     exit 1
 fi
@@ -272,14 +287,29 @@ class MT5Service(rpyc.Service):
         timeout: int | None = None,
         portable: bool = False,
     ) -> bool:
-        return MT5Service._mt5_module.initialize(
-            path, login, password, server, timeout, portable
-        )
+        # Build kwargs, only including non-None values
+        # MT5 doesn't accept None for login/password/server
+        kwargs: dict[str, Any] = {}
+        if path is not None:
+            kwargs["path"] = path
+        if login is not None:
+            kwargs["login"] = login
+        if password is not None:
+            kwargs["password"] = password
+        if server is not None:
+            kwargs["server"] = server
+        if timeout is not None:
+            kwargs["timeout"] = timeout
+        if portable:
+            kwargs["portable"] = portable
+        return MT5Service._mt5_module.initialize(**kwargs)
 
     def exposed_login(
         self, login: int, password: str, server: str, timeout: int = 60000
     ) -> bool:
-        return MT5Service._mt5_module.login(login, password, server, timeout)
+        return MT5Service._mt5_module.login(
+            login=login, password=password, server=server, timeout=timeout
+        )
 
     def exposed_shutdown(self) -> None:
         return MT5Service._mt5_module.shutdown()
