@@ -1,7 +1,7 @@
 """Docker container configuration fixtures.
 
 This module provides configuration for the isolated test container.
-All sensitive values are loaded from environment variables using Pydantic 2 BaseSettings.
+All sensitive values are loaded from environment variables via Pydantic 2.
 
 Configuration priority:
 1. Environment variables (set in .env or shell)

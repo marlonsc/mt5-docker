@@ -99,12 +99,9 @@ class TestRPyCService:
 
     def test_mt5linux_module_available(self, rpyc_connection) -> None:
         """Verify mt5linux module is accessible via RPyC."""
-        try:
-            mt5 = rpyc_connection.modules.MetaTrader5
-            assert mt5 is not None
-        except Exception as e:
-            # mt5linux might not be fully initialized, but module should exist
-            assert "MetaTrader5" in str(e)
+        # MetaTrader5 module should be accessible
+        mt5 = rpyc_connection.modules.MetaTrader5
+        assert mt5 is not None
 
 
 @requires_container
@@ -215,7 +212,7 @@ class TestRPyC6Compatibility:
 
     def test_rpyc_connection_timeout_config(self, rpyc_connection) -> None:
         """Verify RPyC connection timeout is properly configured."""
-        timeout = rpyc_connection._config.get("sync_request_timeout")
+        timeout = rpyc_connection._config.get("sync_request_timeout")  # noqa: SLF001
         assert timeout is not None
         assert timeout >= 60, f"Timeout should be >= 60s, got {timeout}"
 

@@ -22,14 +22,11 @@ import logging
 import subprocess
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import pytest
+from rpyc.utils.classic import connect as rpyc_connect
 
 from tests.fixtures.docker import DockerContainerConfig, get_test_container_config
-
-if TYPE_CHECKING:
-    from collections.abc import Generator
 
 # =============================================================================
 # CONFIGURATION - loaded from tests/fixtures/docker.py
@@ -80,15 +77,15 @@ def is_rpyc_service_ready(host: str = "localhost", port: int | None = None) -> b
     """
     rpyc_port = port or _config.rpyc_port
     try:
-        from rpyc.utils.classic import connect
-
-        conn = connect(host, rpyc_port)
-        conn._config["sync_request_timeout"] = 60  # Wine Python is slow
+        conn = rpyc_connect(host, rpyc_port)
+        conn._config["sync_request_timeout"] = 60  # noqa: SLF001
         _ = conn.modules
         conn.close()
-        return True
-    except Exception:
+    except (OSError, ConnectionError, TimeoutError, ValueError):
+        # ValueError: RPyC protocol mismatch (e.g., 5.x client vs 6.x server)
         return False
+    else:
+        return True
 
 
 def wait_for_rpyc_service(
@@ -124,7 +121,9 @@ def start_test_container() -> None:
     # If already running and service ready, reuse (no credentials needed)
     if is_container_running():
         if is_rpyc_service_ready():
-            _logger.info(f"Test container {_config.container_name} already running")
+            _logger.info(
+                "Test container %s already running", _config.container_name
+            )
             return
         # Running but not responding - restart (needs credentials)
         _logger.warning("Container running but RPyC not responding. Restarting...")
@@ -149,7 +148,7 @@ def start_test_container() -> None:
         pytest.skip(f"docker-compose.test.yaml not found at {test_compose}")
 
     # Start container with overlay
-    _logger.info(f"Starting test container {_config.container_name}...")
+    _logger.info("Starting test container %s...", _config.container_name)
 
     result = subprocess.run(
         [
@@ -172,7 +171,7 @@ def start_test_container() -> None:
         pytest.skip(f"Failed to start container: {result.stderr}")
 
     # Wait for RPyC service
-    _logger.info(f"Waiting for RPyC service on port {_config.rpyc_port}...")
+    _logger.info("Waiting for RPyC service on port %s...", _config.rpyc_port)
 
     if not wait_for_rpyc_service():
         logs = subprocess.run(
@@ -187,7 +186,9 @@ def start_test_container() -> None:
         )
 
     _logger.info(
-        f"Test container {_config.container_name} ready on port {_config.rpyc_port}"
+        "Test container %s ready on port %s",
+        _config.container_name,
+        _config.rpyc_port,
     )
 
 
@@ -197,7 +198,7 @@ def start_test_container() -> None:
 
 
 @pytest.fixture(scope="session")
-def docker_container() -> Generator[None]:
+def docker_container() -> None:
     """Ensure ISOLATED test container is running (session-scoped).
 
     Tests that need the container should depend on this fixture.
@@ -206,7 +207,6 @@ def docker_container() -> Generator[None]:
     Skips if MT5 credentials are not configured in .env file.
     """
     start_test_container()
-    return
     # Container stays running for reuse
 
 
@@ -264,12 +264,10 @@ def mt5_credentials() -> dict[str, str | int]:
 
 
 @pytest.fixture
-def rpyc_connection(docker_container: None):
+def rpyc_connection(docker_container: None):  # noqa: ARG001
     """Provide RPyC connection to test container."""
-    from rpyc.utils.classic import connect
-
-    conn = connect("localhost", _config.rpyc_port)
-    conn._config["sync_request_timeout"] = _config.rpyc_timeout
+    conn = rpyc_connect("localhost", _config.rpyc_port)
+    conn._config["sync_request_timeout"] = _config.rpyc_timeout  # noqa: SLF001
     yield conn
     conn.close()
 
