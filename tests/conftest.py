@@ -83,7 +83,7 @@ def is_rpyc_service_ready(host: str = "localhost", port: int | None = None) -> b
         # Verify connection works by calling health_check
         _ = conn.root.health_check()
         conn.close()
-    except (OSError, ConnectionError, TimeoutError, EOFError, AttributeError):
+    except (OSError, ConnectionError, TimeoutError, EOFError):
         return False
     else:
         return True
@@ -109,29 +109,31 @@ def wait_for_rpyc_service(
 
 
 def start_test_container() -> None:
-    """Start ISOLATED test container using environment variables.
+    """Start test container if not already running.
 
     Uses the main docker-compose.yaml with environment variables
-    to configure test-specific container name, ports, and volumes.
+    to configure container name, ports, and volumes.
+
+    Reuses existing container if already running.
 
     Raises:
         pytest.skip: If MT5 credentials are not configured.
     """
     project_root = _get_project_root()
 
-    # Always clean up any existing container for test isolation
+    # Check if container is already running - reuse it
     if is_container_running():
         _logger.info(
-            "Cleaning existing test container %s for fresh start",
+            "Container %s already running, reusing",
             _config.container_name,
         )
-        subprocess.run(
-            ["docker", "rm", "-f", _config.container_name],
-            capture_output=True,
-            check=False,
-        )
+        # Wait for RPyC to be ready if not already
+        if not is_rpyc_service_ready():
+            _logger.info("Waiting for RPyC service...")
+            wait_for_rpyc_service()
+        return
 
-    # Always require credentials for clean test environment
+    # Require credentials to start new container
     if not has_mt5_credentials():
         pytest.skip(SKIP_NO_CREDENTIALS)
 
@@ -205,18 +207,15 @@ def ensure_docker_ready():
 
 @pytest.fixture(scope="session", autouse=True)
 def docker_container():
-    """Ensure ISOLATED test container is running (session-scoped).
+    """Ensure test container is running (session-scoped).
 
-    Automatically starts before any tests run and cleans up after.
-    Container will be cleaned up after the test session.
+    Starts container if not already running.
+    Reuses existing container if healthy.
+    Does NOT clean up after tests - container stays running for reuse.
 
     Skips if MT5 credentials are not configured in .env file.
     """
     start_test_container()
-    # Yield to allow tests to run
-    yield
-    # Clean up container after session
-    _cleanup_test_container()
 
 
 def _cleanup_test_container() -> None:
@@ -298,6 +297,9 @@ def rpyc_connection(docker_container: None):
 
     Uses rpyc.connect() for our custom MT5Service.
     """
+    # Ensure docker_container fixture has been executed (parameter dependency)
+    assert docker_container is None
+
     conn = rpyc.connect("localhost", _config.rpyc_port,
                         config={"sync_request_timeout": _config.rpyc_timeout})
     yield conn

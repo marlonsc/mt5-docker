@@ -66,7 +66,9 @@ docker run -d -p 3000:3000 -p 8001:8001 -v config:/config marlonsc/mt5-docker:lo
 
 Now you can access MetaTrader5 via a web browser at localhost:3000.
 
-On first run it may take a few minutes to install MT5, Wine dependencies, and optionally .NET Framework. Normally it takes less than 10 minutes The process is automatic and you should end up with MetaTrader5 running in your web session.
+On first run it may take a few minutes to install MT5, Wine dependencies,
+and optionally .NET Framework. Normally it takes less than 10 minutes.
+The process is automatic and you should end up with MetaTrader5 running in your web session.
 
 ## Usage with docker compose (preferred way)
 
@@ -139,7 +141,8 @@ In some systems `docker compose` command does not exists. Try to use `docker-com
 4. Connect to web interface
    Start your browser pointing http://&lt;your ip address&gt;:3000
 
-On first run it may take a few minutes to install MT5, Wine dependencies, and optionally .NET Framework and should take aprox 5 minutes. The process is automatic and you should end up with MetaTrader5 running in your web session.
+On first run it may take a few minutes to install MT5, Wine dependencies, and optionally .NET Framework and should take aprox 5 minutes.
+The process is automatic and you should end up with MetaTrader5 running in your web session.
 
 ## Where to place MQ5 and EX5 files
 
@@ -153,7 +156,9 @@ All files that you place there can be accessed from your MetaTrader container wi
 
 You can access MetaEditor program clicking in `IDE` button in MetaTrader5 interface.
 
-**Notice**: If you will run MQL5 only bots (without Python) you can run perfectly with gmag11/metatrader5_vnc:1.0 image as pointed before. Remember that **image version is not stuck to a specific MetaTrader 5 version**.
+**Notice**: If you will run MQL5 only bots (without Python) you can run perfectly
+with gmag11/metatrader5_vnc:1.0 image as pointed before.
+Remember that **image version is not stuck to a specific MetaTrader 5 version**.
 
 **Metatrader will always be updated automatically to latest version as it does when it is nativelly installed in Windows.**
 
@@ -172,7 +177,6 @@ pip install git+https://github.com/marlonsc/mt5linux.git@master
 - numpy >= 2.1.0
 - rpyc == 6.0.2
 - plumbum >= 1.8.0
-- pydantic >= 2.0, < 3.0
 
 **Example usage (synchronous):**
 
@@ -314,7 +318,8 @@ docker logs mt5 2>&1 | grep health
 
 ## Testing
 
-The project includes automated tests using pytest. Tests run against an isolated test container (`mt5docker-test`) with separate ports to avoid conflicts with production or other test environments.
+The project includes automated tests using pytest. Tests run against an isolated test container (`mt5docker-test`) with separate ports to
+avoid conflicts with production or other test environments.
 
 ### Prerequisites
 
@@ -400,4 +405,4 @@ This fork retains the original license: [MIT](LICENSE.md). Please review upstrea
 ## Acknowledgments
 
 - Original author: [gmag11](https://github.com/gmag11/MetaTrader5-Docker-Image)
-- Projects: [KasmVNC](https://github.com/kasmtech/KasmVNC), [LinuxServer KasmVNC Base](https://github.com/linuxserver/docker-baseimage-kasmvnc), [mt5linux](https://github.com/lucas-campagna/mt5linux)
+- Projects: [KasmVNC](https://github.com/kasmtech/KasmVNC), [mt5linux](https://github.com/lucas-campagna/mt5linux)

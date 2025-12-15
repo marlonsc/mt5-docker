@@ -15,7 +15,7 @@ PYTHON_VER=$("$wine_executable" "$WINE_PYTHON_PATH" --version 2>&1) || {
     exit 1
 }
 
-"$wine_executable" "$WINE_PYTHON_PATH" -c "import rpyc, numpy, pydantic" 2>/dev/null || {
+"$wine_executable" "$WINE_PYTHON_PATH" -c "import rpyc, numpy, plumbum" 2>/dev/null || {
     log ERROR "[python-wine] FATAL: Base packages missing"
     exit 1
 }

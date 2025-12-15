@@ -16,7 +16,8 @@ export WINEPREFIX="${WINEPREFIX:-$CONFIG_DIR/.wine}"
 
 # MT5 paths
 export mt5file="$WINEPREFIX/drive_c/Program Files/MetaTrader 5/terminal64.exe"
-export MT5_CONFIG_DIR="$WINEPREFIX/drive_c/Program Files/MetaTrader 5/Config"
+# Config in path WITHOUT spaces to avoid shell quoting issues with /config: argument
+export MT5_CONFIG_DIR="$WINEPREFIX/drive_c/MT5Config"
 export MT5_STARTUP_INI="$MT5_CONFIG_DIR/startup.ini"
 
 # Wine configuration

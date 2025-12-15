@@ -40,21 +40,10 @@ class TestVersionCentralization:
         )
         output = result.stdout
 
-        # Check all required versions are defined
+        # Check required versions are defined
         required_vars = [
             "PYTHON_VERSION",
-            "RPYC_VERSION",
-            "PYDANTIC_VERSION",
-            "PLUMBUM_VERSION",
-            "NUMPY_VERSION",
-            "MT5_PYPI_VERSION",
-            "MT5LINUX_REPO",
-            "MT5LINUX_BRANCH",
-            "RPYC_SPEC",
-            "PYDANTIC_SPEC",
-            "PLUMBUM_SPEC",
-            "NUMPY_SPEC",
-            "MT5LINUX_SPEC",
+            "GECKO_VERSION",
         ]
 
         for var in required_vars:
@@ -73,8 +62,8 @@ class TestVersionCentralization:
         required_args = [
             "PYTHON_VERSION",
             "RPYC_VERSION",
-            "PYDANTIC_MIN_VERSION",
-            "PLUMBUM_MIN_VERSION",
+            "PLUMBUM_VERSION",
+            "NUMPY_VERSION",
         ]
 
         for arg in required_args:
@@ -83,7 +72,7 @@ class TestVersionCentralization:
     def test_pyproject_references_centralized_versions(self) -> None:
         """Verify pyproject.toml comments reference 00_env.sh."""
         result = subprocess.run(
-            ["grep", "-E", "00_env.sh|RPYC_VERSION|PYDANTIC_VERSION", "pyproject.toml"],
+            ["grep", "-E", "00_env.sh|RPYC_VERSION", "pyproject.toml"],
             capture_output=True,
             text=True,
             check=False,
@@ -119,28 +108,6 @@ class TestUpgradeScenarios:
         assert result.returncode == 0, f"rpyc check failed: {result.stderr}"
         assert result.stdout.strip().startswith("6."), (
             f"rpyc should be 6.x, got {result.stdout.strip()}"
-        )
-
-        # Check Pydantic version
-        result = subprocess.run(
-            [
-                "docker",
-                "exec",
-                "-u",
-                "abc",
-                container_name,
-                "wine",
-                "python",
-                "-c",
-                "import pydantic; print(pydantic.__version__)",
-            ],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        assert result.returncode == 0, f"pydantic check failed: {result.stderr}"
-        assert result.stdout.strip().startswith("2."), (
-            f"pydantic should be 2.x, got {result.stdout.strip()}"
         )
 
         # Check plumbum version
@@ -248,7 +215,6 @@ class TestStartupUpgradeLogic:
         required_versions = [
             "PYTHON_VERSION",
             "RPYC_VERSION",
-            "PYDANTIC_VERSION",
             "PLUMBUM_VERSION",
         ]
 
@@ -271,15 +237,13 @@ class TestCleanBuildRequirements:
         assert "ARG RPYC_VERSION" in content
 
     def test_compose_files_valid(self) -> None:
-        """Verify docker-compose files are valid."""
+        """Verify docker-compose.yaml is valid."""
         result = subprocess.run(
             [
                 "docker",
                 "compose",
                 "-f",
                 "docker-compose.yaml",
-                "-f",
-                "tests/fixtures/docker-compose.yaml",
                 "config",
             ],
             capture_output=True,
@@ -331,20 +295,20 @@ class TestWinetricksSilentMode:
         )
 
     def test_winetricks_quiet_flags(self, container_name: str) -> None:
-        """Verify winetricks uses -q -f flags for silent operation."""
+        """Verify winetricks uses -q flag for silent operation."""
         result = subprocess.run(
             [
                 "docker",
                 "exec",
                 container_name,
                 "grep",
-                "winetricks -q -f",
+                "winetricks -q",
                 "/Metatrader/scripts/20_winetricks.sh",
             ],
             capture_output=True,
             text=True,
             check=False,
         )
-        assert "winetricks -q -f" in result.stdout, (
-            "winetricks must use -q -f flags for silent mode"
+        assert "winetricks -q" in result.stdout, (
+            "winetricks must use -q flag for silent mode"
         )

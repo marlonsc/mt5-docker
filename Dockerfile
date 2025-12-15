@@ -13,7 +13,6 @@ ARG VERSION
 ARG PYTHON_VERSION=3.12.8
 ARG GECKO_VERSION=2.47.4
 ARG RPYC_VERSION=6.0.2
-ARG PYDANTIC_VERSION=2.12
 ARG PLUMBUM_VERSION=1.8.0
 # NumPy 1.26.4: Wine compatible (2.x uses ucrtbase functions Wine hasn't implemented)
 ARG NUMPY_VERSION=1.26.4
@@ -54,7 +53,6 @@ FROM base AS downloader
 ARG PYTHON_VERSION
 ARG GECKO_VERSION
 ARG RPYC_VERSION
-ARG PYDANTIC_VERSION
 ARG PLUMBUM_VERSION
 ARG NUMPY_VERSION
 
@@ -88,7 +86,6 @@ RUN --mount=type=cache,target=/downloads,id=mt5-downloads,sharing=locked \
     echo "PYTHON_VERSION=${PYTHON_VERSION}" > /staging/.versions && \
     echo "GECKO_VERSION=${GECKO_VERSION}" >> /staging/.versions && \
     echo "RPYC_VERSION=${RPYC_VERSION}" >> /staging/.versions && \
-    echo "PYDANTIC_VERSION=${PYDANTIC_VERSION}" >> /staging/.versions && \
     echo "PLUMBUM_VERSION=${PLUMBUM_VERSION}" >> /staging/.versions && \
     echo "NUMPY_VERSION=${NUMPY_VERSION}" >> /staging/.versions && \
     echo "BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> /staging/.versions && \
@@ -103,7 +100,6 @@ FROM wine-base AS wine-builder
 ARG PYTHON_VERSION
 ARG GECKO_VERSION
 ARG RPYC_VERSION
-ARG PYDANTIC_VERSION
 ARG PLUMBUM_VERSION
 ARG NUMPY_VERSION
 ARG ENABLE_WINETRICKS_NONFREE
@@ -179,8 +175,6 @@ RUN --mount=from=downloader,source=/staging,target=/staging \
         wine '$PYTHON_EXE' -m pip install --no-cache-dir \
             'rpyc==${RPYC_VERSION}' \
             'numpy==${NUMPY_VERSION}' \
-            'pydantic>=${PYDANTIC_VERSION},<3.0' \
-            'pydantic-settings>=2.0,<3.0' \
             'plumbum>=${PLUMBUM_VERSION}' \
             'structlog>=25.5' \
             'python-dateutil' && \
@@ -205,7 +199,6 @@ ARG VERSION
 ARG PYTHON_VERSION
 ARG GECKO_VERSION
 ARG RPYC_VERSION
-ARG PYDANTIC_VERSION
 ARG PLUMBUM_VERSION
 ARG NUMPY_VERSION
 
@@ -242,8 +235,6 @@ RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
         "rpyc==${RPYC_VERSION}" \
         "plumbum>=${PLUMBUM_VERSION}" \
         "pyparsing>=3.0.0" \
-        "pydantic>=${PYDANTIC_VERSION},<3.0" \
-        "pydantic-settings>=2.0,<3.0" \
         pyxdg && \
     python3 -m pip install --break-system-packages --ignore-requires-python \
         "https://github.com/marlonsc/mt5linux/archive/refs/heads/master.tar.gz"
