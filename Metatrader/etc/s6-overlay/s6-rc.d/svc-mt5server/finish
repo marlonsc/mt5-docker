@@ -1,0 +1,17 @@
+#!/usr/bin/with-contenv bash
+# s6 finish script: called when svc-mt5server exits
+#
+# Arguments:
+#   $1 = exit code of the service
+#   $2 = exit signal (if killed by signal)
+#
+# This script runs after the service exits but before s6 restarts it.
+# We use it to log the exit and add a delay to prevent restart thrashing.
+
+exit_code="${1:-unknown}"
+exit_signal="${2:-none}"
+
+echo "[svc-mt5server] Service exited with code ${exit_code}, signal ${exit_signal}"
+
+# Prevent restart thrashing - wait 5 seconds before s6 restarts the service
+sleep 5

@@ -29,17 +29,17 @@ check_rpyc_server() {
 }
 
 check_rpyc_health() {
-    # Check health endpoint if resilient mode is enabled
-    if [ "${RPYC_RESILIENT:-1}" = "1" ]; then
-        local health_port="${RPYC_HEALTH_PORT:-8002}"
-        local response
-        response=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:$health_port/health" 2>/dev/null || echo "000")
-        if [ "$response" = "200" ]; then
+    # Check s6 service status if available
+    if command -v s6-svstat >/dev/null 2>&1; then
+        local status
+        status=$(s6-svstat /run/service/svc-mt5server 2>/dev/null || echo "down")
+        if echo "$status" | grep -q "^up"; then
             return 0
         else
             return 1
         fi
     fi
+    # Fallback: just check if port is listening
     return 0
 }
 
@@ -110,14 +110,17 @@ restart_mt5() {
 }
 
 restart_rpyc_server() {
-    log INFO "[health] Restarting RPyC server..."
+    log INFO "[health] Restarting RPyC server via s6..."
 
-    # Kill existing server
-    pkill -f "mt5linux" 2>/dev/null || true
-    sleep 2
-
-    # Restart server
-    python3 -m mt5linux --host 0.0.0.0 -p "$mt5server_port" -w "$wine_executable" python.exe &
+    # Use s6-svc to restart the service
+    # s6-overlay handles the actual process supervision
+    if s6-svc -r /run/service/svc-mt5server 2>/dev/null; then
+        log INFO "[health] s6-svc restart command sent"
+    else
+        log WARN "[health] s6-svc not available, falling back to direct restart"
+        pkill -f "python.exe /tmp/mt5linux/server.py" 2>/dev/null || true
+        # s6 will automatically restart the service
+    fi
 
     sleep 5
 

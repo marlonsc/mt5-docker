@@ -152,6 +152,11 @@ COPY --from=downloader /staging /opt/mt5-staging
 COPY /Metatrader /Metatrader
 RUN chmod +x /Metatrader/start.sh && chmod -R +x /Metatrader/scripts
 
+# Copy s6 service definitions for RPyC server supervision
+COPY /Metatrader/etc/s6-overlay /etc/s6-overlay
+RUN chmod +x /etc/s6-overlay/s6-rc.d/svc-mt5server/run && \
+    chmod +x /etc/s6-overlay/s6-rc.d/svc-mt5server/finish
+
 COPY /root /
 
 EXPOSE 3000 8001
