@@ -28,21 +28,6 @@ check_rpyc_server() {
     return $?
 }
 
-check_rpyc_health() {
-    # Check s6 service status if available
-    if command -v s6-svstat >/dev/null 2>&1; then
-        local status
-        status=$(s6-svstat /run/service/svc-mt5server 2>/dev/null || echo "down")
-        if echo "$status" | grep -q "^up"; then
-            return 0
-        else
-            return 1
-        fi
-    fi
-    # Fallback: just check if port is listening
-    return 0
-}
-
 check_mt5_connection() {
     # Quick TCP check to RPyC server
     timeout 5 bash -c "echo >/dev/tcp/localhost/$mt5server_port" 2>/dev/null
@@ -110,18 +95,13 @@ restart_mt5() {
 }
 
 restart_rpyc_server() {
-    log INFO "[health] Restarting RPyC server via s6..."
+    log INFO "[health] Restarting RPyC server..."
 
-    # Use s6-svc to restart the service
-    # s6-overlay handles the actual process supervision
-    if s6-svc -r /run/service/svc-mt5server 2>/dev/null; then
-        log INFO "[health] s6-svc restart command sent"
-    else
-        log WARN "[health] s6-svc not available, falling back to direct restart"
-        pkill -f "python.exe /tmp/mt5linux/server.py" 2>/dev/null || true
-        # s6 will automatically restart the service
-    fi
+    # Kill the Wine Python process - s6 will automatically restart it
+    # Note: s6-svc requires root, but this script runs as abc user
+    pkill -f "python.exe /tmp/mt5linux/server.py" 2>/dev/null || true
 
+    # Wait for s6 to restart the service
     sleep 5
 
     if check_rpyc_server; then
@@ -168,13 +148,6 @@ main_loop() {
                 restart_rpyc_server
             fi
             continue
-        fi
-
-        # Check RPyC health endpoint (if resilient mode)
-        if ! check_rpyc_health; then
-            log WARN "[health] RPyC health endpoint reports unhealthy!"
-            # Don't restart - resilient server handles its own recovery
-            # Just log the issue
         fi
 
         # All checks passed - reset restart counter if it's been a while
