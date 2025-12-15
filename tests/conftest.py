@@ -80,7 +80,7 @@ def is_rpyc_service_ready(host: str = "localhost", port: int | None = None) -> b
     rpyc_port = port or _config.rpyc_port
     try:
         conn = rpyc.classic.connect(host, rpyc_port)
-        conn._config["sync_request_timeout"] = 60  # noqa: SLF001
+        conn._config["sync_request_timeout"] = 60
         _ = conn.modules.sys  # Verify connection works
         conn.close()
     except (OSError, ConnectionError, TimeoutError, EOFError):
@@ -265,14 +265,14 @@ def mt5_credentials() -> dict[str, str | int]:
 
 
 @pytest.fixture
-def rpyc_connection(docker_container: None):  # noqa: ARG001
+def rpyc_connection(docker_container: None):
     """Provide RPyC 6.x connection to test container.
 
     Uses rpyc.classic.connect() which is the modern RPyC 6.x method
     for connecting to servers running ClassicService.
     """
     conn = rpyc.classic.connect("localhost", _config.rpyc_port)
-    conn._config["sync_request_timeout"] = _config.rpyc_timeout  # noqa: SLF001
+    conn._config["sync_request_timeout"] = _config.rpyc_timeout
     yield conn
     conn.close()
 

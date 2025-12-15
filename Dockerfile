@@ -104,11 +104,13 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     dpkg --add-architecture i386
 
 # Layer 3: Wine installation (rarely changes, largest layer ~2GB)
+# Using winehq-devel (10.1+) for numpy 2.x compatibility (crealf function support)
+# Wine 10.0 (stable) doesn't implement crealf() needed by numpy 2.x C99 complex types
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
     apt-get update && \
     apt-get install -y --install-recommends \
-        winehq-stable winetricks cabextract
+        winehq-devel winetricks cabextract
 
 # Layer 4: Linux Python packages (uses centralized versions from ARGs)
 ARG MT5_PYPI_VERSION
@@ -160,8 +162,9 @@ ENV TITLE=Metatrader5
 ENV WINEPREFIX="/config/.wine"
 ENV WINEDEBUG=-all
 ENV ENABLE_WIN_DOTNET=1
-# DLL overrides: disable Mono, use native ucrtbase for numpy 2.x (crealf fix)
-ENV WINEDLLOVERRIDES="mscoree=n,mscorlib=n,ucrtbase=n"
+# DLL overrides: disable Mono (Gecko prompts)
+# Note: ucrtbase override removed - Wine 10.1+ has native crealf() support
+ENV WINEDLLOVERRIDES="mscoree=n,mscorlib=n"
 ENV STAGING_DIR="/opt/mt5-staging"
 ENV CACHE_DIR="/cache"
 

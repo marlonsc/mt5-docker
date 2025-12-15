@@ -10,10 +10,9 @@ source "$(dirname "$0")/00_env.sh"
 
 # Force unattended mode - NEVER prompt for anything
 export WINETRICKS_UNATTENDED=1
-# DLL overrides:
-# - mscoree=n,mshtml=n: Disable Mono/Gecko prompts
-# - ucrtbase=n: Use native ucrtbase.dll for numpy 2.x compatibility (crealf fix)
-export WINEDLLOVERRIDES="mscoree=n,mshtml=n,ucrtbase=n"
+# DLL overrides: Disable Mono/Gecko prompts
+# Note: ucrtbase override removed - Wine 10.1+ has native crealf() support for numpy 2.x
+export WINEDLLOVERRIDES="mscoree=n,mshtml=n"
 export DISPLAY="${DISPLAY:-:0}"
 
 # Suppress all Wine debug output for cleaner logs
@@ -47,10 +46,6 @@ run_winetricks win10 || true
 # Visual C++ runtimes (recommended for EAs)
 run_winetricks vcrun2019 || true
 run_winetricks vcrun2022 || true
-
-# Native ucrtbase.dll for numpy 2.x compatibility (crealf function)
-# Wine 10.0's builtin ucrtbase.dll doesn't implement crealf()
-run_winetricks ucrtbase || true
 
 # Graphics and fonts
 run_winetricks corefonts || true

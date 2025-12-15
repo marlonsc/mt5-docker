@@ -217,7 +217,7 @@ class TestRPyC6Compatibility:
 
     def test_rpyc_connection_timeout_config(self, rpyc_connection) -> None:
         """Verify RPyC connection timeout is properly configured."""
-        timeout = rpyc_connection._config.get("sync_request_timeout")  # noqa: SLF001
+        timeout = rpyc_connection._config.get("sync_request_timeout")
         assert timeout is not None
         assert timeout >= 60, f"Timeout should be >= 60s, got {timeout}"
 
