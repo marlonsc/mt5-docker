@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import subprocess
 
-import pytest
 import rpyc
 
 from tests.conftest import requires_container
@@ -202,22 +201,17 @@ class TestRPyC6Compatibility:
         version = result.stdout.strip()
         assert version.startswith("6."), f"Expected rpyc 6.x in Wine, got {version}"
 
-    def test_numpy_array_obtain(self, rpyc_connection) -> None:
-        """Test explicit numpy array transfer (RPyC 6.x pattern).
+    def test_numpy_array_transfer(self, rpyc_connection) -> None:
+        """Test numpy array data transfer using modern RPyC 6.x pattern.
 
-        RPyC 6.x blocks __array__ access for security. Use obtain() for local copy.
-        Note: This test requires numpy on both host and remote.
+        RPyC 6.x blocks __array__ access for security.
+        Use tolist() on remote to transfer data without rpyc.classic.
         """
-        try:
-            import numpy as _  # noqa: F401, PLC0415, ICN001
-        except ImportError:
-            pytest.skip("numpy not installed locally")
-
         np = rpyc_connection.modules.numpy
         remote_array = np.array([1, 2, 3])
-        # RPyC 6.x: Use obtain() for local copy
-        local_array = rpyc.classic.obtain(remote_array)
-        assert list(local_array) == [1, 2, 3]
+        # Modern RPyC 6.x: Convert to list on remote side, then transfer
+        local_list = remote_array.tolist()
+        assert local_list == [1, 2, 3]
 
     def test_rpyc_connection_timeout_config(self, rpyc_connection) -> None:
         """Verify RPyC connection timeout is properly configured."""

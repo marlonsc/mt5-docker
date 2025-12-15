@@ -24,7 +24,7 @@ import time
 from pathlib import Path
 
 import pytest
-from rpyc.utils.classic import connect as rpyc_connect
+import rpyc
 
 from tests.fixtures.docker import DockerContainerConfig, get_test_container_config
 
@@ -73,16 +73,19 @@ def is_container_running(name: str | None = None) -> bool:
 def is_rpyc_service_ready(host: str = "localhost", port: int | None = None) -> bool:
     """Check if RPyC service is ready (actual handshake, not just port).
 
+    Uses RPyC 6.x rpyc.connect() - the modern connection method.
     Uses a 60 second timeout because Wine/Python RPyC server can be slow.
     """
     rpyc_port = port or _config.rpyc_port
     try:
-        conn = rpyc_connect(host, rpyc_port)
-        conn._config["sync_request_timeout"] = 60  # noqa: SLF001
-        _ = conn.modules
+        conn = rpyc.connect(
+            host,
+            rpyc_port,
+            config={"sync_request_timeout": 60},
+        )
+        _ = conn.root  # Verify connection works
         conn.close()
-    except (OSError, ConnectionError, TimeoutError, ValueError):
-        # ValueError: RPyC protocol mismatch (e.g., 5.x client vs 6.x server)
+    except (OSError, ConnectionError, TimeoutError, EOFError):
         return False
     else:
         return True
@@ -265,9 +268,12 @@ def mt5_credentials() -> dict[str, str | int]:
 
 @pytest.fixture
 def rpyc_connection(docker_container: None):  # noqa: ARG001
-    """Provide RPyC connection to test container."""
-    conn = rpyc_connect("localhost", _config.rpyc_port)
-    conn._config["sync_request_timeout"] = _config.rpyc_timeout  # noqa: SLF001
+    """Provide RPyC 6.x connection to test container."""
+    conn = rpyc.connect(
+        "localhost",
+        _config.rpyc_port,
+        config={"sync_request_timeout": _config.rpyc_timeout},
+    )
     yield conn
     conn.close()
 

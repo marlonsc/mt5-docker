@@ -55,9 +55,10 @@ services:
       - mt5_cache:/cache:uid=911,gid=911
       - ../../data:/data:ro
     environment:
-      # MT5 test credentials - REQUIRED: configure in .env file (see .env.example)
-      - MT5_LOGIN=${MT5_LOGIN:?MT5_LOGIN required - copy .env.example to .env}
-      - MT5_PASSWORD=${MT5_PASSWORD:?MT5_PASSWORD required - copy .env.example to .env}
+      # MT5 test credentials - OPTIONAL: configure in .env file for full tests
+      # Without credentials, container starts but MT5 login tests are skipped
+      - MT5_LOGIN=${MT5_LOGIN:-}
+      - MT5_PASSWORD=${MT5_PASSWORD:-}
       - MT5_SERVER=${MT5_SERVER:-MetaQuotes-Demo}
 
 volumes:
