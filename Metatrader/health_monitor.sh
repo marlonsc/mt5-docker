@@ -2,36 +2,50 @@
 # MT5 Health Monitor and Auto-Recovery
 # Runs in background to ensure MT5 stays running and connected
 set -euo pipefail
-source "$(dirname "$0")/00_env.sh"
+source "$(dirname "$0")/scripts/00_env.sh"
 
 # Configuration
 HEALTH_CHECK_INTERVAL="${HEALTH_CHECK_INTERVAL:-30}"
 AUTO_RECOVERY_ENABLED="${AUTO_RECOVERY_ENABLED:-1}"
 MAX_RESTART_ATTEMPTS=3
 RESTART_COOLDOWN=60
+STARTUP_MARKER="${STARTUP_MARKER:-$WINEPREFIX/.startup-complete}"
+STARTUP_WAIT_MAX=300  # Max 5 minutes to wait for startup
 
 # State tracking
 RESTART_COUNT=0
 LAST_RESTART_TIME=0
 
 # ============================================================
-# Health Check Functions
+# Health Check Functions (with diagnostic logging)
 # ============================================================
 
 check_mt5_process() {
-    pgrep -f "terminal64.exe" > /dev/null 2>&1
-    return $?
+    if pgrep -f "terminal64.exe" > /dev/null 2>&1; then
+        return 0
+    else
+        log DEBUG "[health] MT5 process not found"
+        return 1
+    fi
 }
 
 check_rpyc_server() {
-    ss -tuln | grep -q ":$mt5server_port" 2>/dev/null
-    return $?
+    if ss -tuln | grep -q ":$mt5server_port" 2>/dev/null; then
+        return 0
+    else
+        log DEBUG "[health] RPyC port $mt5server_port not listening"
+        return 1
+    fi
 }
 
 check_mt5_connection() {
     # Quick TCP check to RPyC server
-    timeout 5 bash -c "echo >/dev/tcp/localhost/$mt5server_port" 2>/dev/null
-    return $?
+    if timeout 5 bash -c "echo >/dev/tcp/localhost/$mt5server_port" 2>/dev/null; then
+        return 0
+    else
+        log DEBUG "[health] TCP connection to port $mt5server_port failed"
+        return 1
+    fi
 }
 
 # ============================================================
@@ -57,14 +71,16 @@ restart_mt5() {
 
     log INFO "[health] Attempting MT5 restart (attempt $((RESTART_COUNT + 1))/$MAX_RESTART_ATTEMPTS)..."
 
-    # Kill existing MT5 process if hanging
-    pkill -9 -f "terminal64.exe" 2>/dev/null || true
+    # Kill existing MT5 process if hanging (graceful first, then force)
+    pkill -f "terminal64.exe" 2>/dev/null
     sleep 2
+    if pgrep -f "terminal64.exe" > /dev/null 2>&1; then
+        pkill -9 -f "terminal64.exe" 2>/dev/null
+        sleep 1
+    fi
 
     # Build MT5 launch arguments with portable mode and config file
     MT5_ARGS="/portable"
-    MT5_CONFIG_DIR="$WINEPREFIX/drive_c/Program Files/MetaTrader 5/Config"
-    MT5_STARTUP_INI="$MT5_CONFIG_DIR/startup.ini"
 
     if [ -f "$MT5_STARTUP_INI" ]; then
         MT5_ARGS="$MT5_ARGS /config:\"C:\\Program Files\\MetaTrader 5\\Config\\startup.ini\""
@@ -99,7 +115,7 @@ restart_rpyc_server() {
 
     # Kill the Wine Python process - s6 will automatically restart it
     # Note: s6-svc requires root, but this script runs as abc user
-    pkill -f "python.exe /tmp/mt5linux/server.py" 2>/dev/null || true
+    pkill -f "python.exe /tmp/mt5linux/server.py" 2>/dev/null
 
     # Wait for s6 to restart the service
     sleep 5
@@ -117,8 +133,26 @@ restart_rpyc_server() {
 # Main Health Monitor Loop
 # ============================================================
 
+wait_for_startup() {
+    local waited=0
+    while [ ! -f "$STARTUP_MARKER" ] && [ $waited -lt $STARTUP_WAIT_MAX ]; do
+        log INFO "[health] Waiting for startup to complete..."
+        sleep 10
+        waited=$((waited + 10))
+    done
+
+    if [ ! -f "$STARTUP_MARKER" ]; then
+        log ERROR "[health] Startup marker not found after ${STARTUP_WAIT_MAX}s - setup failed"
+        exit 1
+    fi
+    log INFO "[health] Startup complete, beginning health monitoring"
+}
+
 main_loop() {
     log INFO "[health] Starting health monitor (interval: ${HEALTH_CHECK_INTERVAL}s, auto-recovery: ${AUTO_RECOVERY_ENABLED})"
+
+    # Wait for startup to complete before starting health checks
+    wait_for_startup
 
     while true; do
         sleep "$HEALTH_CHECK_INTERVAL"

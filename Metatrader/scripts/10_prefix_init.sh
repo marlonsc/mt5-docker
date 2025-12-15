@@ -2,15 +2,20 @@
 set -euo pipefail
 source "$(dirname "$0")/00_env.sh"
 
-log INFO "[1/9] Initializing Wine prefix (WINEPREFIX=$WINEPREFIX)"
+log INFO "[wine] Initializing Wine prefix (WINEPREFIX=$WINEPREFIX)"
 
-mkdir -p "$PREFIX_CACHE_DIR" || true
+if ! mkdir -p "$PREFIX_CACHE_DIR" 2>/dev/null; then
+    log WARN "[wine] Could not create cache dir: $PREFIX_CACHE_DIR"
+fi
 
 # Check if Wine prefix is already fully initialized
 if [ -f "$INIT_MARKER" ] && [ -f "$DEPS_MARKER" ]; then
-    log INFO "[1/9] Wine prefix already initialized; skipping wineboot"
+    log INFO "[wine] Prefix already initialized; skipping wineboot"
 else
-    "$wine_executable" wineboot -i || log WARN "wineboot returned non-zero"
+    if ! "$wine_executable" wineboot -i; then
+        log ERROR "[wine] wineboot -i failed"
+        exit 1
+    fi
 fi
 
 # Gecko MSI filenames (based on version)
@@ -35,22 +40,31 @@ fi
 # Install Gecko if not already done
 if [ ! -f "$GECKO_MARKER" ]; then
     if [ -f "$GECKO_X64" ]; then
-        log INFO "[1/9] Installing Wine Gecko x64 into prefix"
-        "$wine_executable" msiexec /i "$GECKO_X64" /quiet || log WARN "Gecko x64 MSI install returned non-zero"
+        log INFO "[wine] Installing Gecko x64 into prefix"
+        if ! "$wine_executable" msiexec /i "$GECKO_X64" /quiet; then
+            log ERROR "[wine] Gecko x64 install failed"
+            exit 1
+        fi
     fi
     if [ -f "$GECKO_X86" ]; then
-        log INFO "[1/9] Installing Wine Gecko x86 into prefix"
-        "$wine_executable" msiexec /i "$GECKO_X86" /quiet || log WARN "Gecko x86 MSI install returned non-zero"
+        log INFO "[wine] Installing Gecko x86 into prefix"
+        if ! "$wine_executable" msiexec /i "$GECKO_X86" /quiet; then
+            log ERROR "[wine] Gecko x86 install failed"
+            exit 1
+        fi
     fi
     touch "$GECKO_MARKER"
 else
-    log INFO "[1/9] Skipping Wine Gecko install; marker present"
+    log INFO "[wine] Gecko already installed; skipping"
 fi
 
 # Update the Wine prefix after installs (only if not already done)
 if [ ! -f "$INIT_MARKER" ]; then
-    "$wine_executable" wineboot -u || log WARN "wineboot -u returned non-zero"
+    if ! "$wine_executable" wineboot -u; then
+        log ERROR "[wine] wineboot -u failed"
+        exit 1
+    fi
     touch "$INIT_MARKER"
 else
-    log INFO "[1/9] Skipping wineboot -u; prefix already updated"
+    log INFO "[wine] Prefix already updated; skipping wineboot -u"
 fi

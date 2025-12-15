@@ -4,22 +4,24 @@ This is a fork of the original project by [gmag11](https://github.com/gmag11/Met
 
 Changes in this fork:
 
-- Added Expert Advisor (EA) automation support requiring full Windows .NET Framework under Wine. Mono is removed.
+- Added Expert Advisor (EA) automation support with Windows .NET Framework under Wine. Mono is removed.
 - Split `start.sh` into modular scripts under `Metatrader/scripts/` for clearer install and runtime steps.
-- Added data sync: copies EA binaries from `data/ea/` into MT5 `MQL5/Experts`, and `.set` files from `data/set-files/` into the MT5 `Documents` directory.
-- Updated to Python 3.13 for better performance and modern language features.
+- Added auto-login support via environment variables (`MT5_LOGIN`, `MT5_PASSWORD`, `MT5_SERVER`).
+- Added health monitoring and auto-recovery for MT5 and RPyC server.
+- Integrated `mt5linux` from GitHub with resilient RPyC server.
 - Updated image metadata and labels following OCI standards.
-- General build quality-of-life improvements and better documentation.
+- Fail-fast startup: scripts exit immediately on critical failures.
 
 ## Features
 
-- Run MetaTrader5 in an isolated environment.
-- Remote access to MetaTrader5 interface via an integrated VNC client accessible through a web browser.
-- Built on the reliable and secure [KasmVNC](https://github.com/kasmtech/KasmVNC) project.
-- RPyC server for remote access to Python MetaTrader Library from Windows or Linux using <https://github.com/lucas-campagna/mt5linux>
+- Run MetaTrader5 in an isolated Docker environment.
+- Remote access to MetaTrader5 interface via KasmVNC web browser interface.
+- RPyC server for remote Python access using [mt5linux](https://github.com/marlonsc/mt5linux).
+- Auto-login with environment variables (no manual login needed).
+- Health monitoring with auto-recovery for MT5 terminal and RPyC server.
 - Expert Advisors (EAs) support:
-  - Full Windows `.NET Framework 4.8` installed inside Wine for EA compatibility.
-  - Automatic sync of EA files and settings from the `data/` folder into the MT5 environment.
+  - Optional Windows `.NET Framework 4.8` for .NET-dependent EAs.
+  - Full Wine environment for native EA execution.
 
 ![MetaTrader5 running inside container and controlled through web browser](https://imgur.com/v6Hm9pa.png)
 
@@ -78,7 +80,7 @@ cd MT5
 nano docker-compose.yaml
 ```
 
-Use this content filling user and password with your own data.
+Use this content, optionally adding your MT5 credentials for auto-login.
 
 ```yaml
 version: '3'
@@ -93,11 +95,16 @@ services:
       - 3000:3000
       - 8001:8001
     environment:
-      - CUSTOM_USER=<Choose a user>
-      - PASSWORD=<Choose a secure password>
-      - ENABLE_WIN_DOTNET=1   # install .NET Framework 4.8 in Wine (required for .NET-dependent EAs)
-      - ENABLE_DATA_SYNC=1    # enable EA and .set file synchronization from /data
-      - TZ=UTC                # optional: set timezone for logs and MT5
+      # Auto-login credentials (optional - can login manually via VNC instead)
+      - MT5_LOGIN=your_account_number
+      - MT5_PASSWORD=your_password
+      - MT5_SERVER=MetaQuotes-Demo
+      # Optional features
+      - ENABLE_WIN_DOTNET=1   # Install .NET Framework 4.8 for .NET EAs (default: 1)
+      - AUTO_RECOVERY_ENABLED=1  # Auto-restart on failures (default: 1)
+      - TZ=UTC                # Timezone for logs and MT5
+```
+
 ## .NET Support
 
 - Windows `.NET Framework` inside Wine:
@@ -106,32 +113,6 @@ services:
 
 Disable by setting `ENABLE_WIN_DOTNET=0` in compose.
 
-## EA and Set File Sync
-
-When `ENABLE_DATA_SYNC=1` is set, the container will:
-- Copy EA binaries from `data/ea/` (e.g., `Dark Moon MT5.ex5`) into `config/.wine/drive_c/Program Files/MetaTrader 5/MQL5/Experts`.
-- Copy `.set` files from `data/set-files/` (e.g., `myfxbook.set`) into the MT5 `Documents` directory at `config/.wine/drive_c/users/<user>/Documents`.
-
-This is handled by the modular startup scripts (`Metatrader/scripts/35_data_sync.sh`) and runs at container start. Place your files in the `data/` folder before starting or restart the container to re-sync.
-
-Example `data/` folder structure:
-
-```
-
-data/
-  ea/
-    Dark Moon MT5.ex5
-    AnotherEA.ex5
-  set-files/
-    myfxbook.set
-    AnotherEA-EURUSD-M15.set
-
-```
-
-Mounted paths inside container:
-- `data/ea/*` -> `config/.wine/drive_c/Program Files/MetaTrader 5/MQL5/Experts/`
-- `data/set-files/*` -> `config/.wine/drive_c/users/<user>/Documents/`
-```
 
 **Notice**: If you do not need to do remote python programming you can get a much smaller installation changing this line:
 
@@ -174,64 +155,112 @@ You can access MetaEditor program clicking in `IDE` button in MetaTrader5 interf
 
 **Metatrader will always be updated automatically to latest version as it does when it is nativelly installed in Windows.**
 
-## Python programming
+## Python Programming
 
-You need to install [mt5linux library](https://github.com/lucas-campagna/mt5linux) in your Python host. It may be in any OS, not only Linux.
+Install [mt5linux](https://github.com/marlonsc/mt5linux) on your Python host (any OS):
 
-**Required library versions for compatibility:**
+```bash
+pip install git+https://github.com/marlonsc/mt5linux.git@master
+```
 
-- mt5linux == 0.2.1
-- numpy == 2.3.5
-- rpyc == 5.3.1
-- plumbum == 1.8.0
+**Required library versions:**
 
-This is a simple snippet to run your Python script fron any host
+- mt5linux >= 0.2.1
+- numpy >= 2.1.0
+- rpyc >= 5.2.0, < 6.0.0
+- plumbum >= 1.8.0
+
+**Example usage:**
 
 ```python
 from mt5linux import MetaTrader5
-mt5 = MetaTrader5(host='host running docker container',port=8001)
+
+mt5 = MetaTrader5(host='host-running-docker', port=8001)
 mt5.initialize()
 print(mt5.version())
 ```
 
-Output should be something like this:
+**Expected output:**
 
 ```
-(mt5linux) linux:~/$ python3
-Python 3.13.7 (main, Dec 13 2025, 14:30:45) [GCC 13.2.0] on linux
-Type "help", "copyright", "credits" or "license" for more information.
 >>> from mt5linux import MetaTrader5
->>> mt5 = MetaTrader5(host='192.168.1.10',port=8001)
+>>> mt5 = MetaTrader5(host='192.168.1.10', port=8001)
 >>> mt5.initialize()
 True
 >>> print(mt5.version())
 (500, 4993, '22 Dec 2025')
->>>
 ```
 
 ## Configuration
 
-Key environment variables:
+### Environment Variables
 
-- `CUSTOM_USER` / `PASSWORD`: web UI credentials for KasmVNC.
-- `ENABLE_WIN_DOTNET`: install Windows .NET Framework 4.8 inside Wine (required for .NET-dependent EAs). Default `1`.
-- `ENABLE_DATA_SYNC`: enable copying EA `.ex5` and `.set` files from `data/` into MT5 paths. Default `1`.
-- `TZ`: set container timezone.
+**Auto-Login (optional):**
+- `MT5_LOGIN`: MetaTrader 5 account number
+- `MT5_PASSWORD`: Account password
+- `MT5_SERVER`: Broker server (default: MetaQuotes-Demo)
 
-Ports:
+**Optional Features:**
+- `ENABLE_WIN_DOTNET`: Install .NET Framework 4.8 for .NET EAs (default: `1`)
+- `AUTO_RECOVERY_ENABLED`: Auto-restart on failures (default: `1`)
+- `HEALTH_CHECK_INTERVAL`: Health check interval in seconds (default: `30`)
 
-- `3000`: KasmVNC web interface.
-- `8001`: RPyC service for `mt5linux` remote control.
+**Advanced (usually no need to change):**
+- `WINEPREFIX`: Wine environment directory (default: `/config/.wine`)
+- `WINEDEBUG`: Wine debug output (default: `-all` for silent)
+- `TZ`: Container timezone
 
-Startup scripts:
-The container startup has been modularized. Key scripts under `Metatrader/scripts/` include:
+### Ports
 
-- `30_mt5_install.sh`: installs MetaTrader 5 under Wine.
-- `34_config_unpack.sh`: unpacks default config if needed.
-- `35_data_sync.sh`: copies EA and `.set` files from `data/` to their respective MT5 directories.
-- `36_myfxbook.sh`: optional integration.
-- `40_python_wine.sh` / `50_python_linux.sh`: Python environment setup.
-- `60_server.sh`: starts services (VNC, RPyC) and MT5.
+- `3000`: KasmVNC web interface
+- `8001`: RPyC service for mt5linux remote control
+
+### Startup Scripts
+
+The container startup is modularized under `Metatrader/scripts/`:
+
+- `05_config_unpack.sh`: Unpack pre-configured Wine prefix (if available)
+- `10_prefix_init.sh`: Initialize Wine prefix and install Gecko
+- `20_winetricks.sh`: Install winetricks dependencies (vcrun2019, fonts, etc.)
+- `30_mt5.sh`: Install, configure, and launch MetaTrader 5
+- `40_python_wine.sh`: Install Python and packages in Wine
+- `50_python_linux.sh`: Install mt5linux on Linux
+- `60_server.sh`: Configure s6-overlay RPyC server
+
+Health monitoring is handled by `Metatrader/health_monitor.sh` which runs in the background.
+
+### Startup Dependency Categories
+
+Dependencies are categorized by criticality:
+
+| Category | Behavior | Examples |
+|----------|----------|----------|
+| **REQUIRED** | Fail-fast, exit on failure | Python, MT5, Wine, Gecko |
+| **RECOMMENDED** | Warn on failure, continue | vcrun2019, dotnet48 |
+| **OPTIONAL** | Debug log if skipped | corefonts, gdiplus, msxml6 |
+
+**Winetricks dependencies** (vcrun2019, corefonts, gdiplus, msxml6, win10):
+- All are optional - MT5 can run without them
+- Failures are logged as warnings but don't stop startup
+- Some EAs may require vcrun2019 or dotnet48
+
+**Python packages** (MetaTrader5, rpyc):
+- Required for RPyC server functionality
+- Installation is verified before proceeding
+
+### Troubleshooting Startup
+
+If startup fails, check logs for specific error messages:
+
+```bash
+docker logs mt5
+
+# Look for [ERROR] tags to find critical failures
+docker logs mt5 2>&1 | grep ERROR
+
+# Check health monitor diagnostics
+docker logs mt5 2>&1 | grep health
+```
 
 ## Testing
 

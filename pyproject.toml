@@ -13,6 +13,7 @@ authors = [{ name = "marlonsc", email = "marlonsc@gmail.com" }]
 
 dependencies = [
     "rpyc>=5.2.0,<6.0.0", # Protocol compatibility with container
+    "structlog (>=25.5.0,<26.0.0)",
 ]
 
 [project.optional-dependencies]

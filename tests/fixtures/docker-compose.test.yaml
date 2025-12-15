@@ -22,6 +22,29 @@
 services:
   mt5:
     container_name: ${MT5_CONTAINER_NAME:-mt5docker-test}
+    # Stricter resource limits for testing
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 1G
+    # Logging configuration for tests
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
+    # File descriptor limits
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+      nproc:
+        soft: 4096
+        hard: 4096
     ports:
       - "${MT5_VNC_PORT:-43000}:3000"     # VNC (isolated from prod:3000, neptor:13000, mt5linux:23000)
       - "${MT5_RPYC_PORT:-48812}:8001"    # RPyC (isolated from prod:8001, neptor:18812, mt5linux:28812)
