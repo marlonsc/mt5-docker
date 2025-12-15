@@ -20,9 +20,14 @@ export DISPLAY="${DISPLAY:-:0}"
 export WINEDEBUG="${WINEDEBUG:--all}"
 
 # Ensure winetricks cache directory exists with proper permissions
-mkdir -p /config/.cache/winetricks
-chmod 755 /config/.cache/winetricks
-export XDG_CACHE_HOME="/config/.cache"
+# Try /config/.cache first, fallback to user home if permission denied
+if mkdir -p /config/.cache/winetricks 2>/dev/null; then
+    chmod 755 /config/.cache/winetricks 2>/dev/null || true
+    export XDG_CACHE_HOME="/config/.cache"
+else
+    mkdir -p "$HOME/.cache/winetricks" 2>/dev/null || true
+    export XDG_CACHE_HOME="$HOME/.cache"
+fi
 
 log INFO "[winetricks] Upgrading Wine dependencies (silent mode)..."
 
