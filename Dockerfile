@@ -9,7 +9,8 @@ FROM ghcr.io/linuxserver/baseimage-kasmvnc:debianbookworm AS base
 # Version ARGs (centralized for all stages)
 ARG BUILD_DATE
 ARG VERSION
-ARG PYTHON_VERSION=3.13.11
+# Python 3.12: Required for numpy 1.26.4 pre-built wheels (3.13 has no wheels)
+ARG PYTHON_VERSION=3.12.8
 ARG GECKO_VERSION=2.47.4
 ARG RPYC_VERSION=6.0.2
 ARG PYDANTIC_VERSION=2.12

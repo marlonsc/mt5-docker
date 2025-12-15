@@ -5,7 +5,7 @@ services:
       dockerfile: Dockerfile
       args:
         # Pin versions for reproducibility (update in versions.env)
-        PYTHON_VERSION: "3.13.11"
+        PYTHON_VERSION: "3.12.8"
         GECKO_VERSION: "2.47.4"
         # MT5 pip package installed at runtime (always latest)
         BUILD_DATE: "${BUILD_DATE:-}"
