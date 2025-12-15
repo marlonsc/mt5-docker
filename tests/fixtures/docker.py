@@ -1,7 +1,7 @@
 """Docker container configuration fixtures.
 
 This module provides configuration for the isolated test container.
-All sensitive values are loaded from environment variables.
+All sensitive values are loaded from environment variables using Pydantic 2 BaseSettings.
 
 Configuration priority:
 1. Environment variables (set in .env or shell)
@@ -15,33 +15,39 @@ Required environment variables (see .env.example):
 
 from __future__ import annotations
 
-import os
-from dataclasses import dataclass
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-@dataclass(frozen=True)
-class DockerContainerConfig:
-    """Configuration for the test container.
+class DockerContainerConfig(BaseSettings):
+    """Configuration for the test container using Pydantic 2 BaseSettings.
 
     All sensitive values come from environment variables.
+    Environment variables use MT5_ prefix.
     """
 
+    model_config = SettingsConfigDict(
+        env_prefix="MT5_",
+        case_sensitive=False,
+        extra="ignore",
+    )
+
     # Container identification
-    container_name: str
+    container_name: str = Field(default="mt5docker-test")
 
     # Network ports (isolated from other test environments)
-    rpyc_port: int
-    vnc_port: int
-    health_port: int
+    rpyc_port: int = Field(default=48812)
+    vnc_port: int = Field(default=43000)
+    health_port: int = Field(default=48002)
 
-    # Timeouts
-    startup_timeout: int
-    rpyc_timeout: int
+    # Timeouts (Wine/Python RPyC can be slow)
+    startup_timeout: int = Field(default=180)  # seconds to wait for container
+    rpyc_timeout: int = Field(default=60)  # seconds for RPyC operations
 
     # MT5 credentials (from environment)
-    mt5_login: str | None
-    mt5_password: str | None
-    mt5_server: str
+    mt5_login: str | None = Field(default=None, alias="LOGIN")
+    mt5_password: str | None = Field(default=None, alias="PASSWORD")
+    mt5_server: str = Field(default="MetaQuotes-Demo", alias="SERVER")
 
 
 def get_test_container_config() -> DockerContainerConfig:
@@ -54,21 +60,7 @@ def get_test_container_config() -> DockerContainerConfig:
         MT5_LOGIN and MT5_PASSWORD are required for tests that
         need MT5 authentication. Tests will skip if not set.
     """
-    return DockerContainerConfig(
-        # Container identification
-        container_name=os.getenv("MT5_CONTAINER_NAME", "mt5docker-test"),
-        # Isolated ports (avoid conflicts with production/other tests)
-        rpyc_port=int(os.getenv("MT5_RPYC_PORT", "48812")),
-        vnc_port=int(os.getenv("MT5_VNC_PORT", "43000")),
-        health_port=int(os.getenv("MT5_HEALTH_PORT", "48002")),
-        # Timeouts (Wine/Python RPyC can be slow)
-        startup_timeout=180,  # seconds to wait for container
-        rpyc_timeout=60,  # seconds for RPyC operations
-        # MT5 credentials (required for auth tests, loaded from .env)
-        mt5_login=os.getenv("MT5_LOGIN"),
-        mt5_password=os.getenv("MT5_PASSWORD"),
-        mt5_server=os.getenv("MT5_SERVER", "MetaQuotes-Demo"),
-    )
+    return DockerContainerConfig()
 
 
 # Port allocation documentation

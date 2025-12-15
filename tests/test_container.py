@@ -5,6 +5,7 @@ These tests validate:
 2. RPyC service availability - requires container
 3. mt5linux module accessibility - requires container
 4. Basic MT5 operations - requires container
+5. RPyC 6.x compatibility - requires container
 
 Tests that require the container will skip if MT5 credentials
 are not configured in .env file.
@@ -13,6 +14,8 @@ are not configured in .env file.
 from __future__ import annotations
 
 import subprocess
+
+import rpyc
 
 from tests.conftest import requires_container
 
@@ -168,3 +171,92 @@ class TestMT5LinuxInstallation:
         )
         assert result.returncode == 0, f"MetaTrader5 class not found: {result.stderr}"
         assert "MetaTrader5" in result.stdout
+
+
+@requires_container
+class TestRPyC6Compatibility:
+    """Test RPyC 6.x specific behavior (requires container)."""
+
+    def test_rpyc_version(self) -> None:
+        """Verify RPyC 6.x is installed locally."""
+        version = rpyc.__version__
+        assert version.startswith("6."), f"Expected rpyc 6.x, got {version}"
+
+    def test_wine_rpyc_version(self, container_name: str) -> None:
+        """Verify RPyC 6.x is installed in Wine Python."""
+        result = subprocess.run(
+            [
+                "docker",
+                "exec",
+                container_name,
+                "wine",
+                "python",
+                "-c",
+                "import rpyc; print(rpyc.__version__)",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == 0, f"rpyc not installed in Wine: {result.stderr}"
+        version = result.stdout.strip()
+        assert version.startswith("6."), f"Expected rpyc 6.x in Wine, got {version}"
+
+    def test_numpy_array_obtain(self, rpyc_connection) -> None:
+        """Test explicit numpy array transfer (RPyC 6.x pattern).
+
+        RPyC 6.x blocks __array__ access for security. Use obtain() for local copy.
+        """
+        np = rpyc_connection.modules.numpy
+        remote_array = np.array([1, 2, 3])
+        # RPyC 6.x: Use obtain() for local copy
+        local_array = rpyc.classic.obtain(remote_array)
+        assert list(local_array) == [1, 2, 3]
+
+    def test_rpyc_connection_timeout_config(self, rpyc_connection) -> None:
+        """Verify RPyC connection timeout is properly configured."""
+        timeout = rpyc_connection._config.get("sync_request_timeout")
+        assert timeout is not None
+        assert timeout >= 60, f"Timeout should be >= 60s, got {timeout}"
+
+    def test_python_version_in_wine(self, container_name: str) -> None:
+        """Verify Python 3.13+ is installed in Wine."""
+        result = subprocess.run(
+            [
+                "docker",
+                "exec",
+                container_name,
+                "wine",
+                "python",
+                "--version",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == 0, f"Python not found in Wine: {result.stderr}"
+        version_str = result.stdout.strip()
+        # Python 3.13.11 -> should start with "Python 3.13"
+        assert "3.13" in version_str, f"Expected Python 3.13.x, got {version_str}"
+
+    def test_pydantic_in_wine(self, container_name: str) -> None:
+        """Verify Pydantic 2 is installed in Wine Python."""
+        result = subprocess.run(
+            [
+                "docker",
+                "exec",
+                container_name,
+                "wine",
+                "python",
+                "-c",
+                "import pydantic; print(pydantic.__version__)",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == 0, (
+            f"Pydantic not installed in Wine: {result.stderr}"
+        )
+        version = result.stdout.strip()
+        assert version.startswith("2."), f"Expected Pydantic 2.x, got {version}"

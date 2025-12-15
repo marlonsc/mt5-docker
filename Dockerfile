@@ -9,7 +9,7 @@ FROM ghcr.io/linuxserver/baseimage-kasmvnc:debianbookworm AS base
 # Version ARGs for cache invalidation and pinning
 ARG BUILD_DATE
 ARG VERSION
-ARG PYTHON_VERSION=3.12.8
+ARG PYTHON_VERSION=3.13.11
 ARG GECKO_VERSION=2.47.4
 ARG MT5_PYPI_VERSION=5.0.5430
 
@@ -101,7 +101,8 @@ ARG MT5_PYPI_VERSION
 RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
     python3 -m pip install --upgrade --break-system-packages pip && \
     python3 -m pip install --break-system-packages \
-        "numpy>=2.1.0" "rpyc>=5.2.0" "plumbum>=1.8.0" "pyparsing>=3.0.0" pyxdg && \
+        "numpy>=2.1.0" "rpyc==6.0.2" "plumbum>=1.8.0" "pyparsing>=3.0.0" \
+        "pydantic>=2.0,<3.0" "pydantic-settings>=2.0,<3.0" pyxdg && \
     python3 -m pip install --break-system-packages \
         "git+https://github.com/marlonsc/mt5linux.git@master"
 

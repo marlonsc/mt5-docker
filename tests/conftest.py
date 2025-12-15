@@ -21,12 +21,15 @@ from __future__ import annotations
 import logging
 import subprocess
 import time
-from collections.abc import Generator
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
 from tests.fixtures.docker import DockerContainerConfig, get_test_container_config
+
+if TYPE_CHECKING:
+    from collections.abc import Generator
 
 # =============================================================================
 # CONFIGURATION - loaded from tests/fixtures/docker.py
@@ -194,7 +197,7 @@ def start_test_container() -> None:
 
 
 @pytest.fixture(scope="session")
-def docker_container() -> Generator[None, None, None]:
+def docker_container() -> Generator[None]:
     """Ensure ISOLATED test container is running (session-scoped).
 
     Tests that need the container should depend on this fixture.
@@ -203,7 +206,7 @@ def docker_container() -> Generator[None, None, None]:
     Skips if MT5 credentials are not configured in .env file.
     """
     start_test_container()
-    yield
+    return
     # Container stays running for reuse
 
 

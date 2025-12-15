@@ -24,7 +24,7 @@ if [ -f "$STAGING_DIR/.versions" ]; then
 fi
 
 # Version defaults (can be overridden by .versions or environment)
-export PYTHON_VERSION="${PYTHON_VERSION:-3.12.8}"
+export PYTHON_VERSION="${PYTHON_VERSION:-3.13.11}"
 export GECKO_VERSION="${GECKO_VERSION:-2.47.4}"
 export MT5_PYPI_VERSION="${MT5_PYPI_VERSION:-5.0.5430}"
 

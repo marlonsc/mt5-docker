@@ -44,7 +44,7 @@ if ! is_wine_python_package_installed "mt5linux"; then
         log ERROR "[python-wine] mt5linux install failed"
         exit 1
     fi
-    if ! "$wine_executable" python -m pip install --no-cache-dir "rpyc==5.3.1" "numpy<2" "plumbum==1.8.0"; then
+    if ! "$wine_executable" python -m pip install --no-cache-dir "rpyc==6.0.2" "numpy<2" "plumbum==1.8.0" "pydantic>=2.0,<3.0"; then
         log ERROR "[python-wine] mt5linux dependencies install failed"
         exit 1
     fi

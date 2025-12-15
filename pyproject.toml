@@ -12,8 +12,10 @@ requires-python = ">=3.11"
 authors = [{ name = "marlonsc", email = "marlonsc@gmail.com" }]
 
 dependencies = [
-    "rpyc>=5.2.0,<6.0.0", # Protocol compatibility with container
-    "structlog (>=25.5.0,<26.0.0)",
+    "rpyc==6.0.2",  # RPyC 6.0.2 - pinned for stability
+    "pydantic>=2.0,<3.0",  # Pydantic 2 for validation
+    "pydantic-settings>=2.0,<3.0",  # Settings management
+    "structlog>=25.5.0,<26.0.0",
 ]
 
 [project.optional-dependencies]
@@ -32,7 +34,7 @@ env_files = [".env"]      # Load .env file for tests (pytest-dotenv)
 
 [tool.ruff]
 line-length = 88
-target-version = "py311"
+target-version = "py313"
 
 [tool.ruff.lint]
 select = ["ALL"]

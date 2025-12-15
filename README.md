@@ -165,12 +165,14 @@ pip install git+https://github.com/marlonsc/mt5linux.git@master
 
 **Required library versions:**
 
+- Python >= 3.13
 - mt5linux >= 0.2.1
 - numpy >= 2.1.0
-- rpyc >= 5.2.0, < 6.0.0
+- rpyc == 6.0.2
 - plumbum >= 1.8.0
+- pydantic >= 2.0, < 3.0
 
-**Example usage:**
+**Example usage (synchronous):**
 
 ```python
 from mt5linux import MetaTrader5
@@ -189,6 +191,47 @@ print(mt5.version())
 True
 >>> print(mt5.version())
 (500, 4993, '22 Dec 2025')
+```
+
+**Example usage (asynchronous):**
+
+For async operations, use `mt5linux.AsyncMetaTrader5` (when available):
+
+```python
+import asyncio
+from mt5linux import AsyncMetaTrader5
+
+async def main():
+    mt5 = AsyncMetaTrader5(host='localhost', port=8001)
+    await mt5.initialize()
+
+    # Parallel data fetching (non-blocking)
+    account, tick = await asyncio.gather(
+        mt5.account_info(),
+        mt5.symbol_info_tick("EURUSD"),
+    )
+    print(f"Balance: {account.balance}, EURUSD: {tick.ask}")
+
+asyncio.run(main())
+```
+
+**RPyC 6.x numpy array handling:**
+
+RPyC 6.x blocks `__array__` access for security. Use `rpyc.classic.obtain()` for local copies:
+
+```python
+import rpyc
+from rpyc.utils.classic import connect
+
+conn = connect('localhost', 8001)
+np = conn.modules.numpy
+
+# Create remote array
+remote_array = np.array([1, 2, 3])
+
+# Get local copy (required in RPyC 6.x)
+local_array = rpyc.classic.obtain(remote_array)
+print(local_array)  # [1 2 3]
 ```
 
 ## Configuration
