@@ -13,6 +13,13 @@ ARG PYTHON_VERSION=3.13.11
 ARG GECKO_VERSION=2.47.4
 ARG MT5_PYPI_VERSION=5.0.5430
 
+# CENTRALIZED PYTHON MODULE VERSIONS (must match 00_env.sh)
+ARG RPYC_VERSION=6.0.2
+ARG PYDANTIC_MIN_VERSION=2.0.0
+ARG PYDANTIC_MAX_VERSION=3.0.0
+ARG PLUMBUM_MIN_VERSION=1.8.0
+ARG NUMPY_MAX_VERSION=2
+
 # ============================================================
 # Stage 1: DOWNLOADER - Pre-download large files
 # ============================================================
@@ -21,6 +28,9 @@ FROM base AS downloader
 ARG PYTHON_VERSION
 ARG GECKO_VERSION
 ARG MT5_PYPI_VERSION
+ARG RPYC_VERSION
+ARG PYDANTIC_MIN_VERSION
+ARG PLUMBUM_MIN_VERSION
 
 WORKDIR /staging
 
@@ -56,10 +66,14 @@ RUN --mount=type=cache,target=/downloads,id=mt5-downloads,sharing=locked \
             "https://dl.winehq.org/wine/wine-gecko/${GECKO_VERSION}/wine-gecko-${GECKO_VERSION}-x86.msi"; \
     fi && \
     cp /downloads/wine-gecko-${GECKO_VERSION}-x86.msi /staging/ && \
-    # Create version manifest for runtime
+    # Create version manifest for runtime (centralized versions)
     echo "PYTHON_VERSION=${PYTHON_VERSION}" > /staging/.versions && \
     echo "GECKO_VERSION=${GECKO_VERSION}" >> /staging/.versions && \
     echo "MT5_PYPI_VERSION=${MT5_PYPI_VERSION}" >> /staging/.versions && \
+    echo "RPYC_VERSION=${RPYC_VERSION}" >> /staging/.versions && \
+    echo "PYDANTIC_VERSION=${PYDANTIC_MIN_VERSION}" >> /staging/.versions && \
+    echo "PLUMBUM_VERSION=${PLUMBUM_MIN_VERSION}" >> /staging/.versions && \
+    echo "NUMPY_VERSION=1.26" >> /staging/.versions && \
     echo "BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> /staging/.versions && \
     ls -la /staging/
 
@@ -96,13 +110,17 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     apt-get install -y --install-recommends \
         winehq-stable winetricks cabextract
 
-# Layer 4: Linux Python packages (occasionally changes)
+# Layer 4: Linux Python packages (uses centralized versions from ARGs)
 ARG MT5_PYPI_VERSION
+ARG RPYC_VERSION
+ARG PYDANTIC_MIN_VERSION
+ARG PLUMBUM_MIN_VERSION
 RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
     python3 -m pip install --upgrade --break-system-packages pip && \
     python3 -m pip install --break-system-packages \
-        "numpy>=2.1.0" "rpyc==6.0.2" "plumbum>=1.8.0" "pyparsing>=3.0.0" \
-        "pydantic>=2.0,<3.0" "pydantic-settings>=2.0,<3.0" pyxdg && \
+        "numpy>=2.1.0" "rpyc==${RPYC_VERSION}" "plumbum>=${PLUMBUM_MIN_VERSION}" \
+        "pyparsing>=3.0.0" "pydantic>=${PYDANTIC_MIN_VERSION},<3.0" \
+        "pydantic-settings>=2.0,<3.0" pyxdg && \
     python3 -m pip install --break-system-packages --ignore-requires-python \
         "git+https://github.com/marlonsc/mt5linux.git@master"
 

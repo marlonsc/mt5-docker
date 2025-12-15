@@ -11,10 +11,12 @@ license = "MIT"
 requires-python = ">=3.11"
 authors = [{ name = "marlonsc", email = "marlonsc@gmail.com" }]
 
+# Dependencies - versions must match 00_env.sh centralized config
 dependencies = [
-    "rpyc==6.0.2",  # RPyC 6.0.2 - pinned for stability
-    "pydantic>=2.0,<3.0",  # Pydantic 2 for validation
-    "pydantic-settings>=2.0,<3.0",  # Settings management
+    "rpyc==6.0.2",              # RPYC_VERSION in 00_env.sh
+    "pydantic>=2.12,<3.0",      # PYDANTIC_VERSION in 00_env.sh
+    "pydantic-settings>=2.0,<3.0",
+    "plumbum>=1.8.0",           # PLUMBUM_VERSION in 00_env.sh
     "structlog>=25.5.0,<26.0.0",
 ]
 
@@ -53,3 +55,9 @@ ignore = [
     "PLR2004", # magic values ok in tests
     "ANN",     # annotations optional in tests
 ]
+
+[tool.mypy]
+python_version = "3.13"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true  # rpyc and numpy lack type stubs

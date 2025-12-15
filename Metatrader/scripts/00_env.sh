@@ -23,10 +23,32 @@ if [ -f "$STAGING_DIR/.versions" ]; then
     source "$STAGING_DIR/.versions"
 fi
 
-# Version defaults (can be overridden by .versions or environment)
+# ============================================================
+# CENTRALIZED VERSION CONFIGURATION
+# Single source of truth for ALL versions across scripts/modules
+# ============================================================
+
+# Core component versions
 export PYTHON_VERSION="${PYTHON_VERSION:-3.13.11}"
 export GECKO_VERSION="${GECKO_VERSION:-2.47.4}"
 export MT5_PYPI_VERSION="${MT5_PYPI_VERSION:-5.0.5430}"
+
+# Python module versions (Wine Python)
+export RPYC_VERSION="${RPYC_VERSION:-6.0.2}"
+export PYDANTIC_VERSION="${PYDANTIC_VERSION:-2.12}"
+export PLUMBUM_VERSION="${PLUMBUM_VERSION:-1.8.0}"
+export NUMPY_VERSION="${NUMPY_VERSION:-1.26}"
+
+# mt5linux - always use main branch from GitHub
+export MT5LINUX_REPO="${MT5LINUX_REPO:-https://github.com/marlonsc/mt5linux.git}"
+export MT5LINUX_BRANCH="${MT5LINUX_BRANCH:-master}"
+
+# pip install specifiers (derived from versions above)
+export RPYC_SPEC="rpyc==${RPYC_VERSION}"
+export PYDANTIC_SPEC="pydantic>=${PYDANTIC_VERSION},<3.0.0"
+export PLUMBUM_SPEC="plumbum>=${PLUMBUM_VERSION}"
+export NUMPY_SPEC="numpy>=${NUMPY_VERSION},<2"
+export MT5LINUX_SPEC="git+${MT5LINUX_REPO}@${MT5LINUX_BRANCH}"
 
 # Construct URLs from versions
 export python_url="https://www.python.org/ftp/python/${PYTHON_VERSION}/python-${PYTHON_VERSION}-amd64.exe"
