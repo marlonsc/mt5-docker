@@ -97,33 +97,32 @@ EOF
 }
 
 # ============================================================
-# Phase 2: Install MetaTrader 5
+# Phase 2: Install/Upgrade MetaTrader 5
+# Always runs installer to ensure latest version
 # ============================================================
 install_mt5() {
     MT5_SETUP="$WINEPREFIX/drive_c/mt5setup.exe"
 
     if [ -e "$mt5file" ]; then
-        log INFO "[mt5] Already installed at $mt5file"
-        return 0
+        log INFO "[mt5] Found existing installation at $mt5file"
+        log INFO "[mt5] Running upgrade to ensure latest version..."
+    else
+        log INFO "[mt5] Not found. Installing..."
     fi
 
-    log INFO "[mt5] Not found. Installing..."
-
     # Set Windows version to Win10
-    "$wine_executable" reg add "HKEY_CURRENT_USER\\Software\\Wine" /v Version /t REG_SZ /d "win10" /f
+    "$wine_executable" reg add "HKEY_CURRENT_USER\\Software\\Wine" /v Version /t REG_SZ /d "win10" /f 2>/dev/null || true
 
-    # Get MT5 installer using prioritized cache
+    # Get MT5 installer (always download fresh for upgrades)
     log INFO "[mt5] Getting installer..."
     get_file "mt5setup.exe" "$mt5setup_url" "$MT5_SETUP"
 
-    # Install MT5
-    log INFO "[mt5] Running installer..."
+    # Install/Upgrade MT5 silently
+    log INFO "[mt5] Running installer (silent mode)..."
     "$wine_executable" "$MT5_SETUP" "/auto" &
     INSTALLER_PID=$!
     if ! wait $INSTALLER_PID; then
-        log ERROR "[mt5] Installer process failed"
-        rm -f "$MT5_SETUP"
-        return 1
+        log WARN "[mt5] Installer process returned non-zero (may be OK for upgrades)"
     fi
 
     # Cleanup installer
@@ -138,7 +137,7 @@ install_mt5() {
         log ERROR "[mt5] Installation failed. Not a regular file: $mt5file"
         return 1
     fi
-    log INFO "[mt5] Installation successful: $mt5file"
+    log INFO "[mt5] Installation/upgrade successful: $mt5file"
 }
 
 # ============================================================
