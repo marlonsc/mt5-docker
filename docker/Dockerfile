@@ -13,12 +13,8 @@ ARG VERSION
 ARG PYTHON_VERSION=3.12.8
 ARG GECKO_VERSION=2.47.4
 ARG RPYC_VERSION=6.0.2
-ARG PLUMBUM_VERSION=1.8.0
 # NumPy 1.26.4: Wine compatible (2.x uses ucrtbase functions Wine hasn't implemented)
 ARG NUMPY_VERSION=1.26.4
-
-# Feature flags - non-free components installed at runtime for MT5
-ARG ENABLE_WINETRICKS_NONFREE=0
 
 # ============================================================
 # Stage 1: WINE-BASE - Base image with Wine installed (SHARED)
@@ -53,7 +49,6 @@ FROM base AS downloader
 ARG PYTHON_VERSION
 ARG GECKO_VERSION
 ARG RPYC_VERSION
-ARG PLUMBUM_VERSION
 ARG NUMPY_VERSION
 
 WORKDIR /staging
@@ -86,7 +81,6 @@ RUN --mount=type=cache,target=/downloads,id=mt5-downloads,sharing=locked \
     echo "PYTHON_VERSION=${PYTHON_VERSION}" > /staging/.versions && \
     echo "GECKO_VERSION=${GECKO_VERSION}" >> /staging/.versions && \
     echo "RPYC_VERSION=${RPYC_VERSION}" >> /staging/.versions && \
-    echo "PLUMBUM_VERSION=${PLUMBUM_VERSION}" >> /staging/.versions && \
     echo "NUMPY_VERSION=${NUMPY_VERSION}" >> /staging/.versions && \
     echo "BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> /staging/.versions && \
     ls -la /staging/
@@ -100,9 +94,7 @@ FROM wine-base AS wine-builder
 ARG PYTHON_VERSION
 ARG GECKO_VERSION
 ARG RPYC_VERSION
-ARG PLUMBUM_VERSION
 ARG NUMPY_VERSION
-ARG ENABLE_WINETRICKS_NONFREE
 
 # Build complete Wine prefix (Python + packages, NOT MT5)
 # Pattern from webcomics/pywine: xvfb-run + proper DLL overrides
@@ -142,14 +134,6 @@ RUN --mount=from=downloader,source=/staging,target=/staging \
     echo "=== Step 3/5: Installing winetricks win10 ===" && \
     xvfb-run sh -c "winetricks -q win10; wineserver -w" && \
     rm -rf /tmp/.cache/winetricks/* && \
-    # Optional: Non-free components
-    if [ "${ENABLE_WINETRICKS_NONFREE}" = "1" ]; then \
-        echo "Installing non-free winetricks components..." && \
-        for pkg in vcrun2019 vcrun2022 corefonts gdiplus; do \
-            xvfb-run sh -c "winetricks -q $pkg; wineserver -w" || echo "WARN: $pkg failed"; \
-            rm -rf /tmp/.cache/winetricks/*; \
-        done; \
-    fi && \
     # ============================================================
     # Step 4: Install Python for Windows (pywine pattern)
     # ============================================================
@@ -198,7 +182,6 @@ ARG VERSION
 ARG PYTHON_VERSION
 ARG GECKO_VERSION
 ARG RPYC_VERSION
-ARG PLUMBUM_VERSION
 ARG NUMPY_VERSION
 
 # OCI-compliant image metadata
@@ -235,7 +218,8 @@ COPY --from=wine-builder /wine-build /opt/wine-prefix-template
 # Copy scripts
 COPY container/Metatrader /Metatrader
 RUN chmod +x /Metatrader/start.sh && \
-    chmod -R +x /Metatrader/scripts && \
+    chmod +x /Metatrader/setup.sh && \
+    chmod +x /Metatrader/health_monitor.sh && \
     chown -R abc:abc /Metatrader
 
 # Copy s6 service definitions for RPyC server supervision

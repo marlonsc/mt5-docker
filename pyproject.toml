@@ -26,7 +26,6 @@
     version = "0.1.9"
 
     [tool.poetry.dependencies]
-        plumbum = "^1.8.0"       # PLUMBUM_VERSION in versions.env
         python = ">=3.12"
         python-dotenv = "^1.0.0" # For loading .env files
         rpyc = "6.0.2"           # RPYC_VERSION in versions.env
@@ -69,6 +68,8 @@
         ignore = [
             "COM812",  # missing-trailing-comma (conflicts with formatter)
             "ISC001",  # single-line-implicit-string-concatenation (conflicts with formatter)
+            "D203",    # incorrect-blank-line-before-class (incompatible with D211)
+            "D213",    # multi-line-summary-second-line (incompatible with D212)
         ]
         select = ["ALL"]
 

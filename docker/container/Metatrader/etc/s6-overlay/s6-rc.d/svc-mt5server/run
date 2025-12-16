@@ -1,240 +1,239 @@
 #!/usr/bin/with-contenv bash
-# s6 service: Wine RPyC server for MT5
+# s6 service: MT5 Terminal + RPyC Bridge Manager
+# =============================================================================
+# Manages both MT5 terminal and RPyC bridge server lifecycle.
+# Monitors restart token from health_monitor and performs full restart.
 #
-# This service runs the RPyC server inside Wine, supervised by s6-overlay.
-# If the process crashes, s6 will automatically restart it.
-# Uses modern MT5Service (NOT deprecated ClassicService/SlaveService).
+# Token-based communication:
+# - Reads:  /tmp/.mt5-startup-complete (start.sh signals ready)
+# - Reads:  /tmp/.mt5-restart-requested (health_monitor signals restart)
+# - Clears: /tmp/.mt5-restart-requested (after restart)
+# =============================================================================
 
-# Load environment from 00_env.sh (fail-fast if missing or broken)
-ENV_FILE="/Metatrader/scripts/00_env.sh"
-if [ ! -f "$ENV_FILE" ]; then
-    echo "[svc-mt5server] ERROR: Environment file not found: $ENV_FILE"
-    exit 1
-fi
-if ! source "$ENV_FILE"; then
-    echo "[svc-mt5server] ERROR: Failed to load environment from $ENV_FILE"
-    exit 1
-fi
+# =============================================================================
+# CONFIGURATION
+# =============================================================================
+export CONFIG_DIR="${CONFIG_DIR:-/config}"
+export WINEPREFIX="${WINEPREFIX:-$CONFIG_DIR/.wine}"
+export WINE_PYTHON_PATH="$WINEPREFIX/drive_c/Python/python.exe"
+export wine_executable="${wine_executable:-wine}"
+export mt5file="$WINEPREFIX/drive_c/Program Files/MetaTrader 5/terminal64.exe"
+export mt5server_port="${mt5server_port:-8001}"
 
-# Verify required variables are set
-if [ -z "${wine_executable:-}" ]; then
-    echo "[svc-mt5server] ERROR: wine_executable not defined"
-    exit 1
-fi
-if [ -z "${mt5server_port:-}" ]; then
-    echo "[svc-mt5server] ERROR: mt5server_port not defined"
-    exit 1
-fi
-if [ -z "${WINE_PYTHON_PATH:-}" ]; then
-    echo "[svc-mt5server] ERROR: WINE_PYTHON_PATH not defined"
-    exit 1
-fi
+# Token files
+STARTUP_MARKER="${STARTUP_MARKER:-/tmp/.mt5-startup-complete}"
+STARTUP_IN_PROGRESS="${STARTUP_IN_PROGRESS:-/tmp/.mt5-startup-in-progress}"
+RESTART_TOKEN="${RESTART_TOKEN:-/tmp/.mt5-restart-requested}"
 
-# Check if Wine prefix was built during Docker build (fast path)
-BUILD_MARKER="${WINEPREFIX:-/config/.wine}/.build-complete"
+# Monitoring interval
+TOKEN_CHECK_INTERVAL=5
 
-# STARTUP_MARKER and STARTUP_IN_PROGRESS are provided by 00_env.sh (centralized config)
+# =============================================================================
+# LOGGING
+# =============================================================================
+log() {
+    echo "[svc-mt5server] $*"
+}
 
-# ============================================================
-# Helper: Run command as user abc (owner of Wine prefix)
-# ============================================================
+# =============================================================================
+# HELPER FUNCTIONS
+# =============================================================================
+
 run_as_abc() {
     s6-setuidgid abc "$@"
 }
 
-# ============================================================
-# Helper: Check if Wine Python is working (run as abc)
-# ============================================================
-check_wine_python() {
-    if [ ! -f "$WINE_PYTHON_PATH" ]; then
-        echo "[svc-mt5server] Wine Python not found at: $WINE_PYTHON_PATH"
-        return 1
-    fi
-    if ! run_as_abc ${wine_executable} "$WINE_PYTHON_PATH" --version 2>/dev/null; then
-        echo "[svc-mt5server] Wine Python not executing properly"
-        return 1
-    fi
-    return 0
-}
-
-# ============================================================
-# Helper: Check if MetaTrader5 pip package is installed (run as abc)
-# ============================================================
-check_mt5_pip() {
-    if ! run_as_abc ${wine_executable} "$WINE_PYTHON_PATH" -c "import MetaTrader5" 2>/dev/null; then
-        echo "[svc-mt5server] MetaTrader5 pip package not installed"
-        return 1
-    fi
-    return 0
-}
-
-# ============================================================
-# Helper: Check if MT5 terminal is installed
-# ============================================================
-check_mt5_terminal() {
-    if [ ! -f "$mt5file" ]; then
-        echo "[svc-mt5server] MT5 terminal not found at: $mt5file"
-        return 1
-    fi
-    return 0
-}
-
-# ============================================================
-# Helper: Check if MT5 terminal is running
-# ============================================================
 is_mt5_running() {
     pgrep -f "terminal64.exe" >/dev/null 2>&1
 }
 
-# ============================================================
-# Helper: Start MT5 terminal if not running (run as abc)
-# Uses /config for auto-login (more reliable than /login per MQL5 forum research)
-# See: https://www.mql5.com/en/forum/265448
-# ============================================================
+is_bridge_running() {
+    pgrep -f "wine.*python.*mt5linux.bridge" >/dev/null 2>&1
+}
+
+kill_mt5() {
+    log "Stopping MT5 terminal..."
+    pkill -f "terminal64.exe" 2>/dev/null || true
+    sleep 2
+    pkill -9 -f "terminal64.exe" 2>/dev/null || true
+}
+
+kill_bridge() {
+    log "Stopping bridge server..."
+    pkill -f "wine.*python.*mt5linux.bridge" 2>/dev/null || true
+    sleep 1
+    pkill -9 -f "wine.*python.*mt5linux.bridge" 2>/dev/null || true
+}
+
 start_mt5_terminal() {
     if is_mt5_running; then
-        echo "[svc-mt5server] MT5 terminal already running"
+        log "MT5 terminal already running"
         return 0
     fi
 
-    if ! check_mt5_terminal; then
-        echo "[svc-mt5server] Cannot start MT5 - not installed"
-        return 1
+    if [ ! -f "$mt5file" ]; then
+        log "WARN: MT5 terminal not installed"
+        return 0
     fi
 
-    echo "[svc-mt5server] Starting MT5 terminal..."
+    log "Starting MT5 terminal..."
 
-    # Check for config file generated by 30_mt5.sh
-    # Config is in C:\MT5Config (no spaces) to avoid quoting issues
+    MT5_ARGS="/portable"
     MT5_CONFIG_PATH="$WINEPREFIX/drive_c/MT5Config/startup.ini"
-
     if [ -f "$MT5_CONFIG_PATH" ]; then
-        echo "[svc-mt5server] Using config file for auto-login: $MT5_CONFIG_PATH"
-        # Path without spaces - no quoting needed
-        run_as_abc ${wine_executable} "$mt5file" /portable /config:C:\\MT5Config\\startup.ini &
-    else
-        echo "[svc-mt5server] No config file found - starting without auto-login"
-        run_as_abc ${wine_executable} "$mt5file" /portable &
+        MT5_ARGS="$MT5_ARGS /config:C:\\MT5Config\\startup.ini"
+        log "Using config file for auto-login"
     fi
 
-    # Wait for terminal to start (max 30s)
+    run_as_abc ${wine_executable} "$mt5file" $MT5_ARGS &
+
+    # Wait for startup (max 30s)
     local waited=0
     while [ $waited -lt 30 ]; do
         if is_mt5_running; then
-            echo "[svc-mt5server] MT5 terminal started"
+            log "MT5 terminal started"
             return 0
         fi
         sleep 2
         waited=$((waited + 2))
     done
 
-    echo "[svc-mt5server] WARN: MT5 terminal may not have started"
-    return 0  # Don't fail - let RPyC server try anyway
+    log "WARN: MT5 terminal may not have started"
+    return 0
 }
 
-# ============================================================
-# Wait for DISPLAY to be ready (Wine needs X11)
-# ============================================================
-echo "[svc-mt5server] Waiting for DISPLAY..."
+start_bridge() {
+    log "Starting bridge server on port ${mt5server_port}..."
+
+    bridge_args="--host 0.0.0.0 -p ${mt5server_port}"
+    if [ "${MT5_DEBUG:-1}" = "1" ]; then
+        bridge_args="${bridge_args} --debug"
+    fi
+
+    run_as_abc ${wine_executable} "$WINE_PYTHON_PATH" -m mt5linux.bridge ${bridge_args} &
+    BRIDGE_PID=$!
+
+    sleep 3
+    if is_bridge_running; then
+        log "Bridge server started (PID: $BRIDGE_PID)"
+        return 0
+    else
+        log "ERROR: Bridge server failed to start"
+        return 1
+    fi
+}
+
+check_restart_token() {
+    [ -f "$RESTART_TOKEN" ]
+}
+
+clear_restart_token() {
+    if [ -f "$RESTART_TOKEN" ]; then
+        local reason
+        reason=$(cat "$RESTART_TOKEN" 2>/dev/null || echo "unknown")
+        log "Clearing restart token (reason: $reason)"
+        rm -f "$RESTART_TOKEN"
+    fi
+}
+
+full_restart() {
+    log "Performing full restart..."
+    kill_bridge
+    kill_mt5
+    clear_restart_token
+    sleep 2
+    start_mt5_terminal
+    start_bridge
+    log "Full restart complete"
+}
+
+# =============================================================================
+# WAIT FOR DISPLAY
+# =============================================================================
+log "Waiting for DISPLAY..."
 MAX_DISPLAY_WAIT=60
 DISPLAY_WAITED=0
 while [ -z "${DISPLAY:-}" ] && [ $DISPLAY_WAITED -lt $MAX_DISPLAY_WAIT ]; do
     sleep 2
     DISPLAY_WAITED=$((DISPLAY_WAITED + 2))
-    # Try to get DISPLAY from environment
     if [ -f /tmp/.X0-lock ] || [ -S /tmp/.X11-unix/X0 ]; then
         export DISPLAY=:0
         break
     fi
 done
+[ -z "${DISPLAY:-}" ] && export DISPLAY=:0
+log "DISPLAY=$DISPLAY"
 
-if [ -z "${DISPLAY:-}" ]; then
-    # Default to :0 if not set
-    export DISPLAY=:0
-fi
-echo "[svc-mt5server] DISPLAY=$DISPLAY"
-
-# ============================================================
-# Wait for startup scripts to complete
-# The startup scripts properly initialize Wine prefix and install MT5
-# Must wait for:
-#   1. No STARTUP_IN_PROGRESS marker (startup is not running)
-#   2. STARTUP_MARKER exists (startup completed successfully)
-# This prevents race condition with stale markers from previous runs
-# ============================================================
+# =============================================================================
+# WAIT FOR STARTUP TOKEN
+# =============================================================================
 MAX_WAIT=600
 WAITED=0
-echo "[svc-mt5server] Waiting for startup scripts to complete..."
+log "Waiting for startup token..."
 while [ $WAITED -lt $MAX_WAIT ]; do
-    # Check both conditions: startup NOT in progress AND startup completed
     if [ ! -f "$STARTUP_IN_PROGRESS" ] && [ -f "$STARTUP_MARKER" ]; then
         break
     fi
     sleep 5
     WAITED=$((WAITED + 5))
-    if [ $((WAITED % 30)) -eq 0 ]; then
-        if [ -f "$STARTUP_IN_PROGRESS" ]; then
-            echo "[svc-mt5server] Still waiting for startup to finish... (${WAITED}s/${MAX_WAIT}s)"
-        else
-            echo "[svc-mt5server] Waiting for startup marker... (${WAITED}s/${MAX_WAIT}s)"
-        fi
-    fi
+    [ $((WAITED % 30)) -eq 0 ] && log "Still waiting... (${WAITED}s/${MAX_WAIT}s)"
 done
 
 if [ -f "$STARTUP_IN_PROGRESS" ] || [ ! -f "$STARTUP_MARKER" ]; then
-    echo "[svc-mt5server] ERROR: Startup did not complete within ${MAX_WAIT}s"
+    log "ERROR: Startup did not complete within ${MAX_WAIT}s"
     exit 1
 fi
-echo "[svc-mt5server] Startup complete"
+log "Startup token received"
 
-# ============================================================
-# Verify components before starting server
-# ============================================================
-echo "[svc-mt5server] Verifying components..."
+# =============================================================================
+# VERIFY COMPONENTS
+# =============================================================================
+log "Verifying components..."
 
-# Check Wine Python
-if ! check_wine_python; then
-    echo "[svc-mt5server] ERROR: Wine Python not working"
+if [ ! -f "$WINE_PYTHON_PATH" ]; then
+    log "ERROR: Wine Python not found"
     exit 1
 fi
-echo "[svc-mt5server] Wine Python OK"
 
-# Check MetaTrader5 pip (installed by 30_mt5.sh during startup)
-if ! check_mt5_pip; then
-    echo "[svc-mt5server] ERROR: MetaTrader5 pip not installed - startup scripts may have failed"
+if ! run_as_abc ${wine_executable} "$WINE_PYTHON_PATH" -c "import MetaTrader5" 2>/dev/null; then
+    log "ERROR: MetaTrader5 pip not installed"
     exit 1
 fi
-echo "[svc-mt5server] MetaTrader5 pip OK"
+log "Components OK"
 
-# Check and start MT5 terminal
-if check_mt5_terminal; then
-    start_mt5_terminal
-else
-    echo "[svc-mt5server] WARN: MT5 terminal not installed - RPyC will start but MT5 functions won't work"
-fi
+# =============================================================================
+# INITIAL STARTUP
+# =============================================================================
+clear_restart_token
+start_mt5_terminal
+start_bridge
 
-echo "[svc-mt5server] All checks passed, starting RPyC server..."
+# =============================================================================
+# MAIN LOOP: Monitor restart token and process health
+# =============================================================================
+log "Entering main loop (monitoring restart token)"
 
-# Ensure all required directories have correct ownership (run as root before switching to abc user)
-echo "[svc-mt5server] Ensuring directory permissions..."
-if [ -d "/config" ]; then
-    chown -R abc:abc "/config" 2>/dev/null || echo "[svc-mt5server] Warning: Failed to chown /config"
-fi
-echo "[svc-mt5server] Directory permissions set"
+while true; do
+    sleep "$TOKEN_CHECK_INTERVAL"
 
-echo "[svc-mt5server] Starting Wine RPyC server on port ${mt5server_port}"
-echo "[svc-mt5server] Using mt5linux.bridge module (standalone, no structlog)"
+    # Check for restart token from health_monitor
+    if check_restart_token; then
+        log "Restart token detected"
+        full_restart
+        continue
+    fi
 
-# Build command arguments
-bridge_args="--host 0.0.0.0 -p ${mt5server_port}"
+    # Check if bridge is still running
+    if ! is_bridge_running; then
+        log "Bridge process died, restarting..."
+        full_restart
+        continue
+    fi
 
-# Add debug flag if MT5_DEBUG is enabled (default: 1)
-if [ "${MT5_DEBUG:-1}" = "1" ]; then
-    bridge_args="${bridge_args} --debug"
-    echo "[svc-mt5server] Debug logging enabled"
-fi
-
-# Run as user abc (same as KasmVNC) with exec to replace shell
-# Uses bridge.py copied from Linux (standalone, uses only logging + rpyc)
-exec s6-setuidgid abc \
-    ${wine_executable} "$WINE_PYTHON_PATH" -m mt5linux.bridge ${bridge_args}
+    # Check if MT5 is still running
+    if ! is_mt5_running; then
+        log "MT5 process died, restarting..."
+        full_restart
+        continue
+    fi
+done

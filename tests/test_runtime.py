@@ -30,14 +30,12 @@ import rpyc
 # CONSTANTS
 # =============================================================================
 
-# Startup scripts to test in container
-CONTAINER_STARTUP_SCRIPTS = [
-    "/Metatrader/scripts/00_env.sh",
-    "/Metatrader/scripts/05_config_unpack.sh",
-    "/Metatrader/scripts/10_prefix_init.sh",
-    "/Metatrader/scripts/20_winetricks.sh",
-    "/Metatrader/scripts/30_mt5.sh",
-    "/Metatrader/scripts/50_copy_bridge.sh",
+# Main scripts to test in container (consolidated structure)
+CONTAINER_MAIN_SCRIPTS = [
+    "/Metatrader/start.sh",
+    "/Metatrader/setup.sh",
+    "/Metatrader/health_monitor.sh",
+    "/Metatrader/bridge.py",
 ]
 
 # =============================================================================
@@ -268,16 +266,6 @@ class TestWinePython:
         version = result.stdout.strip()
         assert version.startswith("1.26"), f"Expected numpy 1.26.x, got {version}"
 
-    def test_wine_plumbum_version(self, container_name: str) -> None:
-        """Verify plumbum >= 1.8.0 is installed in Wine Python."""
-        code = "import plumbum; print(plumbum.__version__)"
-        result = wine_python(container_name, code)
-
-        assert result.returncode == 0, f"plumbum not installed: {result.stderr}"
-        version = result.stdout.strip()
-        parsed = parse_version(version)
-        assert parsed >= (1, 8, 0), f"Expected plumbum >= 1.8.0, got {version}"
-
     def test_wine_metatrader5_installed(self, container_name: str) -> None:
         """Verify MetaTrader5 package is installed in Wine Python."""
         result = wine_python(
@@ -310,16 +298,6 @@ class TestLinuxPython:
 
         assert result.returncode == 0, f"Python3 not found: {result.stderr}"
         assert "Python 3" in result.stdout
-
-    def test_bridge_py_exists_in_container(self, container_name: str) -> None:
-        """Verify bridge.py exists at /Metatrader/bridge.py."""
-        result = subprocess.run(
-            ["docker", "exec", container_name, "test", "-f", "/Metatrader/bridge.py"],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        assert result.returncode == 0, "bridge.py not found at /Metatrader/bridge.py"
 
     def test_linux_rpyc_installed(self, container_name: str) -> None:
         """Verify rpyc is installed in Linux Python."""
@@ -415,21 +393,24 @@ class TestMT5AutoLogin:
 
 
 class TestStartupScripts:
-    """Test startup scripts in container."""
+    """Test main scripts in container (consolidated structure)."""
 
-    @pytest.mark.parametrize("script", CONTAINER_STARTUP_SCRIPTS)
-    def test_startup_script_exists_in_container(
+    @pytest.mark.parametrize("script", CONTAINER_MAIN_SCRIPTS)
+    def test_main_script_exists_in_container(
         self, container_name: str, script: str
     ) -> None:
-        """Verify startup script exists in container."""
+        """Verify main script/file exists in container."""
         result = docker_exec(container_name, ["test", "-f", script])
-        assert result.returncode == 0, f"Script not found: {script}"
+        assert result.returncode == 0, f"File not found: {script}"
 
-    @pytest.mark.parametrize("script", CONTAINER_STARTUP_SCRIPTS)
-    def test_startup_script_is_executable_in_container(
+    @pytest.mark.parametrize(
+        "script",
+        [s for s in CONTAINER_MAIN_SCRIPTS if s.endswith(".sh")],
+    )
+    def test_shell_script_is_executable_in_container(
         self, container_name: str, script: str
     ) -> None:
-        """Verify startup script is executable in container."""
+        """Verify shell scripts are executable in container."""
         result = docker_exec(container_name, ["test", "-x", script])
         assert result.returncode == 0, f"Script not executable: {script}"
 
@@ -445,7 +426,6 @@ class TestStartupScripts:
         required_vars = [
             "PYTHON_VERSION",
             "RPYC_VERSION",
-            "PLUMBUM_VERSION",
             "NUMPY_VERSION",
         ]
         for var in required_vars:

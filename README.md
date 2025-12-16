@@ -7,7 +7,7 @@ It provides a Docker image for running MetaTrader5 with remote access via VNC, b
 Changes in this fork:
 
 - Added Expert Advisor (EA) automation support with Windows .NET Framework under Wine. Mono is removed.
-- Modular startup scripts under `docker/container/Metatrader/scripts/` for clearer install and runtime steps.
+- Consolidated startup scripts (`start.sh` + `setup.sh`) for cleaner container startup.
 - Added auto-login support via environment variables (`MT5_LOGIN`, `MT5_PASSWORD`, `MT5_SERVER`).
 - Added health monitoring and auto-recovery for MT5 and RPyC server.
 - RPyC bridge server bundled (standalone `bridge.py` from mt5linux).
@@ -198,7 +198,6 @@ pip install git+https://github.com/marlonsc/mt5linux.git@master
 - mt5linux >= 0.2.1
 - numpy >= 2.1.0
 - rpyc == 6.0.2
-- plumbum >= 1.8.0
 
 **Example usage (synchronous):**
 
@@ -307,19 +306,24 @@ print(local_array)  # [1 2 3]
 
 ### Startup Scripts
 
-The container startup is modularized under `docker/container/Metatrader/scripts/`:
+The container startup is handled by two consolidated scripts in `docker/container/Metatrader/`:
 
-| Script | Purpose | Time |
-|--------|---------|------|
-| `05_config_unpack.sh` | Unpack pre-configured Wine prefix (if archive exists) | <5s |
-| `10_prefix_init.sh` | Copy Wine prefix template to /config | <30s |
-| `20_winetricks.sh` | Install vcrun2019, restore win10 version | 30-60s |
-| `30_mt5.sh` | Install MetaTrader5 pip + terminal + config | 5-10min (first run) |
-| `50_copy_bridge.sh` | Copy bridge.py to Wine Python | <5s |
+| Script | Purpose |
+|--------|---------|
+| `start.sh` | Container entrypoint: configuration, environment setup, orchestration |
+| `setup.sh` | All setup operations: Wine prefix init, winetricks, MT5 installation, bridge copy |
+| `health_monitor.sh` | Background health monitoring and auto-recovery |
+
+**Setup operations** (performed by `setup.sh`):
+- **Config unpack**: Unpack pre-configured Wine prefix if archive exists (<5s)
+- **Wine prefix init**: Copy template to /config (<30s)
+- **Winetricks**: Install vcrun2019, restore win10 version (30-60s)
+- **MT5 pip**: Install MetaTrader5 Python package (<30s)
+- **MT5 terminal**: Download and install MT5 terminal (5-10min first run)
+- **MT5 config**: Generate auto-login config if credentials provided (<5s)
+- **Bridge copy**: Copy bridge.py to Wine Python site-packages (<5s)
 
 **Note**: Python and packages (rpyc, numpy) are pre-installed in Wine at build time. Only MetaTrader5 is installed at runtime to get the latest version.
-
-Health monitoring is handled by `docker/container/Metatrader/health_monitor.sh` which runs in the background.
 
 ### Startup Dependency Categories
 

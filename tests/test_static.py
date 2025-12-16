@@ -29,31 +29,18 @@ PROJECT_ROOT = Path(__file__).parent.parent
 DOCKER_DIR = "docker"
 CONTAINER_DIR = f"{DOCKER_DIR}/container"
 
-# All startup scripts in execution order
-STARTUP_SCRIPTS = [
-    f"{CONTAINER_DIR}/Metatrader/scripts/00_env.sh",
-    f"{CONTAINER_DIR}/Metatrader/scripts/05_config_unpack.sh",
-    f"{CONTAINER_DIR}/Metatrader/scripts/10_prefix_init.sh",
-    f"{CONTAINER_DIR}/Metatrader/scripts/20_winetricks.sh",
-    f"{CONTAINER_DIR}/Metatrader/scripts/30_mt5.sh",
-    f"{CONTAINER_DIR}/Metatrader/scripts/50_copy_bridge.sh",
-]
-
-# Critical scripts for container operation
-CRITICAL_SCRIPTS = [
+# All startup scripts (consolidated structure)
+ALL_SCRIPTS = [
     f"{CONTAINER_DIR}/Metatrader/start.sh",
+    f"{CONTAINER_DIR}/Metatrader/setup.sh",
     f"{CONTAINER_DIR}/Metatrader/health_monitor.sh",
 ]
-
-# All scripts combined for parametrized tests
-ALL_SCRIPTS = [*STARTUP_SCRIPTS, *CRITICAL_SCRIPTS]
 
 # Required version variables
 REQUIRED_VERSIONS = [
     "PYTHON_VERSION",
     "GECKO_VERSION",
     "RPYC_VERSION",
-    "PLUMBUM_VERSION",
     "NUMPY_VERSION",
 ]
 
@@ -137,7 +124,6 @@ class TestVersionConsistency:
         version_vars = [
             "PYTHON_VERSION",
             "RPYC_VERSION",
-            "PLUMBUM_VERSION",
             "NUMPY_VERSION",
         ]
         for var in version_vars:
@@ -158,13 +144,13 @@ class TestVersionConsistency:
             "versions.env" in pyproject
         ), "pyproject.toml should reference versions.env"
 
-    def test_env_script_uses_versions_env(self) -> None:
-        """Verify 00_env.sh sources or references versions.env."""
-        script_path = PROJECT_ROOT / CONTAINER_DIR / "Metatrader/scripts/00_env.sh"
-        env_script = script_path.read_text()
-        # Should either source versions.env or have fallback values
-        assert "PYTHON_VERSION" in env_script, "00_env.sh must handle PYTHON_VERSION"
-        assert "RPYC_VERSION" in env_script, "00_env.sh must handle RPYC_VERSION"
+    def test_start_sh_has_version_fallbacks(self) -> None:
+        """Verify start.sh has version fallback values."""
+        script_path = PROJECT_ROOT / CONTAINER_DIR / "Metatrader/start.sh"
+        content = script_path.read_text()
+        # Should have version fallback values
+        assert "PYTHON_VERSION" in content, "start.sh must have PYTHON_VERSION"
+        assert "RPYC_VERSION" in content, "start.sh must have RPYC_VERSION"
 
     def _load_versions_env(self) -> dict[str, str]:
         """Load versions from versions.env file."""
@@ -241,10 +227,10 @@ class TestDockerfile:
         for label in required_labels:
             assert label in content, f"Missing OCI label: {label}"
 
-    def test_dockerfile_copies_scripts(self) -> None:
-        """Verify Dockerfile copies Metatrader scripts."""
+    def test_dockerfile_copies_metatrader(self) -> None:
+        """Verify Dockerfile copies Metatrader directory."""
         content = (PROJECT_ROOT / DOCKER_DIR / "Dockerfile").read_text()
-        assert "COPY container/Metatrader" in content, "Must copy Metatrader scripts"
+        assert "COPY container/Metatrader" in content, "Must copy Metatrader directory"
 
     def test_dockerfile_copies_s6_services(self) -> None:
         """Verify Dockerfile copies s6-overlay services."""
@@ -371,47 +357,66 @@ class TestShellScriptSyntax:
 class TestStartupScriptContent:
     """Test startup script specific content."""
 
-    def test_env_script_exports_versions(self) -> None:
-        """Verify 00_env.sh exports version variables."""
-        script_path = PROJECT_ROOT / CONTAINER_DIR / "Metatrader/scripts/00_env.sh"
+    def test_start_sh_exports_config(self) -> None:
+        """Verify start.sh exports all configuration."""
+        script_path = PROJECT_ROOT / CONTAINER_DIR / "Metatrader/start.sh"
         content = script_path.read_text()
 
-        for var in ["PYTHON_VERSION", "RPYC_VERSION", "PLUMBUM_VERSION"]:
-            assert var in content, f"00_env.sh must handle {var}"
+        required_exports = ["WINEPREFIX", "WINE_PYTHON_PATH", "STARTUP_MARKER"]
+        for var in required_exports:
+            assert var in content, f"start.sh must export {var}"
 
-    def test_winetricks_script_is_unattended(self) -> None:
-        """Verify 20_winetricks.sh uses unattended mode."""
-        scripts_dir = PROJECT_ROOT / CONTAINER_DIR / "Metatrader/scripts"
-        content = (scripts_dir / "20_winetricks.sh").read_text()
-        assert "WINETRICKS_UNATTENDED=1" in content, "Must set WINETRICKS_UNATTENDED=1"
-        assert "winetricks -q" in content, "Must use -q flag for silent mode"
-
-    def test_mt5_script_handles_installation(self) -> None:
-        """Verify 30_mt5.sh handles MT5 installation."""
-        script_path = PROJECT_ROOT / CONTAINER_DIR / "Metatrader/scripts/30_mt5.sh"
-        content = script_path.read_text()
-        assert "mt5setup.exe" in content or "MetaTrader" in content
-        assert "wine" in content.lower(), "Must use wine for MT5"
-
-    def test_copy_bridge_script(self) -> None:
-        """Verify 50_copy_bridge.sh copies bridge.py to Wine."""
-        scripts_dir = PROJECT_ROOT / CONTAINER_DIR / "Metatrader/scripts"
-        content = (scripts_dir / "50_copy_bridge.sh").read_text()
-        assert "bridge.py" in content, "Must copy bridge.py"
-        assert "BRIDGE_SOURCE" in content, "Must define bridge source path"
-
-    def test_start_script_runs_scripts_in_order(self) -> None:
-        """Verify start.sh runs initialization scripts."""
+    def test_start_sh_runs_setup(self) -> None:
+        """Verify start.sh runs setup.sh."""
         content = (PROJECT_ROOT / CONTAINER_DIR / "Metatrader/start.sh").read_text()
-        # Should reference scripts directory
-        assert "scripts" in content or "00_env" in content
+        assert "setup.sh" in content, "start.sh must run setup.sh"
 
-    def test_health_monitor_checks_rpyc(self) -> None:
-        """Verify health_monitor.sh checks RPyC service."""
+    def test_setup_sh_has_all_functions(self) -> None:
+        """Verify setup.sh has all required setup functions."""
+        content = (PROJECT_ROOT / CONTAINER_DIR / "Metatrader/setup.sh").read_text()
+
+        required_functions = [
+            "unpack_config",
+            "init_wine_prefix",
+            "install_winetricks_deps",
+            "install_mt5_pip",
+            "install_mt5_terminal",
+            "generate_mt5_config",
+            "copy_bridge",
+        ]
+        for func in required_functions:
+            assert func in content, f"setup.sh must have {func} function"
+
+    def test_setup_sh_uses_winetricks_unattended(self) -> None:
+        """Verify setup.sh uses unattended winetricks mode."""
+        content = (PROJECT_ROOT / CONTAINER_DIR / "Metatrader/setup.sh").read_text()
+        assert "WINETRICKS_UNATTENDED=1" in content, "Must set WINETRICKS_UNATTENDED=1"
+
+    def test_setup_sh_handles_mt5_installation(self) -> None:
+        """Verify setup.sh handles MT5 installation."""
+        content = (PROJECT_ROOT / CONTAINER_DIR / "Metatrader/setup.sh").read_text()
+        assert "mt5setup" in content.lower(), "Must handle MT5 setup"
+        assert "MetaTrader5" in content, "Must install MetaTrader5 pip"
+
+    def test_health_monitor_uses_restart_token(self) -> None:
+        """Verify health_monitor.sh uses restart token (not direct restart)."""
         script_path = PROJECT_ROOT / CONTAINER_DIR / "Metatrader/health_monitor.sh"
         content = script_path.read_text()
-        # Should check port 8001 or rpyc
-        assert "8001" in content or "rpyc" in content.lower()
+
+        # Should use token-based restart signaling
+        assert "RESTART_TOKEN" in content, "Should use RESTART_TOKEN"
+        assert "request_restart" in content, "Should have request_restart function"
+
+        # Should NOT have direct restart functions
+        assert "restart_mt5()" not in content, "Should not have direct restart_mt5"
+        assert "restart_rpyc_server()" not in content, "Should not have restart_rpyc"
+
+    def test_health_monitor_has_failure_threshold(self) -> None:
+        """Verify health_monitor.sh uses failure threshold before restart."""
+        script_path = PROJECT_ROOT / CONTAINER_DIR / "Metatrader/health_monitor.sh"
+        content = script_path.read_text()
+        assert "FAILURE_THRESHOLD" in content, "Should have configurable threshold"
+        assert "FAILURE_COUNT" in content, "Should track failure count"
 
 
 # =============================================================================
@@ -444,6 +449,56 @@ class TestS6Services:
         s6_base = PROJECT_ROOT / CONTAINER_DIR / "Metatrader/etc/s6-overlay/s6-rc.d"
         finish_script = s6_base / "svc-mt5server/finish"
         assert finish_script.exists(), "Service should have finish script"
+
+    def test_s6_service_has_inline_config(self) -> None:
+        """Verify s6 service has inline configuration (no external deps)."""
+        s6_base = PROJECT_ROOT / CONTAINER_DIR / "Metatrader/etc/s6-overlay/s6-rc.d"
+        run_script = s6_base / "svc-mt5server/run"
+        content = run_script.read_text()
+
+        # Should NOT source external scripts
+        assert "scripts/00_env.sh" not in content, "Should not source old 00_env.sh"
+
+        # Should have inline config
+        assert "WINEPREFIX" in content, "Should have inline WINEPREFIX config"
+        assert "STARTUP_MARKER" in content, "Should have inline STARTUP_MARKER"
+
+    def test_s6_service_monitors_restart_token(self) -> None:
+        """Verify svc-mt5server monitors restart token from health_monitor."""
+        s6_base = PROJECT_ROOT / CONTAINER_DIR / "Metatrader/etc/s6-overlay/s6-rc.d"
+        run_script = s6_base / "svc-mt5server/run"
+        content = run_script.read_text()
+
+        # Should monitor restart token
+        assert "RESTART_TOKEN" in content, "Should monitor RESTART_TOKEN"
+        assert "check_restart_token" in content, "Should have check function"
+        assert "clear_restart_token" in content, "Should clear token after restart"
+
+    def test_s6_service_has_full_restart(self) -> None:
+        """Verify svc-mt5server can do full restart (MT5 + bridge)."""
+        s6_base = PROJECT_ROOT / CONTAINER_DIR / "Metatrader/etc/s6-overlay/s6-rc.d"
+        run_script = s6_base / "svc-mt5server/run"
+        content = run_script.read_text()
+
+        # Should have full restart capability
+        assert "full_restart" in content, "Should have full_restart function"
+        assert "kill_mt5" in content, "Should be able to kill MT5"
+        assert "kill_bridge" in content, "Should be able to kill bridge"
+        assert "start_mt5_terminal" in content, "Should be able to start MT5"
+        assert "start_bridge" in content, "Should be able to start bridge"
+
+    def test_s6_service_has_main_loop(self) -> None:
+        """Verify svc-mt5server runs in main loop (not exec)."""
+        s6_base = PROJECT_ROOT / CONTAINER_DIR / "Metatrader/etc/s6-overlay/s6-rc.d"
+        run_script = s6_base / "svc-mt5server/run"
+        content = run_script.read_text()
+
+        # Should run in a loop, not exec
+        assert "while true" in content, "Should run in main loop"
+        # Should NOT have exec at the end (old pattern)
+        last_lines = content.strip().split("\n")[-10:]
+        last_content = "\n".join(last_lines)
+        assert "exec " not in last_content, "Should not exec at end (uses loop)"
 
 
 # =============================================================================
@@ -506,10 +561,6 @@ class TestDirectoryStructure:
         """Verify Metatrader directory exists."""
         assert (PROJECT_ROOT / CONTAINER_DIR / "Metatrader").is_dir()
 
-    def test_scripts_directory_exists(self) -> None:
-        """Verify scripts directory exists."""
-        assert (PROJECT_ROOT / CONTAINER_DIR / "Metatrader/scripts").is_dir()
-
     def test_bridge_py_exists(self) -> None:
         """Verify bridge.py (RPyC server) exists."""
         bridge_path = PROJECT_ROOT / CONTAINER_DIR / "Metatrader/bridge.py"
@@ -532,17 +583,16 @@ class TestDirectoryStructure:
         """Verify tests directory exists."""
         assert (PROJECT_ROOT / "tests").is_dir()
 
-    def test_startup_scripts_numbered_correctly(self) -> None:
-        """Verify startup scripts follow numbered naming convention."""
-        scripts_dir = PROJECT_ROOT / CONTAINER_DIR / "Metatrader/scripts"
-        scripts = sorted(scripts_dir.glob("*.sh"))
+    def test_consolidated_script_structure(self) -> None:
+        """Verify consolidated script structure (no scripts/ folder)."""
+        metatrader_dir = PROJECT_ROOT / CONTAINER_DIR / "Metatrader"
 
-        # Should have numbered prefixes: 00, 05, 10, 20, 30, 50
-        expected_prefixes = ["00", "05", "10", "20", "30", "50"]
+        # Should have consolidated scripts
+        assert (metatrader_dir / "start.sh").exists(), "start.sh must exist"
+        assert (metatrader_dir / "setup.sh").exists(), "setup.sh must exist"
+        health_script = metatrader_dir / "health_monitor.sh"
+        assert health_script.exists(), "health_monitor.sh must exist"
 
-        for script in scripts:
-            prefix = script.name[:2]
-            if prefix.isdigit():
-                assert (
-                    prefix in expected_prefixes
-                ), f"Unexpected script prefix: {script.name}"
+        # Should NOT have scripts/ folder
+        scripts_dir = metatrader_dir / "scripts"
+        assert not scripts_dir.exists(), "scripts/ folder should not exist"

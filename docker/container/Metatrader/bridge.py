@@ -14,6 +14,9 @@ Features:
 - Chunked symbols_get for large datasets (9000+)
 - Debug logging for every function call
 - NO STUBS - fails if MT5 unavailable
+- Complete MT5 API coverage including Market Depth (DOM)
+- MT5 constants exposed for client usage
+- Secure: no raw module exposure, controlled API surface
 
 Usage:
     wine python.exe -m mt5linux.bridge --host 0.0.0.0 --port 8001
@@ -61,21 +64,48 @@ class MT5Service(rpyc.Service):
         """Handle client disconnection."""
         log.debug("on_disconnect: client disconnected")
 
-    def exposed_get_mt5(self) -> Any:
-        """Get raw MT5 module reference."""
-        log.debug("exposed_get_mt5: returning MT5 module")
-        return MT5Service._mt5_module
+    def _ensure_mt5_loaded(self) -> None:
+        """Ensure MT5 module is loaded, raise RuntimeError if not."""
+        if MT5Service._mt5_module is None:
+            raise RuntimeError("MT5 module not loaded - connect first")
 
     def exposed_health_check(self) -> dict[str, Any]:
-        """Health check endpoint."""
-        healthy = MT5Service._mt5_module is not None
-        log.debug("exposed_health_check: healthy=%s", healthy)
-        return {"healthy": True, "mt5_available": healthy}
+        """Health check endpoint - verifies actual MT5 connection status."""
+        log.debug("exposed_health_check: called")
 
-    def exposed_reset_circuit_breaker(self) -> bool:
-        """Reset circuit breaker (compatibility with client)."""
-        log.debug("exposed_reset_circuit_breaker: called")
-        return True
+        mt5_loaded = MT5Service._mt5_module is not None
+        if not mt5_loaded:
+            log.debug("exposed_health_check: MT5 module not loaded")
+            return {
+                "healthy": False,
+                "mt5_available": False,
+                "reason": "MT5 module not loaded",
+            }
+
+        # Check actual terminal connection
+        terminal = MT5Service._mt5_module.terminal_info()
+        if terminal is None:
+            error = MT5Service._mt5_module.last_error()
+            log.debug("exposed_health_check: terminal_info failed: %s", error)
+            return {
+                "healthy": False,
+                "mt5_available": True,
+                "connected": False,
+                "reason": f"Terminal not connected: {error}",
+            }
+
+        log.debug(
+            "exposed_health_check: connected=%s trade_allowed=%s",
+            terminal.connected,
+            terminal.trade_allowed,
+        )
+        return {
+            "healthy": terminal.connected,
+            "mt5_available": True,
+            "connected": terminal.connected,
+            "trade_allowed": terminal.trade_allowed,
+            "build": terminal.build,
+        }
 
     def exposed_initialize(
         self,
@@ -87,6 +117,7 @@ class MT5Service(rpyc.Service):
         portable: bool = False,
     ) -> bool:
         """Initialize MT5 terminal connection."""
+        self._ensure_mt5_loaded()
         log.debug(
             "exposed_initialize: path=%s login=%s server=%s timeout=%s portable=%s",
             path,
@@ -371,6 +402,7 @@ class MT5Service(rpyc.Service):
 
     def exposed_order_check(self, request: dict[str, Any]) -> Any:
         """Check order with data materialization."""
+        self._ensure_mt5_loaded()
         log.debug("exposed_order_check: request=%s", request)
         local_request = dict(request)
         result = MT5Service._mt5_module.order_check(local_request)
@@ -383,6 +415,7 @@ class MT5Service(rpyc.Service):
 
     def exposed_order_send(self, request: dict[str, Any]) -> Any:
         """Send order with data materialization."""
+        self._ensure_mt5_loaded()
         log.debug("exposed_order_send: request=%s", request)
         local_request = dict(request)
         result = MT5Service._mt5_module.order_send(local_request)
@@ -559,6 +592,217 @@ class MT5Service(rpyc.Service):
         data = tuple(d._asdict() for d in result)
         log.debug("exposed_history_deals_get: returned %s deals", len(data))
         return data
+
+    # =========================================================================
+    # MARKET DEPTH (DOM) FUNCTIONS
+    # =========================================================================
+
+    def exposed_market_book_add(self, symbol: str) -> bool:
+        """Subscribe to Market Depth (DOM) for a symbol."""
+        log.debug("exposed_market_book_add: symbol=%s", symbol)
+        result = MT5Service._mt5_module.market_book_add(symbol)
+        log.debug("exposed_market_book_add: result=%s", result)
+        return result
+
+    def exposed_market_book_get(self, symbol: str) -> Any:
+        """Get Market Depth (DOM) entries for a symbol."""
+        log.debug("exposed_market_book_get: symbol=%s", symbol)
+        result = MT5Service._mt5_module.market_book_get(symbol)
+        if result is None:
+            log.debug("exposed_market_book_get: result=None")
+            return None
+        # Each entry is a BookInfo named tuple
+        data = tuple(entry._asdict() for entry in result)
+        log.debug("exposed_market_book_get: returned %s entries", len(data))
+        return data
+
+    def exposed_market_book_release(self, symbol: str) -> bool:
+        """Unsubscribe from Market Depth (DOM) for a symbol."""
+        log.debug("exposed_market_book_release: symbol=%s", symbol)
+        result = MT5Service._mt5_module.market_book_release(symbol)
+        log.debug("exposed_market_book_release: result=%s", result)
+        return result
+
+    # =========================================================================
+    # CONSTANTS AND ENUMS
+    # =========================================================================
+
+    def exposed_get_constants(self) -> dict[str, Any]:
+        """Get all MT5 constants for client-side usage.
+
+        Returns dict with all timeframes, order types, trade actions,
+        symbol properties, account modes, deal entries/reasons, etc.
+        """
+        self._ensure_mt5_loaded()
+        log.debug("exposed_get_constants: called")
+        mt5 = MT5Service._mt5_module
+        constants: dict[str, Any] = {}
+
+        # Helper to add constants from list
+        def _add_constants(names: list[str]) -> None:
+            for name in names:
+                if hasattr(mt5, name):
+                    constants[name] = getattr(mt5, name)
+
+        # Timeframes
+        _add_constants([
+            "TIMEFRAME_M1", "TIMEFRAME_M2", "TIMEFRAME_M3", "TIMEFRAME_M4",
+            "TIMEFRAME_M5", "TIMEFRAME_M6", "TIMEFRAME_M10", "TIMEFRAME_M12",
+            "TIMEFRAME_M15", "TIMEFRAME_M20", "TIMEFRAME_M30", "TIMEFRAME_H1",
+            "TIMEFRAME_H2", "TIMEFRAME_H3", "TIMEFRAME_H4", "TIMEFRAME_H6",
+            "TIMEFRAME_H8", "TIMEFRAME_H12", "TIMEFRAME_D1", "TIMEFRAME_W1",
+            "TIMEFRAME_MN1",
+        ])
+
+        # Order types
+        _add_constants([
+            "ORDER_TYPE_BUY", "ORDER_TYPE_SELL", "ORDER_TYPE_BUY_LIMIT",
+            "ORDER_TYPE_SELL_LIMIT", "ORDER_TYPE_BUY_STOP", "ORDER_TYPE_SELL_STOP",
+            "ORDER_TYPE_BUY_STOP_LIMIT", "ORDER_TYPE_SELL_STOP_LIMIT",
+            "ORDER_TYPE_CLOSE_BY",
+        ])
+
+        # Trade actions
+        _add_constants([
+            "TRADE_ACTION_DEAL", "TRADE_ACTION_PENDING", "TRADE_ACTION_SLTP",
+            "TRADE_ACTION_MODIFY", "TRADE_ACTION_REMOVE", "TRADE_ACTION_CLOSE_BY",
+        ])
+
+        # Order filling modes
+        _add_constants([
+            "ORDER_FILLING_FOK", "ORDER_FILLING_IOC", "ORDER_FILLING_RETURN",
+            "ORDER_FILLING_BOC",
+        ])
+
+        # Order time types
+        _add_constants([
+            "ORDER_TIME_GTC", "ORDER_TIME_DAY", "ORDER_TIME_SPECIFIED",
+            "ORDER_TIME_SPECIFIED_DAY",
+        ])
+
+        # Order states
+        _add_constants([
+            "ORDER_STATE_STARTED", "ORDER_STATE_PLACED", "ORDER_STATE_CANCELED",
+            "ORDER_STATE_PARTIAL", "ORDER_STATE_FILLED", "ORDER_STATE_REJECTED",
+            "ORDER_STATE_EXPIRED", "ORDER_STATE_REQUEST_ADD",
+            "ORDER_STATE_REQUEST_MODIFY", "ORDER_STATE_REQUEST_CANCEL",
+        ])
+
+        # Position types
+        _add_constants(["POSITION_TYPE_BUY", "POSITION_TYPE_SELL"])
+
+        # Position reasons
+        _add_constants([
+            "POSITION_REASON_CLIENT", "POSITION_REASON_MOBILE",
+            "POSITION_REASON_WEB", "POSITION_REASON_EXPERT",
+        ])
+
+        # Deal types
+        _add_constants([
+            "DEAL_TYPE_BUY", "DEAL_TYPE_SELL", "DEAL_TYPE_BALANCE",
+            "DEAL_TYPE_CREDIT", "DEAL_TYPE_CHARGE", "DEAL_TYPE_CORRECTION",
+            "DEAL_TYPE_BONUS", "DEAL_TYPE_COMMISSION", "DEAL_TYPE_COMMISSION_DAILY",
+            "DEAL_TYPE_COMMISSION_MONTHLY", "DEAL_TYPE_COMMISSION_AGENT_DAILY",
+            "DEAL_TYPE_COMMISSION_AGENT_MONTHLY", "DEAL_TYPE_INTEREST",
+            "DEAL_TYPE_BUY_CANCELED", "DEAL_TYPE_SELL_CANCELED",
+            "DEAL_DIVIDEND", "DEAL_DIVIDEND_FRANKED", "DEAL_TAX",
+        ])
+
+        # Deal entry types
+        _add_constants([
+            "DEAL_ENTRY_IN", "DEAL_ENTRY_OUT", "DEAL_ENTRY_INOUT",
+            "DEAL_ENTRY_OUT_BY",
+        ])
+
+        # Deal reasons
+        _add_constants([
+            "DEAL_REASON_CLIENT", "DEAL_REASON_MOBILE", "DEAL_REASON_WEB",
+            "DEAL_REASON_EXPERT", "DEAL_REASON_SL", "DEAL_REASON_TP",
+            "DEAL_REASON_SO", "DEAL_REASON_ROLLOVER", "DEAL_REASON_VMARGIN",
+            "DEAL_REASON_SPLIT",
+        ])
+
+        # Copy ticks flags
+        _add_constants(["COPY_TICKS_ALL", "COPY_TICKS_INFO", "COPY_TICKS_TRADE"])
+
+        # Book types (Market Depth)
+        _add_constants([
+            "BOOK_TYPE_SELL", "BOOK_TYPE_BUY",
+            "BOOK_TYPE_SELL_MARKET", "BOOK_TYPE_BUY_MARKET",
+        ])
+
+        # Symbol trade modes
+        _add_constants([
+            "SYMBOL_TRADE_MODE_DISABLED", "SYMBOL_TRADE_MODE_LONGONLY",
+            "SYMBOL_TRADE_MODE_SHORTONLY", "SYMBOL_TRADE_MODE_CLOSEONLY",
+            "SYMBOL_TRADE_MODE_FULL",
+        ])
+
+        # Symbol calculation modes
+        _add_constants([
+            "SYMBOL_CALC_MODE_FOREX", "SYMBOL_CALC_MODE_FOREX_NO_LEVERAGE",
+            "SYMBOL_CALC_MODE_FUTURES", "SYMBOL_CALC_MODE_CFD",
+            "SYMBOL_CALC_MODE_CFDINDEX", "SYMBOL_CALC_MODE_CFDLEVERAGE",
+            "SYMBOL_CALC_MODE_EXCH_STOCKS", "SYMBOL_CALC_MODE_EXCH_FUTURES",
+            "SYMBOL_CALC_MODE_EXCH_FUTURES_FORTS", "SYMBOL_CALC_MODE_EXCH_BONDS",
+            "SYMBOL_CALC_MODE_EXCH_STOCKS_MOEX", "SYMBOL_CALC_MODE_EXCH_BONDS_MOEX",
+            "SYMBOL_CALC_MODE_SERV_COLLATERAL",
+        ])
+
+        # Symbol swap modes
+        _add_constants([
+            "SYMBOL_SWAP_MODE_DISABLED", "SYMBOL_SWAP_MODE_POINTS",
+            "SYMBOL_SWAP_MODE_CURRENCY_SYMBOL", "SYMBOL_SWAP_MODE_CURRENCY_MARGIN",
+            "SYMBOL_SWAP_MODE_CURRENCY_DEPOSIT", "SYMBOL_SWAP_MODE_INTEREST_CURRENT",
+            "SYMBOL_SWAP_MODE_INTEREST_OPEN", "SYMBOL_SWAP_MODE_REOPEN_CURRENT",
+            "SYMBOL_SWAP_MODE_REOPEN_BID",
+        ])
+
+        # Account trade modes
+        _add_constants([
+            "ACCOUNT_TRADE_MODE_DEMO", "ACCOUNT_TRADE_MODE_CONTEST",
+            "ACCOUNT_TRADE_MODE_REAL",
+        ])
+
+        # Account stopout modes
+        _add_constants([
+            "ACCOUNT_STOPOUT_MODE_PERCENT", "ACCOUNT_STOPOUT_MODE_MONEY",
+        ])
+
+        # Account margin modes
+        _add_constants([
+            "ACCOUNT_MARGIN_MODE_RETAIL_NETTING",
+            "ACCOUNT_MARGIN_MODE_EXCHANGE",
+            "ACCOUNT_MARGIN_MODE_RETAIL_HEDGING",
+        ])
+
+        # Trade return codes - complete list
+        _add_constants([
+            "TRADE_RETCODE_REQUOTE", "TRADE_RETCODE_REJECT",
+            "TRADE_RETCODE_CANCEL", "TRADE_RETCODE_PLACED",
+            "TRADE_RETCODE_DONE", "TRADE_RETCODE_DONE_PARTIAL",
+            "TRADE_RETCODE_ERROR", "TRADE_RETCODE_TIMEOUT",
+            "TRADE_RETCODE_INVALID", "TRADE_RETCODE_INVALID_VOLUME",
+            "TRADE_RETCODE_INVALID_PRICE", "TRADE_RETCODE_INVALID_STOPS",
+            "TRADE_RETCODE_TRADE_DISABLED", "TRADE_RETCODE_MARKET_CLOSED",
+            "TRADE_RETCODE_NO_MONEY", "TRADE_RETCODE_PRICE_CHANGED",
+            "TRADE_RETCODE_PRICE_OFF", "TRADE_RETCODE_INVALID_EXPIRATION",
+            "TRADE_RETCODE_ORDER_CHANGED", "TRADE_RETCODE_TOO_MANY_REQUESTS",
+            "TRADE_RETCODE_NO_CHANGES", "TRADE_RETCODE_SERVER_DISABLES_AT",
+            "TRADE_RETCODE_CLIENT_DISABLES_AT", "TRADE_RETCODE_LOCKED",
+            "TRADE_RETCODE_FROZEN", "TRADE_RETCODE_INVALID_FILL",
+            "TRADE_RETCODE_CONNECTION", "TRADE_RETCODE_ONLY_REAL",
+            "TRADE_RETCODE_LIMIT_ORDERS", "TRADE_RETCODE_LIMIT_VOLUME",
+            "TRADE_RETCODE_INVALID_ORDER", "TRADE_RETCODE_POSITION_CLOSED",
+            "TRADE_RETCODE_INVALID_CLOSE_VOLUME", "TRADE_RETCODE_CLOSE_ORDER_EXIST",
+            "TRADE_RETCODE_LIMIT_POSITIONS", "TRADE_RETCODE_REJECT_CANCEL",
+            "TRADE_RETCODE_LONG_ONLY", "TRADE_RETCODE_SHORT_ONLY",
+            "TRADE_RETCODE_CLOSE_ONLY", "TRADE_RETCODE_FIFO_CLOSE",
+            "TRADE_RETCODE_HEDGE_PROHIBITED",
+        ])
+
+        log.debug("exposed_get_constants: returned %s constants", len(constants))
+        return constants
 
 
 def _setup_logging(debug: bool = False) -> None:
