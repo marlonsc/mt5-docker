@@ -178,6 +178,8 @@ RUN --mount=from=downloader,source=/staging,target=/staging \
             'plumbum>=${PLUMBUM_VERSION}' \
             'structlog>=25.5' \
             'python-dateutil' && \
+        wine '$PYTHON_EXE' -m pip install --no-cache-dir \
+            'https://github.com/marlonsc/mt5linux/archive/refs/heads/master.tar.gz' && \
         wineserver -w" && \
     # Cleanup
     echo "=== Cleanup ===" && \
