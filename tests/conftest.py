@@ -22,7 +22,9 @@ import logging
 import os
 import subprocess
 import time
+from collections.abc import Generator
 from pathlib import Path
+from typing import Any
 
 import pytest
 import rpyc
@@ -116,8 +118,11 @@ def start_test_container() -> None:
 
     Reuses existing container if already running.
 
-    Raises:
-        pytest.skip: If MT5 credentials are not configured.
+    Raises
+    ------
+    pytest.skip
+        If MT5 credentials are not configured.
+
     """
     project_root = _get_project_root()
 
@@ -197,7 +202,7 @@ def start_test_container() -> None:
 
 
 @pytest.fixture(scope="session", autouse=True)
-def ensure_docker_ready():
+def ensure_docker_ready() -> None:
     """Ensure Docker tests can run or skip if disabled."""
     if os.getenv("SKIP_DOCKER", "0") == "1":
         _logger.info("SKIP_DOCKER=1 - Docker container tests will be skipped")
@@ -206,7 +211,7 @@ def ensure_docker_ready():
 
 
 @pytest.fixture(scope="session", autouse=True)
-def docker_container():
+def docker_container() -> None:
     """Ensure test container is running (session-scoped).
 
     Starts container if not already running.
@@ -216,26 +221,6 @@ def docker_container():
     Skips if MT5 credentials are not configured in .env file.
     """
     start_test_container()
-
-
-def _cleanup_test_container() -> None:
-    """Clean up test container and volumes after session."""
-    if is_container_running():
-        _logger.info("Cleaning up test container %s", _config.container_name)
-        subprocess.run(
-            ["docker", "rm", "-f", _config.container_name],
-            capture_output=True,
-            check=False,
-        )
-
-    # Clean up test volume (name matches MT5_VOLUME_NAME set in start_test_container)
-    volume_name = f"{_config.container_name}-data"
-    _logger.info("Cleaning up test volume: %s", volume_name)
-    subprocess.run(
-        ["docker", "volume", "rm", volume_name],
-        capture_output=True,
-        check=False,
-    )
 
 
 # Pytest marker for tests requiring container
@@ -284,6 +269,9 @@ def mt5_credentials() -> dict[str, str | int]:
             "MT5 credentials not configured. "
             "Copy .env.example to .env and fill in MT5_LOGIN and MT5_PASSWORD."
         )
+    # After skip, we know these are non-None strings
+    assert _config.login is not None
+    assert _config.password is not None
     return {
         "login": int(_config.login),
         "password": _config.password,
@@ -292,27 +280,29 @@ def mt5_credentials() -> dict[str, str | int]:
 
 
 @pytest.fixture
-def rpyc_connection(docker_container: None):
+def rpyc_connection(
+    docker_container: None,  # noqa: ARG001
+) -> Generator[rpyc.Connection, None, None]:
     """Provide RPyC connection to test container.
 
     Uses rpyc.connect() for our custom MT5Service.
     """
-    # Ensure docker_container fixture has been executed (parameter dependency)
-    assert docker_container is None
-
-    conn = rpyc.connect("localhost", _config.rpyc_port,
-                        config={"sync_request_timeout": _config.rpyc_timeout})
+    conn = rpyc.connect(
+        "localhost",
+        _config.rpyc_port,
+        config={"sync_request_timeout": _config.rpyc_timeout},
+    )
     yield conn
     conn.close()
 
 
 @pytest.fixture
-def mt5_service(rpyc_connection):
+def mt5_service(rpyc_connection: rpyc.Connection) -> Any:
     """Provide MT5Service root object via RPyC."""
     return rpyc_connection.root
 
 
 @pytest.fixture
-def mt5_module(rpyc_connection):
+def mt5_module(rpyc_connection: rpyc.Connection) -> Any:
     """Provide remote MetaTrader5 module via RPyC."""
     return rpyc_connection.root.get_mt5()

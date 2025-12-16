@@ -60,6 +60,7 @@ def get_test_container_config() -> DockerContainerConfig:
     Note:
         MT5_LOGIN and MT5_PASSWORD are required for tests that
         need MT5 authentication. Tests will skip if not set.
+
     """
     return DockerContainerConfig(
         container_name=os.environ.get("MT5_CONTAINER_NAME", "mt5docker-test"),

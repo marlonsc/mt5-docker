@@ -14,10 +14,11 @@ are not configured in .env file.
 from __future__ import annotations
 
 import subprocess
+from typing import Any
 
 import rpyc
 
-from tests.conftest import requires_container  # type: ignore[import]
+from tests.conftest import requires_container
 
 
 class TestConfiguration:
@@ -84,19 +85,21 @@ class TestContainerRunning:
 class TestRPyCService:
     """Test RPyC service functionality (requires container)."""
 
-    def test_rpyc_connection_established(self, rpyc_connection) -> None:
+    def test_rpyc_connection_established(
+        self, rpyc_connection: rpyc.Connection
+    ) -> None:
         """Verify RPyC connection can be established."""
         assert rpyc_connection is not None
         assert hasattr(rpyc_connection, "root")
 
-    def test_mt5_service_health_check(self, rpyc_connection) -> None:
+    def test_mt5_service_health_check(self, rpyc_connection: rpyc.Connection) -> None:
         """Verify MT5Service health check works."""
         health = rpyc_connection.root.health_check()
         assert health is not None
         assert health.get("healthy") is True
         assert health.get("mt5_available") is True
 
-    def test_mt5_module_available(self, rpyc_connection) -> None:
+    def test_mt5_module_available(self, rpyc_connection: rpyc.Connection) -> None:
         """Verify MT5 module is accessible via MT5Service."""
         mt5 = rpyc_connection.root.get_mt5()
         assert mt5 is not None
@@ -106,13 +109,13 @@ class TestRPyCService:
 class TestMT5Operations:
     """Test basic MT5 operations via RPyC (requires container)."""
 
-    def test_mt5_version(self, mt5_module) -> None:
+    def test_mt5_version(self, mt5_module: Any) -> None:
         """Verify MT5 version can be retrieved."""
         version = mt5_module.version()
         # Version might be None if MT5 not initialized, but call should work
         assert version is None or isinstance(version, tuple)
 
-    def test_mt5_constants_accessible(self, mt5_module) -> None:
+    def test_mt5_constants_accessible(self, mt5_module: Any) -> None:
         """Verify MT5 constants are accessible."""
         # These constants should always be available
         assert hasattr(mt5_module, "ORDER_TYPE_BUY")
@@ -120,7 +123,7 @@ class TestMT5Operations:
         assert hasattr(mt5_module, "TIMEFRAME_M1")
         assert hasattr(mt5_module, "TIMEFRAME_H1")
 
-    def test_mt5_last_error(self, mt5_module) -> None:
+    def test_mt5_last_error(self, mt5_module: Any) -> None:
         """Verify last_error is accessible."""
         error = mt5_module.last_error()
         # Should return tuple (code, description)
@@ -131,7 +134,9 @@ class TestMT5Operations:
 class TestMT5AutoLogin:
     """Test MT5 auto-login functionality (requires container + credentials)."""
 
-    def test_mt5_auto_login_account_info(self, rpyc_connection) -> None:
+    def test_mt5_auto_login_account_info(
+        self, rpyc_connection: rpyc.Connection
+    ) -> None:
         """Verify MT5 auto-login works and returns account info."""
         # Initialize MT5 (should use auto-login from config file)
         init_result = rpyc_connection.root.initialize()
@@ -149,7 +154,7 @@ class TestMT5AutoLogin:
         # Verify login is a valid number
         assert account_info["login"] > 0, f"Invalid login: {account_info['login']}"
 
-    def test_mt5_terminal_connected(self, rpyc_connection) -> None:
+    def test_mt5_terminal_connected(self, rpyc_connection: rpyc.Connection) -> None:
         """Verify MT5 terminal is connected to server."""
         # Initialize if not already
         rpyc_connection.root.initialize()
@@ -235,7 +240,7 @@ class TestRPyC6Compatibility:
         version = result.stdout.strip()
         assert version.startswith("6."), f"Expected rpyc 6.x in Wine, got {version}"
 
-    def test_numpy_available_in_mt5(self, mt5_module) -> None:
+    def test_numpy_available_in_mt5(self, mt5_module: Any) -> None:
         """Test numpy is available for MT5 operations.
 
         MT5 uses numpy for price data arrays.
@@ -244,7 +249,9 @@ class TestRPyC6Compatibility:
         # Just verify MT5 module is accessible
         assert mt5_module is not None
 
-    def test_rpyc_connection_timeout_config(self, rpyc_connection) -> None:
+    def test_rpyc_connection_timeout_config(
+        self, rpyc_connection: rpyc.Connection
+    ) -> None:
         """Verify RPyC connection timeout is properly configured."""
         timeout = rpyc_connection._config.get("sync_request_timeout")
         assert timeout is not None
