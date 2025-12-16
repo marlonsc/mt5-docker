@@ -49,26 +49,26 @@
     typeCheckingMode = "strict"
 
 [tool.pytest.ini_options]
-    testpaths = ["tests"]
     addopts = "-v --tb=short"
-    timeout = 300
     env_files = [".env"]
     markers = [
         "requires_container: marks tests that require the Docker container to be running",
         "slow: marks tests that may take longer to execute",
     ]
+    testpaths = ["tests"]
+    timeout = 300
 
 [tool.ruff]
+    extend-exclude = ["typings"]
     line-length = 88
     target-version = "py312"
-    extend-exclude = ["typings"]
 
     [tool.ruff.lint]
-        select = ["ALL"]
         ignore = [
             "COM812",  # missing-trailing-comma (conflicts with formatter)
             "ISC001",  # single-line-implicit-string-concatenation (conflicts with formatter)
         ]
+        select = ["ALL"]
 
     [tool.ruff.lint.per-file-ignores]
         "tests/*" = [
