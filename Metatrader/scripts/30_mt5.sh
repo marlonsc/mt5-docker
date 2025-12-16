@@ -30,6 +30,19 @@ install_mt5_pip() {
         log ERROR "[mt5] MetaTrader5 import verification failed"
         return 1
     }
+
+    # Install mt5linux for the RPyC bridge (latest from GitHub)
+    log INFO "[mt5] Installing mt5linux bridge package..."
+    "$wine_executable" "$WINE_PYTHON_PATH" -m pip install --upgrade --no-cache-dir \
+        'https://github.com/marlonsc/mt5linux/archive/refs/heads/master.tar.gz' 2>&1 || {
+        log ERROR "[mt5] mt5linux pip installation failed"
+        return 1
+    }
+
+    "$wine_executable" "$WINE_PYTHON_PATH" -c "import mt5linux; print('mt5linux bridge installed')" 2>/dev/null || {
+        log ERROR "[mt5] mt5linux import verification failed"
+        return 1
+    }
 }
 
 # ============================================================
