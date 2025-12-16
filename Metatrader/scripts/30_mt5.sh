@@ -1,24 +1,20 @@
 #!/bin/bash
-# MT5 Installation and Configuration (IDEMPOTENT)
-# Each step checks if already done before executing
+# MT5 Installation and Configuration
+# =============================================================================
+# Package Policy:
+#   - MetaTrader5 PIP: ALWAYS reinstall (get latest from PyPI)
+#   - mt5linux: ALWAYS reinstall (get latest from GitHub)
+#   - colorama: Install if missing (structlog dependency)
+#   - MT5 Terminal: IDEMPOTENT (skip if already installed)
+#   - Config: IDEMPOTENT (skip if same credentials)
+# =============================================================================
 set -euo pipefail
 source "$(dirname "$0")/00_env.sh"
 
-# Markers for idempotency
-MT5_PIP_MARKER="$WINEPREFIX/.mt5-pip-installed"
 MT5_INSTALL_TIMEOUT=60
 
 # ============================================================
-# Helper: Check if Python package is installed in Wine
-# ============================================================
-is_package_installed() {
-    local package="$1"
-    "$wine_executable" "$WINE_PYTHON_PATH" -c "import $package" 2>/dev/null
-}
-
-# ============================================================
-# Install Python packages (IDEMPOTENT)
-# Checks each package before installing
+# Install Python packages (ALWAYS FRESH for MT5 + mt5linux)
 # ============================================================
 install_mt5_pip() {
     if [ ! -f "$WINE_PYTHON_PATH" ]; then
@@ -26,35 +22,10 @@ install_mt5_pip() {
         return 1
     fi
 
-    # Check if all packages already installed
-    if [ -f "$MT5_PIP_MARKER" ]; then
-        if is_package_installed "MetaTrader5" && \
-           is_package_installed "colorama" && \
-           is_package_installed "mt5linux"; then
-            log INFO "[mt5] All pip packages already installed, skipping"
-            return 0
-        else
-            log INFO "[mt5] Marker exists but packages missing, reinstalling..."
-            rm -f "$MT5_PIP_MARKER"
-        fi
-    fi
+    log INFO "[mt5] Installing pip packages (fresh install)..."
 
-    log INFO "[mt5] Installing pip packages..."
-
-    # 1. MetaTrader5 (without upgrading numpy - 1.26.4 is Wine-compatible)
-    if ! is_package_installed "MetaTrader5"; then
-        log INFO "[mt5] Installing MetaTrader5..."
-        "$wine_executable" "$WINE_PYTHON_PATH" -m pip install --upgrade --no-cache-dir --no-deps \
-            MetaTrader5 2>&1 || {
-            log ERROR "[mt5] MetaTrader5 installation failed"
-            return 1
-        }
-    else
-        log INFO "[mt5] MetaTrader5 already installed"
-    fi
-
-    # 2. colorama (required by structlog on Windows)
-    if ! is_package_installed "colorama"; then
+    # 1. colorama (required by structlog on Windows) - install if missing
+    if ! "$wine_executable" "$WINE_PYTHON_PATH" -c "import colorama" 2>/dev/null; then
         log INFO "[mt5] Installing colorama..."
         "$wine_executable" "$WINE_PYTHON_PATH" -m pip install --no-cache-dir colorama 2>&1 || {
             log ERROR "[mt5] colorama installation failed"
@@ -64,9 +35,17 @@ install_mt5_pip() {
         log INFO "[mt5] colorama already installed"
     fi
 
-    # 3. mt5linux (always reinstall from GitHub to get latest)
-    log INFO "[mt5] Installing mt5linux from GitHub..."
-    "$wine_executable" "$WINE_PYTHON_PATH" -m pip install --upgrade --no-cache-dir \
+    # 2. MetaTrader5 - ALWAYS reinstall to get latest version
+    log INFO "[mt5] Installing MetaTrader5 (always fresh)..."
+    "$wine_executable" "$WINE_PYTHON_PATH" -m pip install --upgrade --no-cache-dir --no-deps \
+        MetaTrader5 2>&1 || {
+        log ERROR "[mt5] MetaTrader5 installation failed"
+        return 1
+    }
+
+    # 3. mt5linux - ALWAYS reinstall from GitHub main branch
+    log INFO "[mt5] Installing mt5linux from GitHub (always fresh)..."
+    "$wine_executable" "$WINE_PYTHON_PATH" -m pip install --upgrade --no-cache-dir --force-reinstall \
         'https://github.com/marlonsc/mt5linux/archive/refs/heads/master.tar.gz' 2>&1 || {
         log ERROR "[mt5] mt5linux installation failed"
         return 1
@@ -78,14 +57,13 @@ install_mt5_pip() {
 import MetaTrader5
 import colorama
 import mt5linux
-print('All packages verified')
+print(f'MetaTrader5 {MetaTrader5.__version__}')
+print('mt5linux OK')
 " 2>/dev/null || {
         log ERROR "[mt5] Package verification failed"
         return 1
     }
 
-    # Mark as installed
-    touch "$MT5_PIP_MARKER"
     log INFO "[mt5] Pip packages installed successfully"
 }
 
@@ -156,7 +134,7 @@ install_mt5_terminal() {
 
 # ============================================================
 # Generate Configuration (IDEMPOTENT)
-# Regenerates only if credentials provided and file doesn't exist
+# Regenerates only if credentials changed
 # ============================================================
 generate_config() {
     if [ -z "${MT5_LOGIN:-}" ] || [ -z "${MT5_PASSWORD:-}" ] || [ -z "${MT5_SERVER:-}" ]; then
