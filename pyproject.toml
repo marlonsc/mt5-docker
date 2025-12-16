@@ -67,3 +67,11 @@ ignore_missing_imports = true  # rpyc and numpy lack type stubs
 [[tool.mypy.overrides]]
 module = "tests.*"
 ignore_errors = true  # pytest fixtures and test-specific imports
+
+[tool.pyright]
+pythonVersion = "3.13"
+pythonPlatform = "Linux"
+venvPath = "."
+venv = ".venv"
+typeCheckingMode = "basic"
+reportMissingImports = "none"  # rpyc lacks type stubs

@@ -141,13 +141,13 @@ class TestMT5AutoLogin:
         account_info = rpyc_connection.root.account_info()
         assert account_info is not None, "account_info returned None - login failed"
 
-        # Verify account has expected fields
-        assert hasattr(account_info, "login"), "account_info missing login field"
-        assert hasattr(account_info, "server"), "account_info missing server field"
-        assert hasattr(account_info, "balance"), "account_info missing balance field"
+        # Verify account has expected fields (RPyC returns dict, not namedtuple)
+        assert "login" in account_info, "account_info missing login field"
+        assert "server" in account_info, "account_info missing server field"
+        assert "balance" in account_info, "account_info missing balance field"
 
         # Verify login is a valid number
-        assert account_info.login > 0, f"Invalid login: {account_info.login}"
+        assert account_info["login"] > 0, f"Invalid login: {account_info['login']}"
 
     def test_mt5_terminal_connected(self, rpyc_connection) -> None:
         """Verify MT5 terminal is connected to server."""
@@ -158,9 +158,9 @@ class TestMT5AutoLogin:
         term_info = rpyc_connection.root.terminal_info()
         assert term_info is not None, "terminal_info returned None"
 
-        # Check terminal is connected
-        assert hasattr(term_info, "connected"), "terminal_info missing connected field"
-        assert term_info.connected is True, "Terminal not connected to server"
+        # Check terminal is connected (RPyC returns dict, not namedtuple)
+        assert "connected" in term_info, "terminal_info missing connected field"
+        assert term_info["connected"] is True, "Terminal not connected to server"
 
 
 @requires_container
