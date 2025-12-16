@@ -70,15 +70,15 @@ class TestVersionCentralization:
             assert arg in output, f"Dockerfile missing ARG: {arg}"
 
     def test_pyproject_references_centralized_versions(self) -> None:
-        """Verify pyproject.toml comments reference 00_env.sh."""
+        """Verify pyproject.toml comments reference versions.env (primary source)."""
         result = subprocess.run(
-            ["grep", "-E", "00_env.sh|RPYC_VERSION", "pyproject.toml"],
+            ["grep", "-E", "versions.env|RPYC_VERSION", "pyproject.toml"],
             capture_output=True,
             text=True,
             check=False,
         )
-        assert "00_env.sh" in result.stdout, (
-            "pyproject.toml should reference 00_env.sh for version consistency"
+        assert "versions.env" in result.stdout, (
+            "pyproject.toml should reference versions.env for version consistency"
         )
 
 

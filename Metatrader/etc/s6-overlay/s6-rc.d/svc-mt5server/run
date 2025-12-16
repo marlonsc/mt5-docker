@@ -33,9 +33,7 @@ fi
 # Check if Wine prefix was built during Docker build (fast path)
 BUILD_MARKER="${WINEPREFIX:-/config/.wine}/.build-complete"
 
-# Startup markers in /tmp/ - container-local, always exists, not persistent
-STARTUP_MARKER="/tmp/.mt5-startup-complete"
-STARTUP_IN_PROGRESS="/tmp/.mt5-startup-in-progress"
+# STARTUP_MARKER and STARTUP_IN_PROGRESS are provided by 00_env.sh (centralized config)
 
 # ============================================================
 # Helper: Run command as user abc (owner of Wine prefix)

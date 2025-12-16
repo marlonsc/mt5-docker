@@ -35,9 +35,20 @@ if [ -f "$STAGING_DIR/.versions" ]; then
     source "$STAGING_DIR/.versions"
 fi
 
-# Version defaults (if not in manifest)
-export PYTHON_VERSION="${PYTHON_VERSION:-3.13.11}"
+# =============================================================================
+# VERSION FALLBACKS (must match versions.env - primary source of truth)
+# =============================================================================
+export PYTHON_VERSION="${PYTHON_VERSION:-3.12.8}"
 export GECKO_VERSION="${GECKO_VERSION:-2.47.4}"
+export RPYC_VERSION="${RPYC_VERSION:-6.0.2}"
+export PLUMBUM_VERSION="${PLUMBUM_VERSION:-1.8.0}"
+export NUMPY_VERSION="${NUMPY_VERSION:-1.26.4}"
+
+# =============================================================================
+# STARTUP MARKERS (centralized - used by start.sh, svc-mt5server, health_monitor)
+# =============================================================================
+export STARTUP_MARKER="${STARTUP_MARKER:-/tmp/.mt5-startup-complete}"
+export STARTUP_IN_PROGRESS="${STARTUP_IN_PROGRESS:-/tmp/.mt5-startup-in-progress}"
 
 # MT5 download URL (always latest)
 export mt5setup_url="https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe"
@@ -47,8 +58,7 @@ export MT5_LOGIN="${MT5_LOGIN:-}"
 export MT5_PASSWORD="${MT5_PASSWORD:-}"
 export MT5_SERVER="${MT5_SERVER:-}"
 
-# Markers
-export INIT_MARKER="$WINEPREFIX/.wine-init-done"
+# Markers (DEPS_MARKER used by 20_winetricks.sh)
 export DEPS_MARKER="$WINEPREFIX/.deps-installed"
 
 # ============================================================

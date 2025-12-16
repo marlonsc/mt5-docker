@@ -5,10 +5,7 @@ set -euo pipefail
 START_TS=$(date +%s)
 SCRIPTS_DIR="$(dirname "$0")/scripts"
 
-# Markers in /tmp/ - container-local, always exists, not persistent
-STARTUP_MARKER="/tmp/.mt5-startup-complete"
-STARTUP_IN_PROGRESS="/tmp/.mt5-startup-in-progress"
-
+# Source 00_env.sh FIRST - provides centralized config including STARTUP markers
 source "$SCRIPTS_DIR/00_env.sh"
 
 # Create in-progress marker FIRST (prevents race with svc-mt5server)

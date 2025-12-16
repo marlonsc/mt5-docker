@@ -1,83 +1,82 @@
 [build-system]
-requires = ["poetry-core>=1.0.0"]
-build-backend = "poetry.core.masonry.api"
-
-[tool.poetry]
-name = "mt5docker"
-version = "0.1.0"
-description = "Dockerized MetaTrader 5 environment with RPyC bridge"
-readme = "README.md"
-license = "MIT"
-authors = ["marlonsc <marlonsc@gmail.com>"]
-package-mode = false  # No Python packages, just tests and Docker
-
-[tool.poetry.dependencies]
-python = ">=3.12"
-# Dependencies - versions must match 00_env.sh centralized config
-rpyc = "6.0.2"           # RPYC_VERSION in 00_env.sh
-plumbum = "^1.8.0"       # PLUMBUM_VERSION in 00_env.sh
-python-dotenv = "^1.0.0" # For loading .env files
-
-[tool.poetry.group.dev.dependencies]
-pytest = "^8.0.0"
-pytest-timeout = "^2.0.0"
-pytest-dotenv = "^0.5.0"
-hypothesis = "^6.148.7"
-mypy = "^1.0.0"
-ruff = "^0.8.0"
-pyright = "^1.1.0"
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-addopts = "-v --tb=short"
-timeout = 300
-env_files = [".env"]
-markers = [
-    "requires_container: marks tests that require the Docker container to be running",
-    "slow: marks tests that may take longer to execute",
-]
-
-[tool.ruff]
-line-length = 88
-target-version = "py312"
-extend-exclude = ["typings"]
-
-[tool.ruff.lint]
-select = ["ALL"]
-ignore = [
-    "COM812",  # missing-trailing-comma (conflicts with formatter)
-    "ISC001",  # single-line-implicit-string-concatenation (conflicts with formatter)
-]
-
-[tool.ruff.lint.per-file-ignores]
-"tests/*" = [
-    "S101",     # assert ok in tests
-    "S603",     # subprocess ok in tests
-    "S607",     # partial path ok in tests
-    "PLR2004",  # magic values ok in tests
-    "SLF001",   # private member access ok for rpyc internals
-    "ANN401",   # Any ok for dynamic rpyc module access
-    "TC003",    # stdlib type imports in TYPE_CHECKING ok
-]
+    requires = ["poetry-core>=1.0.0"]
+    build-backend = "poetry.core.masonry.api"
 
 [tool.mypy]
-python_version = "3.12"
-strict = true
-warn_return_any = true
-warn_unused_configs = true
-mypy_path = "typings"
-exclude = ["typings/"]
+    exclude = ["typings/"]
+    mypy_path = "typings"
+    python_version = "3.12"
+    strict = true
+    warn_return_any = true
+    warn_unused_configs = true
 
-[[tool.mypy.overrides]]
-module = "tests.*"
-disallow_untyped_defs = false
-disallow_untyped_calls = false
+    [[tool.mypy.overrides]]
+        disallow_untyped_calls = false
+        disallow_untyped_defs = false
+        module = "tests.*"
+
+[tool.poetry]
+    authors = ["marlonsc <marlonsc@gmail.com>"]
+    description = "Dockerized MetaTrader 5 environment with RPyC bridge"
+    license = "MIT"
+    name = "mt5docker"
+    package-mode = false
+    readme = "README.md"
+    version = "0.1.9"
+
+    [tool.poetry.dependencies]
+        plumbum = "^1.8.0"       # PLUMBUM_VERSION in versions.env
+        python = ">=3.12"
+        python-dotenv = "^1.0.0" # For loading .env files
+        rpyc = "6.0.2"           # RPYC_VERSION in versions.env
+
+    [tool.poetry.group.dev.dependencies]
+        hypothesis = "^6.148.7"
+        mypy = "^1.0.0"
+        pyright = "^1.1.0"
+        pytest = "^8.0.0"
+        pytest-dotenv = "^0.5.0"
+        pytest-timeout = "^2.0.0"
+        ruff = "^0.8.0"
 
 [tool.pyright]
-pythonVersion = "3.12"
-pythonPlatform = "Linux"
-stubPath = "typings"
-typeCheckingMode = "strict"
-reportMissingImports = false
-reportMissingTypeStubs = false
-exclude = ["typings", ".venv"]
+    exclude = ["typings", ".venv"]
+    pythonPlatform = "Linux"
+    pythonVersion = "3.12"
+    reportMissingImports = false
+    reportMissingTypeStubs = false
+    stubPath = "typings"
+    typeCheckingMode = "strict"
+
+[tool.pytest.ini_options]
+    testpaths = ["tests"]
+    addopts = "-v --tb=short"
+    timeout = 300
+    env_files = [".env"]
+    markers = [
+        "requires_container: marks tests that require the Docker container to be running",
+        "slow: marks tests that may take longer to execute",
+    ]
+
+[tool.ruff]
+    line-length = 88
+    target-version = "py312"
+    extend-exclude = ["typings"]
+
+    [tool.ruff.lint]
+        select = ["ALL"]
+        ignore = [
+            "COM812",  # missing-trailing-comma (conflicts with formatter)
+            "ISC001",  # single-line-implicit-string-concatenation (conflicts with formatter)
+        ]
+
+    [tool.ruff.lint.per-file-ignores]
+        "tests/*" = [
+            "ANN401",   # Any ok for dynamic rpyc module access
+            "PLR2004",  # magic values ok in tests
+            "S101",     # assert ok in tests
+            "S603",     # subprocess ok in tests
+            "S607",     # partial path ok in tests
+            "SLF001",   # private member access ok for rpyc internals
+            "TC003",    # stdlib type imports in TYPE_CHECKING ok
+        ]

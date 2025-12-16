@@ -27,5 +27,4 @@ if [ ! -f "$WINE_PYTHON_PATH" ]; then
     exit 1
 fi
 
-touch "$INIT_MARKER"
 log INFO "[wine] Ready"
