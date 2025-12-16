@@ -170,6 +170,7 @@ RUN --mount=from=downloader,source=/staging,target=/staging \
     # Step 5: Install Python packages (NOT MetaTrader5 - runtime only)
     # ============================================================
     echo "=== Step 5/5: Installing Python packages ===" && \
+    # NOTE: mt5linux is installed at RUNTIME (30_mt5.sh) for latest version
     xvfb-run sh -c "\
         wine '$PYTHON_EXE' -m pip install --upgrade --no-cache-dir pip && \
         wine '$PYTHON_EXE' -m pip install --no-cache-dir \
@@ -178,8 +179,6 @@ RUN --mount=from=downloader,source=/staging,target=/staging \
             'plumbum>=${PLUMBUM_VERSION}' \
             'structlog>=25.5' \
             'python-dateutil' && \
-        wine '$PYTHON_EXE' -m pip install --no-cache-dir \
-            'https://github.com/marlonsc/mt5linux/archive/refs/heads/master.tar.gz' && \
         wineserver -w" && \
     # Cleanup
     echo "=== Cleanup ===" && \
@@ -229,7 +228,8 @@ ENV WINEDLLOVERRIDES="winemenubuilder.exe,mscoree,mshtml="
 ENV STAGING_DIR="/opt/mt5-staging"
 ENV WINE_PREFIX_TEMPLATE="/opt/wine-prefix-template"
 
-# Linux Python packages (for mt5linux host-side RPyC client)
+# Linux Python packages (base dependencies only)
+# NOTE: mt5linux is installed at RUNTIME (50_python_linux.sh) for latest version
 RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
     python3 -m pip install --upgrade --break-system-packages pip && \
     python3 -m pip install --break-system-packages \
@@ -237,9 +237,7 @@ RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
         "rpyc==${RPYC_VERSION}" \
         "plumbum>=${PLUMBUM_VERSION}" \
         "pyparsing>=3.0.0" \
-        pyxdg && \
-    python3 -m pip install --break-system-packages --ignore-requires-python \
-        "https://github.com/marlonsc/mt5linux/archive/refs/heads/master.tar.gz"
+        pyxdg
 
 # Copy version manifest (MT5 downloaded at container startup for latest version)
 COPY --from=downloader /staging/.versions /opt/mt5-staging/.versions
