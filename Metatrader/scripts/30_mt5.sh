@@ -155,56 +155,6 @@ EOF
 }
 
 # ============================================================
-# Launch MT5
-# ============================================================
-launch_mt5() {
-    if [ ! -e "$mt5file" ]; then
-        log ERROR "[mt5] Cannot launch - not installed"
-        return 1
-    fi
-
-    # Check if already running
-    if pgrep -f "terminal64.exe" >/dev/null 2>&1; then
-        log INFO "[mt5] Terminal already running"
-        return 0
-    fi
-
-    log INFO "[mt5] Launching terminal..."
-
-    # Build command line arguments
-    # MT5 uses command line args for auto-login (more reliable than config file)
-    MT5_ARGS="/portable"
-
-    if [ -n "${MT5_LOGIN:-}" ] && [ -n "${MT5_PASSWORD:-}" ] && [ -n "${MT5_SERVER:-}" ]; then
-        log INFO "[mt5] Auto-login enabled for account ${MT5_LOGIN}@${MT5_SERVER}"
-        MT5_ARGS="$MT5_ARGS /login:${MT5_LOGIN} /password:${MT5_PASSWORD} /server:${MT5_SERVER}"
-    fi
-
-    # Add config file if exists (for other settings like AutoTrading)
-    if [ -f "$MT5_STARTUP_INI" ]; then
-        MT5_CONFIG_WIN="C:\\Program Files\\MetaTrader 5\\Config\\startup.ini"
-        MT5_ARGS="$MT5_ARGS /config:$MT5_CONFIG_WIN"
-    fi
-
-    log INFO "[mt5] Starting with args: $MT5_ARGS"
-    "$wine_executable" "$mt5file" $MT5_ARGS &
-
-    # Wait for terminal to start
-    local waited=0
-    while [ $waited -lt 30 ]; do
-        if pgrep -f "terminal64.exe" >/dev/null 2>&1; then
-            log INFO "[mt5] Terminal started"
-            return 0
-        fi
-        sleep 2
-        waited=$((waited + 2))
-    done
-
-    log WARN "[mt5] Terminal may not have started"
-    return 0
-}
-
-# ============================================================
 # Main execution
 # ============================================================
 install_mt5_pip

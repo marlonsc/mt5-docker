@@ -73,14 +73,3 @@ def get_test_container_config() -> DockerContainerConfig:
         password=os.environ.get("MT5_PASSWORD"),
         server=os.environ.get("MT5_SERVER", "MetaQuotes-Demo"),
     )
-
-
-# Port allocation documentation
-PORT_ALLOCATION = """
-Port allocation to avoid conflicts between test environments:
-
-| Environment      | Container Name     | VNC   | RPyC  | Health |
-|-----------------|-------------------|-------|-------|--------|
-| Production      | mt5               | 3000  | 8001  | 8002   |
-| mt5docker tests | mt5docker-test    | 43000 | 48812 | 48002  |
-"""

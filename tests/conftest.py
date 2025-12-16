@@ -29,7 +29,7 @@ from typing import Any
 import pytest
 import rpyc
 
-from tests.fixtures.docker import DockerContainerConfig, get_test_container_config
+from tests.fixtures.docker import get_test_container_config
 
 # =============================================================================
 # CONFIGURATION - loaded from tests/fixtures/docker.py
@@ -223,14 +223,7 @@ def docker_container() -> None:
     start_test_container()
 
 
-# Pytest marker for tests requiring container
-requires_container = pytest.mark.usefixtures("docker_container")
-
-
-@pytest.fixture(scope="session")
-def container_config() -> DockerContainerConfig:
-    """Provide complete container configuration."""
-    return _config
+# NOTE: requires_container marker is defined in tests.markers
 
 
 @pytest.fixture(scope="session")
@@ -255,28 +248,6 @@ def health_port() -> int:
 def vnc_port() -> int:
     """Provide test VNC port."""
     return _config.vnc_port
-
-
-@pytest.fixture(scope="session")
-def mt5_credentials() -> dict[str, str | int]:
-    """Provide MT5 test credentials from environment.
-
-    Credentials must be configured in .env file.
-    See .env.example for setup instructions.
-    """
-    if not _config.login or not _config.password:
-        pytest.skip(
-            "MT5 credentials not configured. "
-            "Copy .env.example to .env and fill in MT5_LOGIN and MT5_PASSWORD."
-        )
-    # After skip, we know these are non-None strings
-    assert _config.login is not None
-    assert _config.password is not None
-    return {
-        "login": int(_config.login),
-        "password": _config.password,
-        "server": _config.server,
-    }
 
 
 @pytest.fixture

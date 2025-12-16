@@ -18,7 +18,7 @@ from typing import Any
 
 import rpyc
 
-from tests.conftest import requires_container
+from tests.markers import requires_container
 
 
 class TestConfiguration:

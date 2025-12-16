@@ -9,7 +9,7 @@ HEALTH_CHECK_INTERVAL="${HEALTH_CHECK_INTERVAL:-30}"
 AUTO_RECOVERY_ENABLED="${AUTO_RECOVERY_ENABLED:-1}"
 MAX_RESTART_ATTEMPTS=3
 RESTART_COOLDOWN=60
-STARTUP_MARKER="${STARTUP_MARKER:-$WINEPREFIX/.startup-complete}"
+STARTUP_MARKER="${STARTUP_MARKER:-/tmp/.mt5-startup-complete}"
 STARTUP_WAIT_MAX=300  # Max 5 minutes to wait for startup
 
 # State tracking
@@ -83,7 +83,7 @@ restart_mt5() {
     MT5_ARGS="/portable"
 
     if [ -f "$MT5_STARTUP_INI" ]; then
-        MT5_ARGS="$MT5_ARGS /config:\"C:\\Program Files\\MetaTrader 5\\Config\\startup.ini\""
+        MT5_ARGS="$MT5_ARGS /config:C:\\MT5Config\\startup.ini"
         log INFO "[health] Restarting with config file"
     elif [ -n "${MT5_LOGIN:-}" ] && [ -n "${MT5_PASSWORD:-}" ] && [ -n "${MT5_SERVER:-}" ]; then
         MT5_ARGS="$MT5_ARGS /login:${MT5_LOGIN} /password:${MT5_PASSWORD} /server:${MT5_SERVER}"
@@ -115,7 +115,7 @@ restart_rpyc_server() {
 
     # Kill the Wine Python process - s6 will automatically restart it
     # Note: s6-svc requires root, but this script runs as abc user
-    pkill -f "python.exe /tmp/mt5linux/server.py" 2>/dev/null
+    pkill -f "wine.*python.*mt5linux.bridge" 2>/dev/null
 
     # Wait for s6 to restart the service
     sleep 5
