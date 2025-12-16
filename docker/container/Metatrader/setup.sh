@@ -12,7 +12,8 @@
 # =============================================================================
 set -euo pipefail
 
-MT5_INSTALL_TIMEOUT=60
+# Installer timeout - enough time for full installation
+MT5_INSTALL_TIMEOUT=120
 
 # =============================================================================
 # LOGGING (inherited from start.sh, but define fallback)
@@ -155,7 +156,7 @@ install_mt5_terminal() {
         return 1
     }
 
-    # Run installer with timeout
+    # Run installer with timeout - let it complete naturally
     log INFO "[setup] Running installer (timeout: ${MT5_INSTALL_TIMEOUT}s)..."
     "$wine_executable" "$MT5_SETUP" "/auto" &
     local INSTALLER_PID=$!
@@ -163,40 +164,52 @@ install_mt5_terminal() {
     local elapsed=0
     while [ $elapsed -lt $MT5_INSTALL_TIMEOUT ]; do
         if ! kill -0 $INSTALLER_PID 2>/dev/null; then
-            log INFO "[setup] Installer completed"
+            log INFO "[setup] Installer process completed"
             break
         fi
 
-        if [ -e "$mt5file" ]; then
-            log INFO "[setup] Terminal detected - killing installer"
-            kill $INSTALLER_PID 2>/dev/null || true
-            pkill -f "mt5setup" 2>/dev/null || true
-            wineserver -k 2>/dev/null || true
-            sleep 2
-            break
+        # Check for terminal but don't kill installer - let it finish
+        if [ -e "$mt5file" ] && [ $((elapsed % 10)) -eq 0 ]; then
+            log INFO "[setup] Terminal detected, waiting for installer to finish..."
         fi
 
         sleep 5
         elapsed=$((elapsed + 5))
     done
 
-    # Cleanup
+    # Timeout handling
     if kill -0 $INSTALLER_PID 2>/dev/null; then
-        log WARN "[setup] Installer timeout - forcing kill"
+        log WARN "[setup] Installer timeout after ${MT5_INSTALL_TIMEOUT}s - forcing kill"
         kill $INSTALLER_PID 2>/dev/null || true
         pkill -f "mt5setup" 2>/dev/null || true
-        wineserver -k 2>/dev/null || true
         sleep 2
     fi
 
     rm -f "$MT5_SETUP"
 
-    if [ -e "$mt5file" ]; then
-        log INFO "[setup] MT5 terminal installed: $mt5file"
-    else
-        log ERROR "[setup] MT5 terminal installation failed"
+    # Verify installation
+    if [ ! -e "$mt5file" ]; then
+        log ERROR "[setup] MT5 terminal installation failed - executable not found"
         return 1
     fi
+
+    log INFO "[setup] MT5 terminal installed: $mt5file"
+
+    # Kill any terminal process started by installer
+    # (svc-mt5server will start it properly later)
+    if pgrep -f "terminal64.exe" > /dev/null 2>&1; then
+        log INFO "[setup] Stopping terminal process started by installer..."
+        pkill -f "terminal64.exe" 2>/dev/null || true
+        sleep 2
+        # Force kill if still running
+        pkill -9 -f "terminal64.exe" 2>/dev/null || true
+    fi
+
+    # Clean up wine server to ensure fresh state
+    wineserver -k 2>/dev/null || true
+    sleep 1
+
+    log INFO "[setup] Installation cleanup complete"
 }
 
 generate_mt5_config() {

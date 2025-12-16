@@ -39,7 +39,7 @@ always have latest MT5 version.
 
 ## Project Structure
 
-```
+```bash
 mt5docker/
 ├── docker/                         # Docker-related files
 │   ├── Dockerfile                  # Multi-stage build
@@ -300,6 +300,7 @@ print(local_array)  # [1 2 3]
 | `/data` | **Optional**: Pre-configured archives for faster startup |
 
 **Volume contents** (`/config`):
+
 - `.wine/` - Wine prefix with MT5 installation
 - `.wine/drive_c/Program Files/MetaTrader 5/` - MT5 program files
 - `.wine/drive_c/Program Files/MetaTrader 5/MQL5/` - Your EAs, indicators, scripts
@@ -315,6 +316,7 @@ The container startup is handled by two consolidated scripts in `docker/containe
 | `health_monitor.sh` | Background health monitoring and auto-recovery |
 
 **Setup operations** (performed by `setup.sh`):
+
 - **Config unpack**: Unpack pre-configured Wine prefix if archive exists (<5s)
 - **Wine prefix init**: Copy template to /config (<30s)
 - **Winetricks**: Install vcrun2019, restore win10 version (30-60s)
@@ -323,7 +325,8 @@ The container startup is handled by two consolidated scripts in `docker/containe
 - **MT5 config**: Generate auto-login config if credentials provided (<5s)
 - **Bridge copy**: Copy bridge.py to Wine Python site-packages (<5s)
 
-**Note**: Python and packages (rpyc, numpy) are pre-installed in Wine at build time. Only MetaTrader5 is installed at runtime to get the latest version.
+**Note**: Python and packages (rpyc, numpy) are pre-installed in Wine at build time. Only MetaTrader5 is installed at runtime to get the
+latest version.
 
 ### Startup Dependency Categories
 

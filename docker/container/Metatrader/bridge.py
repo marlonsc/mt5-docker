@@ -30,6 +30,7 @@ import logging
 import signal
 import sys
 import threading
+from datetime import datetime
 from types import FrameType
 from typing import Any
 
@@ -44,7 +45,7 @@ _server: ThreadPoolServer | None = None
 
 
 class MT5Service(rpyc.Service):
-    """Modern RPyC service for MT5. NO STUBS."""
+    """Modern RPyC service for MT5."""
 
     _mt5_module: Any = None
     _mt5_lock = threading.RLock()
@@ -67,7 +68,121 @@ class MT5Service(rpyc.Service):
     def _ensure_mt5_loaded(self) -> None:
         """Ensure MT5 module is loaded, raise RuntimeError if not."""
         if MT5Service._mt5_module is None:
-            raise RuntimeError("MT5 module not loaded - connect first")
+            msg = "MT5 module not loaded - connect first"
+            raise RuntimeError(msg)
+
+    # =========================================================================
+    # HELPER FUNCTIONS (PRIVATE)
+    # =========================================================================
+
+    def _materialize_single(
+        self,
+        result: Any,
+        func_name: str,
+        nested_fields: list[str] | None = None,
+    ) -> dict[str, Any] | None:
+        """Convert single namedtuple to dict with optional nested conversion.
+
+        Args:
+            result: The namedtuple result from MT5 API
+            func_name: Function name for logging
+            nested_fields: List of field names that contain nested namedtuples
+
+        Returns:
+            Dict representation or None if result is None
+        """
+        if result is None:
+            log.debug("%s: result=None", func_name)
+            return None
+        data: dict[str, Any] = result._asdict()
+        # Handle nested namedtuples (e.g., 'request' in OrderSendResult)
+        if nested_fields:
+            for field in nested_fields:
+                if field in data and hasattr(data[field], "_asdict"):
+                    data[field] = data[field]._asdict()
+        return data
+
+    def _materialize_tuple(
+        self,
+        result: Any,
+        func_name: str,
+    ) -> tuple[dict[str, Any], ...] | None:
+        """Convert tuple of namedtuples to tuple of dicts.
+
+        Args:
+            result: Tuple of namedtuples from MT5 API
+            func_name: Function name for logging
+
+        Returns:
+            Tuple of dicts or None if result is None
+        """
+        if result is None:
+            log.debug("%s: result=None", func_name)
+            return None
+        data = tuple(item._asdict() for item in result)
+        log.debug("%s: returned %s items", func_name, len(data))
+        return data
+
+    def _validate_symbol(self, symbol: str, func_name: str) -> bool:
+        """Validate symbol is not empty.
+
+        Args:
+            symbol: Symbol to validate
+            func_name: Function name for logging
+
+        Returns:
+            True if valid, False otherwise
+        """
+        if not symbol:
+            log.debug("%s: empty symbol", func_name)
+            return False
+        return True
+
+    def _validate_count(self, count: int, func_name: str) -> bool:
+        """Validate count is positive.
+
+        Args:
+            count: Count to validate
+            func_name: Function name for logging
+
+        Returns:
+            True if valid, False otherwise
+        """
+        if count <= 0:
+            log.warning("%s: invalid count=%s", func_name, count)
+            return False
+        return True
+
+    def _validate_date_range(
+        self,
+        date_from: datetime | int,
+        date_to: datetime | int,
+        func_name: str,
+    ) -> bool:
+        """Validate date_from <= date_to.
+
+        Args:
+            date_from: Start date
+            date_to: End date
+            func_name: Function name for logging
+
+        Returns:
+            True if valid, False otherwise
+        """
+        # Convert to comparable types for validation
+        from_val = date_from if isinstance(date_from, (int, float)) else int(date_from.timestamp())
+        to_val = date_to if isinstance(date_to, (int, float)) else int(date_to.timestamp())
+
+        if from_val > to_val:
+            log.warning(
+                "%s: invalid range from=%s > to=%s", func_name, date_from, date_to
+            )
+            return False
+        return True
+
+    # =========================================================================
+    # EXPOSED API FUNCTIONS
+    # =========================================================================
 
     def exposed_health_check(self) -> dict[str, Any]:
         """Health check endpoint - verifies actual MT5 connection status."""
@@ -141,7 +256,7 @@ class MT5Service(rpyc.Service):
             kwargs["portable"] = portable
         result = MT5Service._mt5_module.initialize(**kwargs)
         log.info("initialize: result=%s", result)
-        return result
+        return bool(result)
 
     def exposed_login(
         self, login: int, password: str, server: str, timeout: int = 60000
@@ -154,57 +269,54 @@ class MT5Service(rpyc.Service):
             login=login, password=password, server=server, timeout=timeout
         )
         log.info("login: result=%s", result)
-        return result
+        return bool(result)
 
     def exposed_shutdown(self) -> None:
         """Shutdown MT5 terminal connection."""
         log.debug("exposed_shutdown: called")
-        result = MT5Service._mt5_module.shutdown()
+        MT5Service._mt5_module.shutdown()
         log.info("shutdown: completed")
-        return result
 
     def exposed_version(self) -> tuple[int, int, str] | None:
         """Get MT5 terminal version."""
         log.debug("exposed_version: called")
         result = MT5Service._mt5_module.version()
         log.debug("exposed_version: result=%s", result)
-        return result
+        return result  # type: ignore[no-any-return]
 
     def exposed_last_error(self) -> tuple[int, str]:
         """Get last error code and description."""
         log.debug("exposed_last_error: called")
         result = MT5Service._mt5_module.last_error()
         log.debug("exposed_last_error: result=%s", result)
-        return result
+        return result  # type: ignore[no-any-return]
 
-    def exposed_terminal_info(self) -> Any:
+    def exposed_terminal_info(self) -> dict[str, Any] | None:
         """Get terminal info with data materialization."""
+        self._ensure_mt5_loaded()
         log.debug("exposed_terminal_info: called")
         result = MT5Service._mt5_module.terminal_info()
-        if result is None:
-            log.debug("exposed_terminal_info: result=None")
-            return None
-        data = result._asdict()
-        log.debug("exposed_terminal_info: returned terminal info")
+        data = self._materialize_single(result, "terminal_info")
+        if data:
+            log.debug("exposed_terminal_info: returned terminal info")
         return data
 
-    def exposed_account_info(self) -> Any:
+    def exposed_account_info(self) -> dict[str, Any] | None:
         """Get account info with data materialization."""
+        self._ensure_mt5_loaded()
         log.debug("exposed_account_info: called")
         result = MT5Service._mt5_module.account_info()
-        if result is None:
-            log.debug("exposed_account_info: result=None")
-            return None
-        data = result._asdict()
-        log.debug("exposed_account_info: login=%s", data.get("login"))
+        data = self._materialize_single(result, "account_info")
+        if data:
+            log.debug("exposed_account_info: login=%s", data.get("login"))
         return data
 
-    def exposed_symbols_total(self) -> int:
+    def exposed_symbols_total(self) -> int | None:
         """Get total number of symbols."""
         log.debug("exposed_symbols_total: called")
         result = MT5Service._mt5_module.symbols_total()
         log.debug("exposed_symbols_total: result=%s", result)
-        return result
+        return int(result) if result is not None else None
 
     def exposed_symbols_get(self, group: str | None = None) -> Any:
         """Get symbols with chunked streaming to prevent IPC timeout."""
@@ -233,35 +345,41 @@ class MT5Service(rpyc.Service):
         log.debug("exposed_symbols_get: returned %s chunks", len(chunks))
         return {"total": total, "chunks": chunks}
 
-    def exposed_symbol_info(self, symbol: str) -> Any:
+    def exposed_symbol_info(self, symbol: str) -> dict[str, Any] | None:
         """Get symbol info with data materialization."""
+        self._ensure_mt5_loaded()
         log.debug("exposed_symbol_info: symbol=%s", symbol)
+        if not self._validate_symbol(symbol, "symbol_info"):
+            return None
         result = MT5Service._mt5_module.symbol_info(symbol)
-        if result is None:
-            log.debug("exposed_symbol_info: result=None")
-            return None
-        log.debug("exposed_symbol_info: found symbol")
-        return result._asdict()
+        data = self._materialize_single(result, "symbol_info")
+        if data:
+            log.debug("exposed_symbol_info: found symbol")
+        return data
 
-    def exposed_symbol_info_tick(self, symbol: str) -> Any:
+    def exposed_symbol_info_tick(self, symbol: str) -> dict[str, Any] | None:
         """Get symbol tick with data materialization."""
+        self._ensure_mt5_loaded()
         log.debug("exposed_symbol_info_tick: symbol=%s", symbol)
-        result = MT5Service._mt5_module.symbol_info_tick(symbol)
-        if result is None:
-            log.debug("exposed_symbol_info_tick: result=None")
+        if not self._validate_symbol(symbol, "symbol_info_tick"):
             return None
-        log.debug("exposed_symbol_info_tick: bid=%s ask=%s", result.bid, result.ask)
-        return result._asdict()
+        result = MT5Service._mt5_module.symbol_info_tick(symbol)
+        data = self._materialize_single(result, "symbol_info_tick")
+        if data:
+            log.debug("exposed_symbol_info_tick: bid=%s ask=%s", data.get("bid"), data.get("ask"))
+        return data
 
     def exposed_symbol_select(self, symbol: str, enable: bool = True) -> bool:
         """Select/deselect symbol in Market Watch."""
         log.debug("exposed_symbol_select: symbol=%s enable=%s", symbol, enable)
+        if not self._validate_symbol(symbol, "symbol_select"):
+            return False
         result = MT5Service._mt5_module.symbol_select(symbol, enable)
         log.debug("exposed_symbol_select: result=%s", result)
-        return result
+        return bool(result)
 
     def exposed_copy_rates_from(
-        self, symbol: str, timeframe: int, date_from: Any, count: int
+        self, symbol: str, timeframe: int, date_from: datetime | int, count: int
     ) -> Any:
         """Copy rates from specified date."""
         log.debug(
@@ -271,6 +389,10 @@ class MT5Service(rpyc.Service):
             date_from,
             count,
         )
+        if not self._validate_symbol(symbol, "copy_rates_from"):
+            return None
+        if not self._validate_count(count, "copy_rates_from"):
+            return None
         result = MT5Service._mt5_module.copy_rates_from(
             symbol, timeframe, date_from, count
         )
@@ -291,6 +413,10 @@ class MT5Service(rpyc.Service):
             start_pos,
             count,
         )
+        if not self._validate_symbol(symbol, "copy_rates_from_pos"):
+            return None
+        if not self._validate_count(count, "copy_rates_from_pos"):
+            return None
         result = MT5Service._mt5_module.copy_rates_from_pos(
             symbol, timeframe, start_pos, count
         )
@@ -301,7 +427,11 @@ class MT5Service(rpyc.Service):
         return result
 
     def exposed_copy_rates_range(
-        self, symbol: str, timeframe: int, date_from: Any, date_to: Any
+        self,
+        symbol: str,
+        timeframe: int,
+        date_from: datetime | int,
+        date_to: datetime | int,
     ) -> Any:
         """Copy rates in date range."""
         log.debug(
@@ -311,6 +441,10 @@ class MT5Service(rpyc.Service):
             date_from,
             date_to,
         )
+        if not self._validate_symbol(symbol, "copy_rates_range"):
+            return None
+        if not self._validate_date_range(date_from, date_to, "copy_rates_range"):
+            return None
         result = MT5Service._mt5_module.copy_rates_range(
             symbol, timeframe, date_from, date_to
         )
@@ -321,7 +455,7 @@ class MT5Service(rpyc.Service):
         return result
 
     def exposed_copy_ticks_from(
-        self, symbol: str, date_from: Any, count: int, flags: int
+        self, symbol: str, date_from: datetime | int, count: int, flags: int
     ) -> Any:
         """Copy ticks from specified date."""
         log.debug(
@@ -331,6 +465,10 @@ class MT5Service(rpyc.Service):
             count,
             flags,
         )
+        if not self._validate_symbol(symbol, "copy_ticks_from"):
+            return None
+        if not self._validate_count(count, "copy_ticks_from"):
+            return None
         result = MT5Service._mt5_module.copy_ticks_from(
             symbol, date_from, count, flags
         )
@@ -341,7 +479,11 @@ class MT5Service(rpyc.Service):
         return result
 
     def exposed_copy_ticks_range(
-        self, symbol: str, date_from: Any, date_to: Any, flags: int
+        self,
+        symbol: str,
+        date_from: datetime | int,
+        date_to: datetime | int,
+        flags: int,
     ) -> Any:
         """Copy ticks in date range."""
         log.debug(
@@ -351,6 +493,10 @@ class MT5Service(rpyc.Service):
             date_to,
             flags,
         )
+        if not self._validate_symbol(symbol, "copy_ticks_range"):
+            return None
+        if not self._validate_date_range(date_from, date_to, "copy_ticks_range"):
+            return None
         result = MT5Service._mt5_module.copy_ticks_range(
             symbol, date_from, date_to, flags
         )
@@ -375,7 +521,7 @@ class MT5Service(rpyc.Service):
             action, symbol, volume, price
         )
         log.debug("exposed_order_calc_margin: result=%s", result)
-        return result
+        return result  # type: ignore[no-any-return]
 
     def exposed_order_calc_profit(
         self,
@@ -398,53 +544,50 @@ class MT5Service(rpyc.Service):
             action, symbol, volume, price_open, price_close
         )
         log.debug("exposed_order_calc_profit: result=%s", result)
-        return result
+        return result  # type: ignore[no-any-return]
 
-    def exposed_order_check(self, request: dict[str, Any]) -> Any:
+    def exposed_order_check(self, request: dict[str, Any]) -> dict[str, Any] | None:
         """Check order with data materialization."""
         self._ensure_mt5_loaded()
         log.debug("exposed_order_check: request=%s", request)
         local_request = dict(request)
         result = MT5Service._mt5_module.order_check(local_request)
-        if result is None:
-            log.debug("exposed_order_check: result=None")
-            return None
-        data = result._asdict()
-        log.debug("exposed_order_check: retcode=%s", data.get("retcode"))
+        data = self._materialize_single(result, "order_check", nested_fields=["request"])
+        if data:
+            log.debug("exposed_order_check: retcode=%s", data.get("retcode"))
         return data
 
-    def exposed_order_send(self, request: dict[str, Any]) -> Any:
+    def exposed_order_send(self, request: dict[str, Any]) -> dict[str, Any] | None:
         """Send order with data materialization."""
         self._ensure_mt5_loaded()
         log.debug("exposed_order_send: request=%s", request)
         local_request = dict(request)
         result = MT5Service._mt5_module.order_send(local_request)
-        if result is None:
-            log.debug("exposed_order_send: result=None")
-            return None
-        data = result._asdict()
-        log.info(
-            "order_send: retcode=%s order=%s deal=%s",
-            data.get("retcode"),
-            data.get("order"),
-            data.get("deal"),
-        )
+        data = self._materialize_single(result, "order_send", nested_fields=["request"])
+        if data:
+            log.info(
+                "order_send: retcode=%s order=%s deal=%s",
+                data.get("retcode"),
+                data.get("order"),
+                data.get("deal"),
+            )
         return data
 
-    def exposed_positions_total(self) -> int:
+    def exposed_positions_total(self) -> int | None:
         """Get total number of open positions."""
         log.debug("exposed_positions_total: called")
         result = MT5Service._mt5_module.positions_total()
         log.debug("exposed_positions_total: result=%s", result)
-        return result
+        return int(result) if result is not None else None
 
     def exposed_positions_get(
         self,
         symbol: str | None = None,
         group: str | None = None,
         ticket: int | None = None,
-    ) -> Any:
+    ) -> tuple[dict[str, Any], ...] | None:
         """Get positions with data materialization."""
+        self._ensure_mt5_loaded()
         log.debug(
             "exposed_positions_get: symbol=%s group=%s ticket=%s", symbol, group, ticket
         )
@@ -459,27 +602,23 @@ class MT5Service(rpyc.Service):
             result = MT5Service._mt5_module.positions_get(**kwargs)
         else:
             result = MT5Service._mt5_module.positions_get()
-        if result is None:
-            log.debug("exposed_positions_get: result=None")
-            return None
-        data = tuple(p._asdict() for p in result)
-        log.debug("exposed_positions_get: returned %s positions", len(data))
-        return data
+        return self._materialize_tuple(result, "positions_get")
 
-    def exposed_orders_total(self) -> int:
+    def exposed_orders_total(self) -> int | None:
         """Get total number of pending orders."""
         log.debug("exposed_orders_total: called")
         result = MT5Service._mt5_module.orders_total()
         log.debug("exposed_orders_total: result=%s", result)
-        return result
+        return int(result) if result is not None else None
 
     def exposed_orders_get(
         self,
         symbol: str | None = None,
         group: str | None = None,
         ticket: int | None = None,
-    ) -> Any:
+    ) -> tuple[dict[str, Any], ...] | None:
         """Get pending orders with data materialization."""
+        self._ensure_mt5_loaded()
         log.debug(
             "exposed_orders_get: symbol=%s group=%s ticket=%s", symbol, group, ticket
         )
@@ -494,29 +633,27 @@ class MT5Service(rpyc.Service):
             result = MT5Service._mt5_module.orders_get(**kwargs)
         else:
             result = MT5Service._mt5_module.orders_get()
-        if result is None:
-            log.debug("exposed_orders_get: result=None")
-            return None
-        data = tuple(o._asdict() for o in result)
-        log.debug("exposed_orders_get: returned %s orders", len(data))
-        return data
+        return self._materialize_tuple(result, "orders_get")
 
-    def exposed_history_orders_total(self, date_from: Any, date_to: Any) -> int | None:
+    def exposed_history_orders_total(
+        self, date_from: datetime | int, date_to: datetime | int
+    ) -> int | None:
         """Get total history orders count."""
         log.debug("exposed_history_orders_total: from=%s to=%s", date_from, date_to)
         result = MT5Service._mt5_module.history_orders_total(date_from, date_to)
         log.debug("exposed_history_orders_total: result=%s", result)
-        return result
+        return result  # type: ignore[no-any-return]
 
     def exposed_history_orders_get(
         self,
-        date_from: Any = None,
-        date_to: Any = None,
+        date_from: datetime | int | None = None,
+        date_to: datetime | int | None = None,
         group: str | None = None,
         ticket: int | None = None,
         position: int | None = None,
-    ) -> Any:
+    ) -> tuple[dict[str, Any], ...] | None:
         """Get history orders with data materialization."""
+        self._ensure_mt5_loaded()
         log.debug(
             "exposed_history_orders_get: from=%s to=%s group=%s ticket=%s pos=%s",
             date_from,
@@ -525,44 +662,45 @@ class MT5Service(rpyc.Service):
             ticket,
             position,
         )
+        # MT5 API expects date_from and date_to as positional args
+        # Only group/ticket/position go as kwargs
         kwargs: dict[str, Any] = {}
-        if date_from:
-            kwargs["date_from"] = date_from
-        if date_to:
-            kwargs["date_to"] = date_to
         if group:
             kwargs["group"] = group
         if ticket:
             kwargs["ticket"] = ticket
         if position:
             kwargs["position"] = position
-        if kwargs:
+
+        if date_from is not None and date_to is not None:
+            result = MT5Service._mt5_module.history_orders_get(
+                date_from, date_to, **kwargs
+            )
+        elif kwargs:
             result = MT5Service._mt5_module.history_orders_get(**kwargs)
         else:
             result = MT5Service._mt5_module.history_orders_get()
-        if result is None:
-            log.debug("exposed_history_orders_get: result=None")
-            return None
-        data = tuple(o._asdict() for o in result)
-        log.debug("exposed_history_orders_get: returned %s orders", len(data))
-        return data
+        return self._materialize_tuple(result, "history_orders_get")
 
-    def exposed_history_deals_total(self, date_from: Any, date_to: Any) -> int | None:
+    def exposed_history_deals_total(
+        self, date_from: datetime | int, date_to: datetime | int
+    ) -> int | None:
         """Get total history deals count."""
         log.debug("exposed_history_deals_total: from=%s to=%s", date_from, date_to)
         result = MT5Service._mt5_module.history_deals_total(date_from, date_to)
         log.debug("exposed_history_deals_total: result=%s", result)
-        return result
+        return result  # type: ignore[no-any-return]
 
     def exposed_history_deals_get(
         self,
-        date_from: Any = None,
-        date_to: Any = None,
+        date_from: datetime | int | None = None,
+        date_to: datetime | int | None = None,
         group: str | None = None,
         ticket: int | None = None,
         position: int | None = None,
-    ) -> Any:
+    ) -> tuple[dict[str, Any], ...] | None:
         """Get history deals with data materialization."""
+        self._ensure_mt5_loaded()
         log.debug(
             "exposed_history_deals_get: from=%s to=%s group=%s ticket=%s pos=%s",
             date_from,
@@ -571,27 +709,25 @@ class MT5Service(rpyc.Service):
             ticket,
             position,
         )
+        # MT5 API expects date_from and date_to as positional args
+        # Only group/ticket/position go as kwargs
         kwargs: dict[str, Any] = {}
-        if date_from:
-            kwargs["date_from"] = date_from
-        if date_to:
-            kwargs["date_to"] = date_to
         if group:
             kwargs["group"] = group
         if ticket:
             kwargs["ticket"] = ticket
         if position:
             kwargs["position"] = position
-        if kwargs:
+
+        if date_from is not None and date_to is not None:
+            result = MT5Service._mt5_module.history_deals_get(
+                date_from, date_to, **kwargs
+            )
+        elif kwargs:
             result = MT5Service._mt5_module.history_deals_get(**kwargs)
         else:
             result = MT5Service._mt5_module.history_deals_get()
-        if result is None:
-            log.debug("exposed_history_deals_get: result=None")
-            return None
-        data = tuple(d._asdict() for d in result)
-        log.debug("exposed_history_deals_get: returned %s deals", len(data))
-        return data
+        return self._materialize_tuple(result, "history_deals_get")
 
     # =========================================================================
     # MARKET DEPTH (DOM) FUNCTIONS
@@ -600,28 +736,29 @@ class MT5Service(rpyc.Service):
     def exposed_market_book_add(self, symbol: str) -> bool:
         """Subscribe to Market Depth (DOM) for a symbol."""
         log.debug("exposed_market_book_add: symbol=%s", symbol)
+        if not self._validate_symbol(symbol, "market_book_add"):
+            return False
         result = MT5Service._mt5_module.market_book_add(symbol)
         log.debug("exposed_market_book_add: result=%s", result)
-        return result
+        return bool(result)
 
-    def exposed_market_book_get(self, symbol: str) -> Any:
+    def exposed_market_book_get(self, symbol: str) -> tuple[dict[str, Any], ...] | None:
         """Get Market Depth (DOM) entries for a symbol."""
+        self._ensure_mt5_loaded()
         log.debug("exposed_market_book_get: symbol=%s", symbol)
-        result = MT5Service._mt5_module.market_book_get(symbol)
-        if result is None:
-            log.debug("exposed_market_book_get: result=None")
+        if not self._validate_symbol(symbol, "market_book_get"):
             return None
-        # Each entry is a BookInfo named tuple
-        data = tuple(entry._asdict() for entry in result)
-        log.debug("exposed_market_book_get: returned %s entries", len(data))
-        return data
+        result = MT5Service._mt5_module.market_book_get(symbol)
+        return self._materialize_tuple(result, "market_book_get")
 
     def exposed_market_book_release(self, symbol: str) -> bool:
         """Unsubscribe from Market Depth (DOM) for a symbol."""
         log.debug("exposed_market_book_release: symbol=%s", symbol)
+        if not self._validate_symbol(symbol, "market_book_release"):
+            return False
         result = MT5Service._mt5_module.market_book_release(symbol)
         log.debug("exposed_market_book_release: result=%s", result)
-        return result
+        return bool(result)
 
     # =========================================================================
     # CONSTANTS AND ENUMS
@@ -805,13 +942,34 @@ class MT5Service(rpyc.Service):
         return constants
 
 
+class _RPyCDebugFilter(logging.Filter):
+    """Filter out RPyC's broken DEBUG messages with unsubstituted placeholders.
+
+    RPyC has a bug where log messages contain literal {addrinfo} and {fd}
+    that are never substituted (f-string syntax not expanded).
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        # Suppress DEBUG messages with literal {addrinfo} or {fd} placeholders
+        if record.levelno == logging.DEBUG:
+            msg = str(record.msg)
+            if "{addrinfo}" in msg or "{fd}" in msg:
+                return False
+        return True
+
+
 def _setup_logging(debug: bool = False) -> None:
     """Configure logging for the bridge."""
     level = logging.DEBUG if debug else logging.INFO
+
+    # Create handler with filter BEFORE basicConfig
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(logging.Formatter("[%(name)s] %(levelname)s: %(message)s"))
+    handler.addFilter(_RPyCDebugFilter())
+
     logging.basicConfig(
         level=level,
-        format="[%(name)s] %(levelname)s: %(message)s",
-        handlers=[logging.StreamHandler(sys.stdout)],
+        handlers=[handler],
     )
 
 
@@ -824,21 +982,25 @@ def _graceful_shutdown(signum: int, frame: FrameType | None) -> None:  # noqa: A
     sys.exit(0)
 
 
-def main() -> int:
-    """Run the RPyC bridge server."""
+def main(argv: list[str] | None = None) -> int:
+    """Run the RPyC bridge server.
+
+    Args:
+        argv: Command line arguments (defaults to sys.argv[1:]).
+    """
     global _server  # noqa: PLW0603
 
     parser = argparse.ArgumentParser(description="MT5 RPyC Bridge Server")
     parser.add_argument(
         "--host", default="0.0.0.0", help="Host to bind"  # noqa: S104
     )
-    parser.add_argument("-p", "--port", type=int, default=8001, help="Port")
+    parser.add_argument("-p", "--port", type=int, default=18812, help="Port")
     parser.add_argument("--threads", type=int, default=10, help="Worker threads")
     parser.add_argument("--timeout", type=int, default=300, help="Request timeout")
     parser.add_argument(
         "--debug", "-d", action="store_true", help="Enable debug logging"
     )
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     _setup_logging(debug=args.debug)
 
@@ -860,6 +1022,8 @@ def main() -> int:
             "allow_public_attrs": True,
             "allow_pickle": True,
             "sync_request_timeout": args.timeout,
+            "max_io_chunk": 65355 * 10,  # ~640KB chunks for large data transfers
+            "compression_level": 0,  # Disabled - Wine/RPyC overhead not worth it
         },
     )
 

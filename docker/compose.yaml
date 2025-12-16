@@ -32,10 +32,7 @@ services:
       - TZ=UTC                    # Container timezone
       # Staging configuration
       - STAGING_DIR=/opt/mt5-staging
-      # MT5 Auto-login credentials (from .env file)
-      - MT5_LOGIN=${MT5_LOGIN:-}
-      - MT5_PASSWORD=${MT5_PASSWORD:-}
-      - MT5_SERVER=${MT5_SERVER:-}
+      # MT5 Auto-login credentials loaded via env_file (../.env)
       # Health monitoring and auto-recovery
       - HEALTH_CHECK_INTERVAL=${HEALTH_CHECK_INTERVAL:-30}
       - AUTO_RECOVERY_ENABLED=${AUTO_RECOVERY_ENABLED:-1}

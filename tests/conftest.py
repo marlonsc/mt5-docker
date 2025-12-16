@@ -177,13 +177,14 @@ def start_test_container() -> None:
     if not has_mt5_credentials():
         pytest.skip(SKIP_NO_CREDENTIALS)
 
-    # Check compose file exists
-    compose_file = project_root / "docker-compose.yaml"
+    # Check compose file exists (compose.yaml is in docker/ subdirectory)
+    docker_dir = project_root / "docker"
+    compose_file = docker_dir / "compose.yaml"
     if not compose_file.exists():
-        pytest.skip(f"docker-compose.yaml not found at {project_root}")
+        pytest.skip(f"compose.yaml not found at {docker_dir}")
 
     # Build environment with test-specific values
-    # These override the defaults in docker-compose.yaml
+    # These override the defaults in compose.yaml
     test_env = os.environ.copy()
     test_env.update(
         {
@@ -202,7 +203,7 @@ def start_test_container() -> None:
 
     result = subprocess.run(
         ["docker", "compose", "--project-name", "mt5docker-test", "up", "-d"],
-        cwd=project_root,
+        cwd=docker_dir,
         capture_output=True,
         text=True,
         check=False,
@@ -312,7 +313,12 @@ def mt5_service(rpyc_connection: rpyc.Connection) -> Any:
 
 @pytest.fixture
 def mt5_module(rpyc_connection: rpyc.Connection) -> Any:
-    """Provide remote MetaTrader5 module via RPyC."""
+    """Provide MT5 service root via RPyC.
+
+    Note: get_mt5() was removed for security (exposed raw module).
+    The root service directly exposes all MT5 functions like version(),
+    last_error(), copy_rates(), etc.
+    """
     root = rpyc_connection.root
     assert root is not None, "RPyC root is None"
-    return root.get_mt5()
+    return root
