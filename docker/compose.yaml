@@ -20,7 +20,7 @@ services:
       - "${MT5_RPYC_PORT:-8001}:8001"   # RPyC server for mt5linux
       - "${MT5_HEALTH_PORT:-8002}:8002" # Health check endpoint
     env_file:
-      - path: .env
+      - path: ../.env
         required: true
     labels:
       org.opencontainers.image.title: "MetaTrader5 Docker (fork)"
@@ -39,6 +39,9 @@ services:
       # Health monitoring and auto-recovery
       - HEALTH_CHECK_INTERVAL=${HEALTH_CHECK_INTERVAL:-30}
       - AUTO_RECOVERY_ENABLED=${AUTO_RECOVERY_ENABLED:-1}
+      # Debug and update settings
+      - MT5_DEBUG=${MT5_DEBUG:-1}     # Enable debug logging in RPyC bridge (1=on, 0=off)
+      - MT5_UPDATE=${MT5_UPDATE:-1}   # Update components on startup (1=on, 0=off)
     restart: unless-stopped
     # Resource limits for production
     deploy:

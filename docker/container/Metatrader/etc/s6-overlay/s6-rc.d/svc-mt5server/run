@@ -223,10 +223,18 @@ fi
 echo "[svc-mt5server] Directory permissions set"
 
 echo "[svc-mt5server] Starting Wine RPyC server on port ${mt5server_port}"
-echo "[svc-mt5server] Using mt5linux.bridge module (installed via pip)"
+echo "[svc-mt5server] Using mt5linux.bridge module (standalone, no structlog)"
+
+# Build command arguments
+bridge_args="--host 0.0.0.0 -p ${mt5server_port}"
+
+# Add debug flag if MT5_DEBUG is enabled (default: 1)
+if [ "${MT5_DEBUG:-1}" = "1" ]; then
+    bridge_args="${bridge_args} --debug"
+    echo "[svc-mt5server] Debug logging enabled"
+fi
 
 # Run as user abc (same as KasmVNC) with exec to replace shell
-# Uses installed mt5linux package instead of generated script
+# Uses bridge.py copied from Linux (standalone, uses only logging + rpyc)
 exec s6-setuidgid abc \
-    ${wine_executable} "$WINE_PYTHON_PATH" -m mt5linux.bridge \
-    --host 0.0.0.0 -p ${mt5server_port}
+    ${wine_executable} "$WINE_PYTHON_PATH" -m mt5linux.bridge ${bridge_args}

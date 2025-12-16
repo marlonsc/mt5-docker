@@ -23,17 +23,52 @@ import os
 import subprocess
 import time
 from collections.abc import Generator
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import pytest
 import rpyc
-
-from tests.fixtures.docker import get_test_container_config
+from dotenv import load_dotenv
 
 # =============================================================================
-# CONFIGURATION - loaded from tests/fixtures/docker.py
+# CONFIGURATION
 # =============================================================================
+
+# Load .env from project root
+_project_root = Path(__file__).parent.parent
+load_dotenv(_project_root / ".env")
+
+
+@dataclass
+class DockerContainerConfig:
+    """Configuration for the test container."""
+
+    container_name: str
+    rpyc_port: int
+    vnc_port: int
+    health_port: int
+    startup_timeout: int
+    rpyc_timeout: int
+    login: str | None
+    password: str | None
+    server: str
+
+
+def get_test_container_config() -> DockerContainerConfig:
+    """Get test container configuration from environment."""
+    return DockerContainerConfig(
+        container_name=os.environ.get("MT5_CONTAINER_NAME", "mt5docker-test"),
+        rpyc_port=int(os.environ.get("MT5_RPYC_PORT", "48812")),
+        vnc_port=int(os.environ.get("MT5_VNC_PORT", "43000")),
+        health_port=int(os.environ.get("MT5_HEALTH_PORT", "48002")),
+        startup_timeout=int(os.environ.get("MT5_STARTUP_TIMEOUT", "180")),
+        rpyc_timeout=int(os.environ.get("MT5_RPYC_TIMEOUT", "60")),
+        login=os.environ.get("MT5_LOGIN"),
+        password=os.environ.get("MT5_PASSWORD"),
+        server=os.environ.get("MT5_SERVER", "MetaQuotes-Demo"),
+    )
+
 
 _config = get_test_container_config()
 _logger = logging.getLogger(__name__)
@@ -150,20 +185,23 @@ def start_test_container() -> None:
     # Build environment with test-specific values
     # These override the defaults in docker-compose.yaml
     test_env = os.environ.copy()
-    test_env.update({
-        "MT5_CONTAINER_NAME": _config.container_name,
-        "MT5_RPYC_PORT": str(_config.rpyc_port),
-        "MT5_VNC_PORT": str(_config.vnc_port),
-        "MT5_HEALTH_PORT": str(_config.health_port),
-        "MT5_VOLUME_NAME": f"{_config.container_name}-data",
-        "MT5_NETWORK_NAME": f"{_config.container_name}-network",
-    })
+    test_env.update(
+        {
+            "MT5_CONTAINER_NAME": _config.container_name,
+            "MT5_RPYC_PORT": str(_config.rpyc_port),
+            "MT5_VNC_PORT": str(_config.vnc_port),
+            "MT5_HEALTH_PORT": str(_config.health_port),
+            "MT5_VOLUME_NAME": f"{_config.container_name}-data",
+            "MT5_NETWORK_NAME": f"{_config.container_name}-network",
+        }
+    )
 
     # Start container with test environment
+    # Use --project-name to isolate from production container
     _logger.info("Starting test container %s...", _config.container_name)
 
     result = subprocess.run(
-        ["docker", "compose", "up", "-d"],
+        ["docker", "compose", "--project-name", "mt5docker-test", "up", "-d"],
         cwd=project_root,
         capture_output=True,
         text=True,
@@ -201,52 +239,49 @@ def start_test_container() -> None:
 # =============================================================================
 
 
-@pytest.fixture(scope="session", autouse=True)
-def ensure_docker_ready() -> None:
-    """Ensure Docker tests can run or skip if disabled."""
-    if os.getenv("SKIP_DOCKER", "0") == "1":
-        _logger.info("SKIP_DOCKER=1 - Docker container tests will be skipped")
-        pytest.skip("Docker tests skipped via SKIP_DOCKER=1")
-    # Continue with normal test execution when SKIP_DOCKER is not set
-
-
-@pytest.fixture(scope="session", autouse=True)
+@pytest.fixture(scope="session")
 def docker_container() -> None:
     """Ensure test container is running (session-scoped).
+
+    This fixture is NOT autouse - only tests that need the container
+    will trigger container startup via dependent fixtures.
 
     Starts container if not already running.
     Reuses existing container if healthy.
     Does NOT clean up after tests - container stays running for reuse.
 
-    Skips if MT5 credentials are not configured in .env file.
+    Skips if:
+    - SKIP_DOCKER=1 environment variable is set
+    - MT5 credentials are not configured in .env file
     """
+    if os.getenv("SKIP_DOCKER", "0") == "1":
+        _logger.info("SKIP_DOCKER=1 - Docker container tests will be skipped")
+        pytest.skip("Docker tests skipped via SKIP_DOCKER=1")
+
     start_test_container()
 
 
-# NOTE: requires_container marker is defined in tests.markers
-
-
 @pytest.fixture(scope="session")
-def container_name() -> str:
-    """Provide test container name."""
+def container_name(docker_container: None) -> str:  # noqa: ARG001
+    """Provide test container name (requires container)."""
     return _config.container_name
 
 
 @pytest.fixture(scope="session")
-def rpyc_port() -> int:
-    """Provide test RPyC port."""
+def rpyc_port(docker_container: None) -> int:  # noqa: ARG001
+    """Provide test RPyC port (requires container)."""
     return _config.rpyc_port
 
 
 @pytest.fixture(scope="session")
-def health_port() -> int:
-    """Provide test health port."""
+def health_port(docker_container: None) -> int:  # noqa: ARG001
+    """Provide test health port (requires container)."""
     return _config.health_port
 
 
 @pytest.fixture(scope="session")
-def vnc_port() -> int:
-    """Provide test VNC port."""
+def vnc_port(docker_container: None) -> int:  # noqa: ARG001
+    """Provide test VNC port (requires container)."""
     return _config.vnc_port
 
 
@@ -270,10 +305,14 @@ def rpyc_connection(
 @pytest.fixture
 def mt5_service(rpyc_connection: rpyc.Connection) -> Any:
     """Provide MT5Service root object via RPyC."""
-    return rpyc_connection.root
+    root = rpyc_connection.root
+    assert root is not None, "RPyC root is None"
+    return root
 
 
 @pytest.fixture
 def mt5_module(rpyc_connection: rpyc.Connection) -> Any:
     """Provide remote MetaTrader5 module via RPyC."""
-    return rpyc_connection.root.get_mt5()
+    root = rpyc_connection.root
+    assert root is not None, "RPyC root is None"
+    return root.get_mt5()

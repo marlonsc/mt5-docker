@@ -167,18 +167,16 @@ RUN --mount=from=downloader,source=/staging,target=/staging \
     echo "Python found at: $PYTHON_EXE" && \
     xvfb-run sh -c "wine '$PYTHON_EXE' --version; wineserver -w" || { echo "FAIL: Python cannot execute"; exit 1; } && \
     # ============================================================
-    # Step 5: Install Python packages (NOT MetaTrader5 - runtime only)
+    # Step 5: Install Python packages (MINIMAL: rpyc + numpy only)
+    # MetaTrader5 is installed at RUNTIME for latest version
+    # Server module is copied directly (no mt5linux pip install)
     # ============================================================
-    echo "=== Step 5/5: Installing Python packages ===" && \
-    # NOTE: mt5linux is installed at RUNTIME (30_mt5.sh) for latest version
+    echo "=== Step 5/5: Installing Python packages (rpyc + numpy) ===" && \
     xvfb-run sh -c "\
         wine '$PYTHON_EXE' -m pip install --upgrade --no-cache-dir pip && \
         wine '$PYTHON_EXE' -m pip install --no-cache-dir \
             'rpyc==${RPYC_VERSION}' \
-            'numpy==${NUMPY_VERSION}' \
-            'plumbum>=${PLUMBUM_VERSION}' \
-            'structlog>=25.5' \
-            'python-dateutil' && \
+            'numpy==${NUMPY_VERSION}' && \
         wineserver -w" && \
     # Cleanup
     echo "=== Cleanup ===" && \
@@ -228,17 +226,6 @@ ENV WINEDLLOVERRIDES="winemenubuilder.exe,mscoree,mshtml="
 ENV STAGING_DIR="/opt/mt5-staging"
 ENV WINE_PREFIX_TEMPLATE="/opt/wine-prefix-template"
 
-# Linux Python packages (base dependencies only)
-# NOTE: mt5linux is installed at RUNTIME (50_python_linux.sh) for latest version
-RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
-    python3 -m pip install --upgrade --break-system-packages pip && \
-    python3 -m pip install --break-system-packages \
-        "numpy==${NUMPY_VERSION}" \
-        "rpyc==${RPYC_VERSION}" \
-        "plumbum>=${PLUMBUM_VERSION}" \
-        "pyparsing>=3.0.0" \
-        pyxdg
-
 # Copy version manifest (MT5 downloaded at container startup for latest version)
 COPY --from=downloader /staging/.versions /opt/mt5-staging/.versions
 
@@ -246,18 +233,18 @@ COPY --from=downloader /staging/.versions /opt/mt5-staging/.versions
 COPY --from=wine-builder /wine-build /opt/wine-prefix-template
 
 # Copy scripts
-COPY /Metatrader /Metatrader
+COPY container/Metatrader /Metatrader
 RUN chmod +x /Metatrader/start.sh && \
     chmod -R +x /Metatrader/scripts && \
     chown -R abc:abc /Metatrader
 
 # Copy s6 service definitions for RPyC server supervision
-COPY /Metatrader/etc/s6-overlay /etc/s6-overlay
+COPY container/Metatrader/etc/s6-overlay /etc/s6-overlay
 RUN chmod +x /etc/s6-overlay/s6-rc.d/svc-mt5server/run && \
     chmod +x /etc/s6-overlay/s6-rc.d/svc-mt5server/finish
 
 # Copy LinuxServer.io defaults
-COPY /root /
+COPY container/root /
 
 EXPOSE 3000 8001
 VOLUME /config

@@ -3,8 +3,7 @@
 # =============================================================================
 # Package Policy:
 #   - MetaTrader5 PIP: ALWAYS reinstall (get latest from PyPI)
-#   - mt5linux: ALWAYS reinstall (get latest from GitHub)
-#   - colorama: Install if missing (structlog dependency)
+#   - Server module: Copied directly (no pip install)
 #   - MT5 Terminal: IDEMPOTENT (skip if already installed)
 #   - Config: IDEMPOTENT (skip if same credentials)
 # =============================================================================
@@ -14,7 +13,7 @@ source "$(dirname "$0")/00_env.sh"
 MT5_INSTALL_TIMEOUT=60
 
 # ============================================================
-# Install Python packages (ALWAYS FRESH for MT5 + mt5linux)
+# Install MetaTrader5 Python package (ALWAYS FRESH)
 # ============================================================
 install_mt5_pip() {
     if [ ! -f "$WINE_PYTHON_PATH" ]; then
@@ -22,43 +21,32 @@ install_mt5_pip() {
         return 1
     fi
 
-    log INFO "[mt5] Installing pip packages (fresh install)..."
+    log INFO "[mt5] Installing MetaTrader5 pip package..."
 
-    # 1. colorama (required by structlog on Windows) - install if missing
-    if ! "$wine_executable" "$WINE_PYTHON_PATH" -c "import colorama" 2>/dev/null; then
-        log INFO "[mt5] Installing colorama..."
-        "$wine_executable" "$WINE_PYTHON_PATH" -m pip install --no-cache-dir colorama 2>&1 || {
-            log ERROR "[mt5] colorama installation failed"
-            return 1
-        }
+    # Build pip install arguments based on MT5_UPDATE setting
+    pip_args="--no-deps"
+    if [ "${MT5_UPDATE:-1}" = "1" ]; then
+        pip_args="--upgrade --no-cache-dir ${pip_args}"
+        log INFO "[mt5] Installing MetaTrader5 (update enabled, fresh install)..."
     else
-        log INFO "[mt5] colorama already installed"
+        log INFO "[mt5] Installing MetaTrader5 (update disabled, using cached)..."
     fi
 
-    # 2. MetaTrader5 - ALWAYS reinstall to get latest version
-    log INFO "[mt5] Installing MetaTrader5 (always fresh)..."
-    "$wine_executable" "$WINE_PYTHON_PATH" -m pip install --upgrade --no-cache-dir --no-deps \
+    "$wine_executable" "$WINE_PYTHON_PATH" -m pip install ${pip_args} \
         MetaTrader5 2>&1 || {
         log ERROR "[mt5] MetaTrader5 installation failed"
         return 1
     }
 
-    # 3. mt5linux - ALWAYS reinstall from GitHub main branch
-    log INFO "[mt5] Installing mt5linux from GitHub (always fresh)..."
-    "$wine_executable" "$WINE_PYTHON_PATH" -m pip install --upgrade --no-cache-dir --force-reinstall \
-        'https://github.com/marlonsc/mt5linux/archive/refs/heads/master.tar.gz' 2>&1 || {
-        log ERROR "[mt5] mt5linux installation failed"
-        return 1
-    }
-
-    # Verify all imports work
+    # Verify imports work
     log INFO "[mt5] Verifying package imports..."
     "$wine_executable" "$WINE_PYTHON_PATH" -c "
 import MetaTrader5
-import colorama
-import mt5linux
+import rpyc
+import numpy
 print(f'MetaTrader5 {MetaTrader5.__version__}')
-print('mt5linux OK')
+print(f'rpyc {rpyc.__version__}')
+print(f'numpy {numpy.__version__}')
 " 2>/dev/null || {
         log ERROR "[mt5] Package verification failed"
         return 1

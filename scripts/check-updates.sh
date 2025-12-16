@@ -6,7 +6,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT_DIR="$(dirname "$SCRIPT_DIR")"
-VERSIONS_FILE="$ROOT_DIR/versions.env"
+VERSIONS_FILE="$ROOT_DIR/docker/versions.env"
 
 echo "=========================================="
 echo "MT5 Docker - Dependency Update Check"

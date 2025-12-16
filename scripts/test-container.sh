@@ -26,6 +26,7 @@ VNC_PORT="${MT5_VNC_PORT:-43000}"
 TIMEOUT=180  # seconds to wait for RPyC service
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+DOCKER_DIR="${PROJECT_DIR}/docker"
 ENV_FILE="${PROJECT_DIR}/.env.test"
 
 # Colors for output
@@ -83,8 +84,7 @@ wait_for_rpyc() {
 # Stop container
 stop_container() {
     log_info "Stopping test container..."
-    cd "$PROJECT_DIR"
-    docker compose --env-file "$ENV_FILE" down
+    docker compose -f "$DOCKER_DIR/compose.yaml" --project-name mt5docker-test --env-file "$ENV_FILE" down
     log_info "Test container stopped"
 }
 
@@ -131,8 +131,6 @@ check_env_file() {
 
 # Start container
 start_container() {
-    cd "$PROJECT_DIR"
-
     # Check .env.test file first
     if ! check_env_file; then
         return 1
@@ -154,7 +152,7 @@ start_container() {
     log_info "  VNC port: ${VNC_PORT}"
 
     # Start with test env file
-    docker compose --env-file "$ENV_FILE" up -d
+    docker compose -f "$DOCKER_DIR/compose.yaml" --project-name mt5docker-test --env-file "$ENV_FILE" up -d
 
     # Wait for service
     if ! wait_for_rpyc; then

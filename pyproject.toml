@@ -13,6 +13,7 @@
     [[tool.mypy.overrides]]
         disallow_untyped_calls = false
         disallow_untyped_defs = false
+        disable_error_code = ["type-var", "call-arg", "operator"]
         module = "tests.*"
 
 [tool.poetry]
@@ -59,7 +60,8 @@
     timeout = 300
 
 [tool.ruff]
-    extend-exclude = ["typings"]
+    # bridge.py is bundled from mt5linux - external file, don't lint
+    extend-exclude = ["typings", "docker/container/Metatrader/bridge.py"]
     line-length = 88
     target-version = "py312"
 

@@ -7,10 +7,10 @@ It provides a Docker image for running MetaTrader5 with remote access via VNC, b
 Changes in this fork:
 
 - Added Expert Advisor (EA) automation support with Windows .NET Framework under Wine. Mono is removed.
-- Split `start.sh` into modular scripts under `Metatrader/scripts/` for clearer install and runtime steps.
+- Modular startup scripts under `docker/container/Metatrader/scripts/` for clearer install and runtime steps.
 - Added auto-login support via environment variables (`MT5_LOGIN`, `MT5_PASSWORD`, `MT5_SERVER`).
 - Added health monitoring and auto-recovery for MT5 and RPyC server.
-- Integrated `mt5linux` from GitHub with resilient RPyC server.
+- RPyC bridge server bundled (standalone `bridge.py` from mt5linux).
 - Updated image metadata and labels following OCI standards.
 - Fail-fast startup: scripts exit immediately on critical failures.
 
@@ -37,6 +37,28 @@ If you just need to run Metatrader for running your MQL5 programs without any Py
 I recommend to go on using version 1.0. MetaTrader program is updated independently from image so you will
 always have latest MT5 version.
 
+## Project Structure
+
+```
+mt5docker/
+├── docker/                         # Docker-related files
+│   ├── Dockerfile                  # Multi-stage build
+│   ├── compose.yaml                # Docker Compose configuration
+│   ├── versions.env                # Component versions
+│   └── container/                  # Files copied into container
+│       ├── Metatrader/            # Startup scripts and services
+│       └── root/                  # LinuxServer defaults
+├── config/                        # Configuration templates
+│   └── .env.example              # Example environment file
+├── scripts/                       # Development scripts
+│   ├── check-updates.sh          # Check for dependency updates
+│   └── test-container.sh         # Start test container
+├── tests/                         # Test suite
+├── .env                          # Your credentials (gitignored)
+├── pyproject.toml
+└── README.md
+```
+
 ## Requirements
 
 - Docker installed on your machine.
@@ -55,7 +77,7 @@ cd mt5-docker
 2. Build the Docker image:
 
 ```bash
-docker build -t marlonsc/mt5-docker:local .
+docker build -f docker/Dockerfile -t marlonsc/mt5-docker:local docker/
 ```
 
 3. Run the Docker image:
@@ -133,10 +155,10 @@ image: marlonsc/mt5-docker:1.1
 3. Start the container
 
 ```bash
-docker compose up -d
+docker compose -f docker/compose.yaml up -d
 ```
 
-In some systems `docker compose` command does not exists. Try to use `docker-compose up -d` instead.
+In some systems `docker compose` command does not exists. Try to use `docker-compose -f docker/compose.yaml up -d` instead.
 
 4. Connect to web interface
    Start your browser pointing http://&lt;your ip address&gt;:3000
@@ -244,42 +266,60 @@ print(local_array)  # [1 2 3]
 
 ### Environment Variables
 
-**Auto-Login (optional):**
-
-- `MT5_LOGIN`: MetaTrader 5 account number
-- `MT5_PASSWORD`: Account password
-- `MT5_SERVER`: Broker server (default: MetaQuotes-Demo)
-
-**Optional Features:**
-
-- `ENABLE_WIN_DOTNET`: Install .NET Framework 4.8 for .NET EAs (default: `1`)
-- `AUTO_RECOVERY_ENABLED`: Auto-restart on failures (default: `1`)
-- `HEALTH_CHECK_INTERVAL`: Health check interval in seconds (default: `30`)
-
-**Advanced (usually no need to change):**
-
-- `WINEPREFIX`: Wine environment directory (default: `/config/.wine`)
-- `WINEDEBUG`: Wine debug output (default: `-all` for silent)
-- `TZ`: Container timezone
+| Variable | Default | Description |
+|----------|---------|-------------|
+| **MT5 Auto-Login** |||
+| `MT5_LOGIN` | - | MetaTrader 5 account number |
+| `MT5_PASSWORD` | - | Account password |
+| `MT5_SERVER` | `MetaQuotes-Demo` | Broker server name |
+| **Features** |||
+| `AUTO_RECOVERY_ENABLED` | `1` | Auto-restart MT5/RPyC on failures |
+| `HEALTH_CHECK_INTERVAL` | `30` | Health check interval (seconds) |
+| `ENABLE_WIN_DOTNET` | `0` | Install .NET Framework 4.8 for .NET EAs |
+| `MT5_DEBUG` | `1` | Enable debug logging in RPyC bridge |
+| `MT5_UPDATE` | `1` | Update MetaTrader5 pip package on startup |
+| **Container Settings** |||
+| `TZ` | `UTC` | Container timezone |
+| `PUID` | `1000` | User ID for file permissions |
+| `PGID` | `1000` | Group ID for file permissions |
+| **Advanced** |||
+| `WINEPREFIX` | `/config/.wine` | Wine environment directory |
+| `WINEDEBUG` | `-all` | Wine debug output (silent by default) |
 
 ### Ports
 
-- `3000`: KasmVNC web interface
-- `8001`: RPyC service for mt5linux remote control
+| Port | Protocol | Description |
+|------|----------|-------------|
+| `3000` | HTTP | KasmVNC web interface (browser access) |
+| `8001` | TCP | RPyC service for mt5linux remote control |
+
+### Volumes
+
+| Path | Description |
+|------|-------------|
+| `/config` | **Required**: Persistent Wine prefix, MT5 data, and settings |
+| `/data` | **Optional**: Pre-configured archives for faster startup |
+
+**Volume contents** (`/config`):
+- `.wine/` - Wine prefix with MT5 installation
+- `.wine/drive_c/Program Files/MetaTrader 5/` - MT5 program files
+- `.wine/drive_c/Program Files/MetaTrader 5/MQL5/` - Your EAs, indicators, scripts
 
 ### Startup Scripts
 
-The container startup is modularized under `Metatrader/scripts/`:
+The container startup is modularized under `docker/container/Metatrader/scripts/`:
 
-- `05_config_unpack.sh`: Unpack pre-configured Wine prefix (if available)
-- `10_prefix_init.sh`: Initialize Wine prefix and install Gecko
-- `20_winetricks.sh`: Install winetricks dependencies (vcrun2019, fonts, etc.)
-- `30_mt5.sh`: Install, configure, and launch MetaTrader 5
-- `40_python_wine.sh`: Install Python and packages in Wine
-- `50_python_linux.sh`: Install mt5linux on Linux
-- `60_server.sh`: Configure s6-overlay RPyC server
+| Script | Purpose | Time |
+|--------|---------|------|
+| `05_config_unpack.sh` | Unpack pre-configured Wine prefix (if archive exists) | <5s |
+| `10_prefix_init.sh` | Copy Wine prefix template to /config | <30s |
+| `20_winetricks.sh` | Install vcrun2019, restore win10 version | 30-60s |
+| `30_mt5.sh` | Install MetaTrader5 pip + terminal + config | 5-10min (first run) |
+| `50_copy_bridge.sh` | Copy bridge.py to Wine Python | <5s |
 
-Health monitoring is handled by `Metatrader/health_monitor.sh` which runs in the background.
+**Note**: Python and packages (rpyc, numpy) are pre-installed in Wine at build time. Only MetaTrader5 is installed at runtime to get the latest version.
+
+Health monitoring is handled by `docker/container/Metatrader/health_monitor.sh` which runs in the background.
 
 ### Startup Dependency Categories
 
