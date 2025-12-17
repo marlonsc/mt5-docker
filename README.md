@@ -77,13 +77,13 @@ cd mt5-docker
 2. Build the Docker image:
 
 ```bash
-docker build -f docker/Dockerfile -t marlonsc/mt5-docker:local docker/
+docker build -f docker/Dockerfile -t marlonsc/mt5-docker:debian docker/
 ```
 
 3. Run the Docker image:
 
 ```bash
-docker run -d -p 3000:3000 -p 8001:8001 -v config:/config marlonsc/mt5-docker:local
+docker run -d -p 3000:3000 -p 8001:8001 -v config:/config marlonsc/mt5-docker:debian
 ```
 
 Now you can access MetaTrader5 via a web browser at localhost:3000.

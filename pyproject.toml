@@ -25,7 +25,7 @@
 
     [tool.poetry.dependencies]
         grpcio = "^1.60.0"
-        python = ">=3.12"
+        python = ">=3.12,<4"
         python-dotenv = "^1.0.0" # For loading .env files
 
     [tool.poetry.group.dev.dependencies]
