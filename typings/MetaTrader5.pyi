@@ -269,6 +269,7 @@ class SymbolInfo:
     path: str
 
     def _asdict(self) -> dict[str, object]: ...
+
 class Tick:
     time: int
     bid: float
@@ -280,6 +281,7 @@ class Tick:
     volume_real: float
 
     def _asdict(self) -> dict[str, object]: ...
+
 class TradePosition:
     ticket: int
     time: int
@@ -302,6 +304,7 @@ class TradePosition:
     external_id: str
 
     def _asdict(self) -> dict[str, object]: ...
+
 class TradeOrder:
     ticket: int
     time_setup: int
@@ -329,6 +332,7 @@ class TradeOrder:
     external_id: str
 
     def _asdict(self) -> dict[str, object]: ...
+
 class TradeDeal:
     ticket: int
     order: int
@@ -350,6 +354,7 @@ class TradeDeal:
     external_id: str
 
     def _asdict(self) -> dict[str, object]: ...
+
 class OrderCheckResult:
     retcode: int
     balance: float
@@ -362,6 +367,7 @@ class OrderCheckResult:
     request: dict[str, int | float | str]
 
     def _asdict(self) -> dict[str, object]: ...
+
 class OrderSendResult:
     retcode: int
     deal: int

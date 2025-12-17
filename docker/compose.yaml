@@ -18,9 +18,9 @@ services:
       # Volume key is 'config_data', actual name is set by MT5_VOLUME_NAME in volumes section
       - config_data:/config:uid=911,gid=911
     ports:
-      - "${MT5_VNC_PORT:-3000}:3000"    # KasmVNC web interface
-      - "${MT5_GRPC_PORT:-8001}:8001"   # gRPC server for mt5linux
-      - "${MT5_HEALTH_PORT:-8002}:8002" # Health check endpoint
+      - "${MT5_VNC_PORT:-3000}:3000"      # KasmVNC web interface
+      - "${MT5_GRPC_PORT:-50051}:50051"   # gRPC server for mt5linux
+      - "${MT5_HEALTH_PORT:-8002}:8002"   # Health check endpoint
     env_file:
       - path: ../.env
         required: true
@@ -71,8 +71,8 @@ services:
     security_opt:
       - seccomp:unconfined
     healthcheck:
-      # Check mt5linux gRPC server (primary API) - port 8001
-      test: ["CMD", "bash", "-c", "echo >/dev/tcp/localhost/8001"]
+      # Check gRPC server (primary API) - port 50051
+      test: ["CMD", "bash", "-c", "echo >/dev/tcp/localhost/50051"]
       interval: 30s
       timeout: 10s
       retries: 3

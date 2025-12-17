@@ -36,8 +36,8 @@ export WINEDLLOVERRIDES="${WINEDLLOVERRIDES:-winemenubuilder.exe,mscoree,mshtml=
 # Wine Python path
 export WINE_PYTHON_PATH="$WINEPREFIX/drive_c/Python/python.exe"
 
-# RPyC server port
-export mt5server_port="${mt5server_port:-8001}"
+# gRPC server port
+export mt5server_port="${mt5server_port:-50051}"
 
 # Load versions from build manifest
 if [ -f "$STAGING_DIR/.versions" ]; then

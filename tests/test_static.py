@@ -156,7 +156,9 @@ class TestVersionConsistency:
         """Verify pyproject.toml specifies Python version consistent with versions.env."""
         versions = self._load_versions_env()
         pyproject = (PROJECT_ROOT / "pyproject.toml").read_text()
-        expected_major_minor = ".".join(versions.get("PYTHON_VERSION", "3.12").split(".")[:2])
+        expected_major_minor = ".".join(
+            versions.get("PYTHON_VERSION", "3.12").split(".")[:2]
+        )
         assert expected_major_minor in pyproject, (
             f"pyproject.toml should reference Python {expected_major_minor}"
         )
@@ -224,7 +226,7 @@ class TestDockerfile:
 
         assert "EXPOSE" in content
         assert "3000" in content, "Must expose VNC port 3000"
-        assert "8001" in content, "Must expose gRPC/RPyC port 8001"
+        assert "8001" in content, "Must expose gRPC port 8001"
 
     def test_dockerfile_has_volume_config(self) -> None:
         """Verify Dockerfile declares /config volume."""
@@ -427,7 +429,7 @@ class TestStartupScriptContent:
 
         # Should NOT have direct restart functions
         assert "restart_mt5()" not in content, "Should not have direct restart_mt5"
-        assert "restart_rpyc_server()" not in content, "Should not have restart_rpyc"
+        assert "restart_grpc_server()" not in content, "Should not have restart_grpc"
 
     def test_health_monitor_has_failure_threshold(self) -> None:
         """Verify health_monitor.sh uses failure threshold before restart."""
@@ -580,18 +582,26 @@ class TestDirectoryStructure:
         assert (PROJECT_ROOT / CONTAINER_DIR / "Metatrader").is_dir()
 
     def test_bridge_py_exists(self) -> None:
-        """Verify bridge.py (RPyC server) exists."""
+        """Verify bridge.py (gRPC server) exists."""
         bridge_path = PROJECT_ROOT / CONTAINER_DIR / "Metatrader/bridge.py"
-        assert bridge_path.exists(), "bridge.py must exist for RPyC server"
+        assert bridge_path.exists(), "bridge.py must exist for gRPC server"
 
     def test_bridge_py_is_standalone(self) -> None:
-        """Verify bridge.py has no mt5linux dependencies."""
+        """Verify bridge.py uses gRPC and has standalone proto files."""
         bridge_path = PROJECT_ROOT / CONTAINER_DIR / "Metatrader/bridge.py"
         content = bridge_path.read_text()
-        # Should only import rpyc and stdlib
-        assert "import rpyc" in content, "Must import rpyc"
-        assert "from mt5linux" not in content, "Must not depend on mt5linux modules"
+        # Should import grpc for the gRPC server
+        assert "import grpc" in content, "Must import grpc"
+        # Should import local proto files (standalone in container)
+        assert "import mt5_pb2" in content, "Must import mt5_pb2"
+        assert "import mt5_pb2_grpc" in content, "Must import mt5_pb2_grpc"
         assert "import structlog" not in content, "Must not depend on structlog"
+
+    def test_proto_files_exist(self) -> None:
+        """Verify proto files exist for gRPC bridge."""
+        metatrader_dir = PROJECT_ROOT / CONTAINER_DIR / "Metatrader"
+        assert (metatrader_dir / "mt5_pb2.py").exists(), "mt5_pb2.py must exist"
+        assert (metatrader_dir / "mt5_pb2_grpc.py").exists(), "mt5_pb2_grpc.py must exist"
 
     def test_root_directory_exists(self) -> None:
         """Verify root directory (LinuxServer defaults) exists."""

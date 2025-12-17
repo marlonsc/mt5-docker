@@ -93,3 +93,11 @@
                 "tests/*" = [
                     "S101",    # assert ok in tests
                 ]
+
+[tool.uv.sources]
+mt5linux = { path = "../mt5linux", editable = true }
+
+[dependency-groups]
+dev = [
+    "mt5linux",
+]

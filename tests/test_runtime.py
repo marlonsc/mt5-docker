@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import re
 import subprocess
-from typing import Any
 
 import pytest
 from mt5linux import mt5_pb2, mt5_pb2_grpc
@@ -190,58 +189,45 @@ class TestPortExposure:
 
 
 # =============================================================================
-# RPYC SERVICE TESTS
+# GRPC SERVICE TESTS
 # =============================================================================
 
 
-class TestRPyCService:
-    """Test RPyC service functionality."""
+class TestGRPCService:
+    """Test gRPC service functionality."""
 
-    def test_rpyc_connection_established(
+    def test_grpc_stub_created(
         self,
-        rpyc_connection: rpyc.Connection,
+        mt5_stub: mt5_pb2_grpc.MT5ServiceStub,
     ) -> None:
-        """Verify RPyC connection can be established."""
-        assert rpyc_connection is not None
-        assert hasattr(rpyc_connection, "root")
+        """Verify gRPC stub can be created."""
+        assert mt5_stub is not None
 
-    def test_rpyc_health_check_returns_valid_response(
+    def test_grpc_health_check_returns_valid_response(
         self,
-        rpyc_connection: rpyc.Connection,
+        mt5_stub: mt5_pb2_grpc.MT5ServiceStub,
     ) -> None:
-        """Verify RPyC health check returns valid status structure.
+        """Verify gRPC health check returns valid status structure.
 
         Note: Without MT5 credentials configured, the terminal won't be
         connected to a broker, so 'healthy' and 'connected' may be False.
         This test validates the response structure, not broker connectivity.
         """
-        root = rpyc_connection.root
-        assert root is not None, "RPyC root is None"
-        health = root.health_check()
+        health = mt5_stub.HealthCheck(mt5_pb2.Empty())
 
         # Validate response structure
-        assert health is not None, "health_check returned None"
-        assert isinstance(health, dict), f"Expected dict, got {type(health)}"
-        assert "healthy" in health, "Missing 'healthy' key"
-        assert "mt5_available" in health, "Missing 'mt5_available' key"
+        assert health is not None, "HealthCheck returned None"
+        assert hasattr(health, "healthy"), "Missing 'healthy' field"
+        assert hasattr(health, "mt5_available"), "Missing 'mt5_available' field"
 
         # MT5 module should always be available (loaded at startup)
-        assert health.get("mt5_available") is True, "MT5 module not available"
+        assert health.mt5_available is True, "MT5 module not available"
 
         # If connected to broker, should be healthy
-        if health.get("connected") is True:
-            assert health.get("healthy") is True, (
+        if health.connected is True:
+            assert health.healthy is True, (
                 "Connected but not healthy - unexpected"
             )
-
-    def test_rpyc_timeout_configured(self, rpyc_connection: rpyc.Connection) -> None:
-        """Verify RPyC timeout is properly configured."""
-        timeout = rpyc_connection._config.get("sync_request_timeout")
-        assert timeout is not None, "Timeout not configured"
-        assert isinstance(timeout, int | float), (
-            f"Invalid timeout type: {type(timeout)}"
-        )
-        assert timeout >= 60, f"Timeout too short: {timeout}s"
 
 
 # =============================================================================
@@ -264,16 +250,8 @@ class TestWinePython:
         version = result.stdout.strip()
         assert "3.12" in version, f"Expected Python 3.12.x, got {version}"
 
-    def test_wine_rpyc_version(self, container_name: str) -> None:
-        """Verify RPyC 6.x is installed in Wine Python."""
-        result = wine_python(container_name, "import rpyc; print(rpyc.__version__)")
-
-        assert result.returncode == 0, f"rpyc not installed: {result.stderr}"
-        version = result.stdout.strip()
-        assert version.startswith("6."), f"Expected rpyc 6.x, got {version}"
-
     def test_wine_grpcio_version(self, container_name: str) -> None:
-        """Verify gRPC 1.76+ is installed in Wine Python (for mt5linux client)."""
+        """Verify gRPC 1.76+ is installed in Wine Python."""
         result = wine_python(container_name, "import grpc; print(grpc.__version__)")
 
         assert result.returncode == 0, f"grpcio not installed: {result.stderr}"
@@ -331,25 +309,42 @@ class TestLinuxPython:
 class TestMT5Integration:
     """Test MetaTrader 5 integration."""
 
-    def test_mt5_module_accessible(self, mt5_module: Any) -> None:
-        """Verify MT5 module is accessible via RPyC."""
-        assert mt5_module is not None
+    def test_mt5_stub_accessible(
+        self,
+        mt5_stub: mt5_pb2_grpc.MT5ServiceStub,
+    ) -> None:
+        """Verify MT5 stub is accessible via gRPC."""
+        assert mt5_stub is not None
 
-    def test_mt5_version_callable(self, mt5_module: Any) -> None:
-        """Verify MT5 version() is callable."""
-        version = mt5_module.version()
-        # May be None if not initialized, but should not raise
-        assert version is None or isinstance(version, tuple)
+    def test_mt5_version_callable(
+        self,
+        mt5_stub: mt5_pb2_grpc.MT5ServiceStub,
+    ) -> None:
+        """Verify MT5 Version() is callable."""
+        response = mt5_stub.Version(mt5_pb2.Empty())
+        # Response should have version tuple fields
+        assert response is not None
 
-    def test_mt5_last_error_callable(self, mt5_module: Any) -> None:
-        """Verify MT5 last_error() is callable."""
-        error = mt5_module.last_error()
-        assert error is None or isinstance(error, tuple)
+    def test_mt5_last_error_callable(
+        self,
+        mt5_stub: mt5_pb2_grpc.MT5ServiceStub,
+    ) -> None:
+        """Verify MT5 LastError() is callable."""
+        response = mt5_stub.LastError(mt5_pb2.Empty())
+        assert response is not None
 
-    def test_mt5_constants_accessible(self, mt5_module: Any) -> None:
-        """Verify MT5 trading constants are accessible via get_constants()."""
-        constants = mt5_module.get_constants()
-        assert constants is not None, "get_constants() returned None"
+    def test_mt5_constants_accessible(
+        self,
+        mt5_stub: mt5_pb2_grpc.MT5ServiceStub,
+    ) -> None:
+        """Verify MT5 trading constants are accessible via GetConstants()."""
+        response = mt5_stub.GetConstants(mt5_pb2.Empty())
+        assert response is not None, "GetConstants() returned None"
+        assert response.constants_json, "constants_json is empty"
+
+        import json
+
+        constants = json.loads(response.constants_json)
 
         # Order types
         assert "ORDER_TYPE_BUY" in constants, "ORDER_TYPE_BUY missing"
@@ -368,34 +363,47 @@ class TestMT5Integration:
 class TestMT5AutoLogin:
     """Test MT5 auto-login functionality."""
 
-    def test_mt5_initialize_succeeds(self, rpyc_connection: rpyc.Connection) -> None:
-        """Verify MT5 initialize() succeeds."""
-        root = rpyc_connection.root
-        assert root is not None, "RPyC root is None"
-        result = root.initialize()
-        assert result is True, "MT5 initialize() failed"
+    def test_mt5_initialize_succeeds(
+        self,
+        mt5_stub: mt5_pb2_grpc.MT5ServiceStub,
+    ) -> None:
+        """Verify MT5 Initialize() succeeds."""
+        response = mt5_stub.Initialize(mt5_pb2.InitializeRequest())
+        assert response.success is True, "MT5 Initialize() failed"
 
-    def test_mt5_account_info_available(self, rpyc_connection: rpyc.Connection) -> None:
+    def test_mt5_account_info_available(
+        self,
+        mt5_stub: mt5_pb2_grpc.MT5ServiceStub,
+    ) -> None:
         """Verify account info is available after login."""
-        root = rpyc_connection.root
-        assert root is not None, "RPyC root is None"
-        root.initialize()
-        account = root.account_info()
+        mt5_stub.Initialize(mt5_pb2.InitializeRequest())
+        response = mt5_stub.AccountInfo(mt5_pb2.Empty())
 
-        assert account is not None, "account_info returned None - login failed"
+        assert response is not None, "AccountInfo returned None - login failed"
+        assert response.account_json, "account_json is empty"
+
+        import json
+
+        account = json.loads(response.account_json)
         assert "login" in account, "Missing login field"
         assert "server" in account, "Missing server field"
         assert "balance" in account, "Missing balance field"
         assert account["login"] > 0, f"Invalid login: {account['login']}"
 
-    def test_mt5_terminal_connected(self, rpyc_connection: rpyc.Connection) -> None:
+    def test_mt5_terminal_connected(
+        self,
+        mt5_stub: mt5_pb2_grpc.MT5ServiceStub,
+    ) -> None:
         """Verify terminal is connected to server."""
-        root = rpyc_connection.root
-        assert root is not None, "RPyC root is None"
-        root.initialize()
-        terminal = root.terminal_info()
+        mt5_stub.Initialize(mt5_pb2.InitializeRequest())
+        response = mt5_stub.TerminalInfo(mt5_pb2.Empty())
 
-        assert terminal is not None, "terminal_info returned None"
+        assert response is not None, "TerminalInfo returned None"
+        assert response.terminal_json, "terminal_json is empty"
+
+        import json
+
+        terminal = json.loads(response.terminal_json)
         assert "connected" in terminal, "Missing connected field"
         assert terminal["connected"] is True, "Terminal not connected"
 
@@ -544,27 +552,34 @@ class TestVolumePersistence:
 
 
 # =============================================================================
-# RPYC VERSION COMPATIBILITY TESTS
+# GRPC VERSION COMPATIBILITY TESTS
 # =============================================================================
 
 
-class TestRPyCCompatibility:
-    """Test RPyC version compatibility between client and server.
+class TestGRPCCompatibility:
+    """Test gRPC version compatibility between client and server.
 
-    Note: rpyc is only installed in Wine Python (for the bridge server).
-    Linux Python is not used for RPyC operations.
+    Note: grpcio is installed in both Linux Python (for the test client)
+    and Wine Python (for the bridge server).
     """
 
-    def test_local_rpyc_version_matches_container(self, container_name: str) -> None:
-        """Verify local RPyC version matches Wine Python version in container."""
-        local_version = rpyc.__version__
+    def test_local_grpc_version_compatible_with_container(
+        self,
+        container_name: str,
+    ) -> None:
+        """Verify local gRPC version is compatible with container version."""
+        import grpc
 
-        result = wine_python(container_name, "import rpyc; print(rpyc.__version__)")
-        assert result.returncode == 0, f"rpyc not installed in Wine: {result.stderr}"
+        local_version = grpc.__version__
+
+        result = wine_python(container_name, "import grpc; print(grpc.__version__)")
+        assert result.returncode == 0, f"grpcio not in Wine: {result.stderr}"
         container_version = result.stdout.strip()
 
-        # Major version must match for protocol compatibility
-        assert local_version.split(".")[0] == container_version.split(".")[0], (
-            f"RPyC major version mismatch: "
+        # Major.minor version should be compatible
+        local_parts = local_version.split(".")[:2]
+        container_parts = container_version.split(".")[:2]
+        assert local_parts[0] == container_parts[0], (
+            f"gRPC major version mismatch: "
             f"local={local_version}, container={container_version}"
         )

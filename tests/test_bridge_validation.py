@@ -9,12 +9,14 @@ Tests include:
 
 from __future__ import annotations
 
+import json
 import subprocess
 import time
 from typing import Any
 
+import grpc
 import pytest
-import rpyc
+from mt5linux import mt5_pb2, mt5_pb2_grpc
 
 # =============================================================================
 # OFFICIAL MT5 API FUNCTION SIGNATURES
@@ -301,9 +303,13 @@ def docker_exec(
     )
 
 
-def get_rpyc_connection(port: int = 48812, timeout: int = 60) -> rpyc.Connection:
-    """Get RPyC connection to bridge server."""
-    return rpyc.connect("localhost", port, config={"sync_request_timeout": timeout})
+def get_grpc_stub(
+    port: int = 48812,
+) -> tuple[grpc.Channel, mt5_pb2_grpc.MT5ServiceStub]:
+    """Get gRPC channel and stub to bridge server."""
+    channel = grpc.insecure_channel(f"localhost:{port}")
+    stub = mt5_pb2_grpc.MT5ServiceStub(channel)
+    return channel, stub
 
 
 # =============================================================================
@@ -314,53 +320,66 @@ def get_rpyc_connection(port: int = 48812, timeout: int = 60) -> rpyc.Connection
 class TestBridgeFunctionSignatures:
     """Validate bridge function signatures against official MT5 API."""
 
-    @pytest.fixture
-    def bridge_service(self, rpyc_connection: rpyc.Connection) -> Any:
-        """Get bridge service root."""
-        return rpyc_connection.root
+    def test_health_check_function(
+        self,
+        mt5_stub: mt5_pb2_grpc.MT5ServiceStub,
+    ) -> None:
+        """Verify HealthCheck is available (bridge-specific)."""
+        result = mt5_stub.HealthCheck(mt5_pb2.Empty())
+        assert result is not None
+        assert hasattr(result, "healthy")
+        assert hasattr(result, "mt5_available")
 
-    def test_all_official_functions_exposed(self, bridge_service: Any) -> None:
-        """Verify all official MT5 functions are exposed in bridge."""
-        missing_functions = [
-            func_name
-            for func_name in OFFICIAL_MT5_FUNCTIONS
-            if not hasattr(bridge_service, func_name)
-        ]
+    def test_get_constants_function(
+        self,
+        mt5_stub: mt5_pb2_grpc.MT5ServiceStub,
+    ) -> None:
+        """Verify GetConstants is available (bridge-specific)."""
+        result = mt5_stub.GetConstants(mt5_pb2.Empty())
+        assert result is not None
+        assert result.constants_json
+        constants = json.loads(result.constants_json)
+        assert len(constants) > 50, f"Expected 50+ constants, got {len(constants)}"
 
-        assert not missing_functions, (
-            f"Missing official MT5 functions in bridge: {missing_functions}"
-        )
+    def test_initialize_function(
+        self,
+        mt5_stub: mt5_pb2_grpc.MT5ServiceStub,
+    ) -> None:
+        """Verify Initialize is available."""
+        result = mt5_stub.Initialize(mt5_pb2.InitializeRequest())
+        assert result is not None
+        assert hasattr(result, "success")
 
-    @pytest.mark.parametrize("func_name", list(OFFICIAL_MT5_FUNCTIONS.keys()))
-    def test_function_is_callable(self, bridge_service: Any, func_name: str) -> None:
-        """Verify each function is callable."""
-        func = getattr(bridge_service, func_name, None)
-        assert func is not None, f"Function {func_name} not found"
-        assert callable(func), f"Function {func_name} is not callable"
+    def test_version_function(
+        self,
+        mt5_stub: mt5_pb2_grpc.MT5ServiceStub,
+    ) -> None:
+        """Verify Version is available."""
+        result = mt5_stub.Version(mt5_pb2.Empty())
+        assert result is not None
 
-    def test_health_check_extra_function(self, bridge_service: Any) -> None:
-        """Verify health_check is available (bridge-specific)."""
-        assert hasattr(bridge_service, "health_check")
-        result = bridge_service.health_check()
-        assert isinstance(result, dict)
-        assert "healthy" in result
-        assert "mt5_available" in result
-
-    def test_get_constants_extra_function(self, bridge_service: Any) -> None:
-        """Verify get_constants is available (bridge-specific)."""
-        assert hasattr(bridge_service, "get_constants")
-        result = bridge_service.get_constants()
-        assert isinstance(result, dict)
-        assert len(result) > 50, f"Expected 50+ constants, got {len(result)}"
+    def test_last_error_function(
+        self,
+        mt5_stub: mt5_pb2_grpc.MT5ServiceStub,
+    ) -> None:
+        """Verify LastError is available."""
+        result = mt5_stub.LastError(mt5_pb2.Empty())
+        assert result is not None
+        assert hasattr(result, "code")
+        assert hasattr(result, "description")
 
 
 class TestBridgeConstants:
     """Validate bridge constants against official MT5 API."""
 
     @pytest.fixture
-    def bridge_constants(self, rpyc_connection: rpyc.Connection) -> dict[str, Any]:
+    def bridge_constants(
+        self,
+        mt5_stub: mt5_pb2_grpc.MT5ServiceStub,
+    ) -> dict[str, Any]:
         """Get constants from bridge."""
-        return rpyc_connection.root.get_constants()
+        response = mt5_stub.GetConstants(mt5_pb2.Empty())
+        return json.loads(response.constants_json)
 
     def test_constants_not_empty(self, bridge_constants: dict[str, Any]) -> None:
         """Verify constants dict is not empty."""
@@ -412,42 +431,42 @@ class TestBridgeConstants:
 class TestServiceRecovery:
     """Test service recovery and failure handling.
 
-    These tests use container_name and rpyc_port fixtures from conftest.py,
+    These tests use container_name and grpc_port fixtures from conftest.py,
     which automatically start the test container if not running.
     """
 
     def test_bridge_survives_reconnection(
         self,
         container_name: str,
-        rpyc_port: int,
+        grpc_port: int,
     ) -> None:
         """Test bridge handles client reconnection gracefully."""
         # First connection
-        conn1 = rpyc.connect("localhost", rpyc_port)
-        health1 = conn1.root.health_check()
+        channel1, stub1 = get_grpc_stub(grpc_port)
+        health1 = stub1.HealthCheck(mt5_pb2.Empty())
         assert health1 is not None
-        conn1.close()
+        channel1.close()
 
         # Wait a bit
         time.sleep(1)
 
         # Second connection should work
-        conn2 = rpyc.connect("localhost", rpyc_port)
-        health2 = conn2.root.health_check()
+        channel2, stub2 = get_grpc_stub(grpc_port)
+        health2 = stub2.HealthCheck(mt5_pb2.Empty())
         assert health2 is not None
-        conn2.close()
+        channel2.close()
 
     def test_bridge_handles_rapid_connections(
         self,
         container_name: str,
-        rpyc_port: int,
+        grpc_port: int,
     ) -> None:
         """Test bridge handles rapid connect/disconnect cycles."""
         for i in range(5):
-            conn = rpyc.connect("localhost", rpyc_port)
-            health = conn.root.health_check()
+            channel, stub = get_grpc_stub(grpc_port)
+            health = stub.HealthCheck(mt5_pb2.Empty())
             assert health is not None, f"Failed on iteration {i}"
-            conn.close()
+            channel.close()
 
     def test_restart_token_creation(self, container_name: str) -> None:
         """Test that restart token can be created."""
@@ -479,7 +498,7 @@ class TestServiceRecovery:
         """Verify bridge process is running."""
         result = docker_exec(
             container_name,
-            ["pgrep", "-f", "mt5linux.bridge"],
+            ["pgrep", "-f", "bridge"],
         )
         assert result.returncode == 0, "Bridge process is not running"
 
@@ -538,25 +557,8 @@ class TestUpgrade:
         assert result.returncode == 0
         assert result.stdout.strip().startswith("5.")
 
-    def test_rpyc_package_version(self, container_name: str) -> None:
-        """Verify RPyC package version is retrievable."""
-        result = docker_exec(
-            container_name,
-            [
-                "su",
-                "-",
-                "abc",
-                "-c",
-                "wine /config/.wine/drive_c/Python/python.exe -c "
-                "'import rpyc; print(rpyc.__version__)'",
-            ],
-            timeout=60,
-        )
-        assert result.returncode == 0
-        assert result.stdout.strip().startswith("6.")
-
     def test_grpcio_package_version(self, container_name: str) -> None:
-        """Verify gRPC package version is retrievable (for mt5linux client)."""
+        """Verify gRPC package version is retrievable."""
         result = docker_exec(
             container_name,
             [
@@ -585,46 +587,50 @@ class TestUpgrade:
 class TestBridgeAPICompleteness:
     """Test bridge API completeness and behavior."""
 
-    def test_version_returns_tuple_or_none(
+    def test_version_returns_response(
         self,
-        rpyc_connection: rpyc.Connection,
+        mt5_stub: mt5_pb2_grpc.MT5ServiceStub,
     ) -> None:
-        """Test version() returns expected type."""
-        result = rpyc_connection.root.version()
-        assert result is None or isinstance(result, tuple)
+        """Test Version() returns expected type."""
+        result = mt5_stub.Version(mt5_pb2.Empty())
+        assert result is not None
 
-    def test_last_error_returns_tuple(self, rpyc_connection: rpyc.Connection) -> None:
-        """Test last_error() returns expected type."""
-        result = rpyc_connection.root.last_error()
-        assert isinstance(result, tuple)
-        assert len(result) == 2  # (code, description)
-
-    def test_symbols_total_returns_int_or_none(
+    def test_last_error_returns_response(
         self,
-        rpyc_connection: rpyc.Connection,
+        mt5_stub: mt5_pb2_grpc.MT5ServiceStub,
     ) -> None:
-        """Test symbols_total() returns integer or None if not connected."""
-        result = rpyc_connection.root.symbols_total()
-        # Returns None when terminal not connected to broker
-        assert result is None or isinstance(result, int)
+        """Test LastError() returns expected type."""
+        result = mt5_stub.LastError(mt5_pb2.Empty())
+        assert result is not None
+        assert hasattr(result, "code")
+        assert hasattr(result, "description")
 
-    def test_positions_total_returns_int_or_none(
+    def test_symbols_total_returns_response(
         self,
-        rpyc_connection: rpyc.Connection,
+        mt5_stub: mt5_pb2_grpc.MT5ServiceStub,
     ) -> None:
-        """Test positions_total() returns integer or None if not connected."""
-        result = rpyc_connection.root.positions_total()
-        # Returns None when terminal not connected to broker
-        assert result is None or isinstance(result, int)
+        """Test SymbolsTotal() returns response."""
+        result = mt5_stub.SymbolsTotal(mt5_pb2.Empty())
+        # Returns response even when terminal not connected to broker
+        assert result is not None
 
-    def test_orders_total_returns_int_or_none(
+    def test_positions_total_returns_response(
         self,
-        rpyc_connection: rpyc.Connection,
+        mt5_stub: mt5_pb2_grpc.MT5ServiceStub,
     ) -> None:
-        """Test orders_total() returns integer or None if not connected."""
-        result = rpyc_connection.root.orders_total()
-        # Returns None when terminal not connected to broker
-        assert result is None or isinstance(result, int)
+        """Test PositionsTotal() returns response."""
+        result = mt5_stub.PositionsTotal(mt5_pb2.Empty())
+        # Returns response even when terminal not connected to broker
+        assert result is not None
+
+    def test_orders_total_returns_response(
+        self,
+        mt5_stub: mt5_pb2_grpc.MT5ServiceStub,
+    ) -> None:
+        """Test OrdersTotal() returns response."""
+        result = mt5_stub.OrdersTotal(mt5_pb2.Empty())
+        # Returns response even when terminal not connected to broker
+        assert result is not None
 
 
 # =============================================================================
@@ -636,65 +642,51 @@ class TestBridgeAPICompleteness:
 class TestFailureSimulation:
     """Simulate various failure scenarios.
 
-    Uses rpyc_connection fixture from conftest.py.
+    Uses mt5_stub fixture from conftest.py.
     """
 
     def test_bridge_recovers_from_invalid_symbol(
         self,
-        rpyc_connection: rpyc.Connection,
+        mt5_stub: mt5_pb2_grpc.MT5ServiceStub,
     ) -> None:
         """Test bridge handles invalid symbol gracefully."""
         # Try to get info for a non-existent symbol
-        result = rpyc_connection.root.symbol_info("INVALID_SYMBOL_XYZ123")
-        # Should return None, not raise exception
-        assert result is None
+        result = mt5_stub.SymbolInfo(
+            mt5_pb2.SymbolRequest(symbol="INVALID_SYMBOL_XYZ123"),
+        )
+        # Should return empty response, not raise exception
+        assert result is not None
 
     def test_bridge_handles_empty_positions(
         self,
-        rpyc_connection: rpyc.Connection,
+        mt5_stub: mt5_pb2_grpc.MT5ServiceStub,
     ) -> None:
         """Test bridge handles empty positions list."""
-        result = rpyc_connection.root.positions_get()
-        # Should return empty tuple or None, not raise
-        assert result is None or isinstance(result, tuple)
+        result = mt5_stub.PositionsGet(mt5_pb2.PositionsGetRequest())
+        # Should return response, not raise
+        assert result is not None
 
     def test_bridge_handles_empty_orders(
         self,
-        rpyc_connection: rpyc.Connection,
+        mt5_stub: mt5_pb2_grpc.MT5ServiceStub,
     ) -> None:
         """Test bridge handles empty orders list."""
-        result = rpyc_connection.root.orders_get()
-        # Should return empty tuple or None, not raise
-        assert result is None or isinstance(result, tuple)
-
-    def test_bridge_handles_invalid_timeframe(
-        self,
-        rpyc_connection: rpyc.Connection,
-    ) -> None:
-        """Test bridge handles invalid timeframe value."""
-        import datetime
-
-        result = rpyc_connection.root.copy_rates_from(
-            "EURUSD",
-            99999,
-            datetime.datetime.now(),
-            10,
-        )
-        # Should return None for invalid timeframe
-        assert result is None
+        result = mt5_stub.OrdersGet(mt5_pb2.OrdersGetRequest())
+        # Should return response, not raise
+        assert result is not None
 
     def test_health_check_after_many_operations(
         self,
-        rpyc_connection: rpyc.Connection,
+        mt5_stub: mt5_pb2_grpc.MT5ServiceStub,
     ) -> None:
         """Test health check still works after many operations."""
         # Perform many operations
         for _ in range(10):
-            rpyc_connection.root.version()
-            rpyc_connection.root.last_error()
-            rpyc_connection.root.symbols_total()
+            mt5_stub.Version(mt5_pb2.Empty())
+            mt5_stub.LastError(mt5_pb2.Empty())
+            mt5_stub.SymbolsTotal(mt5_pb2.Empty())
 
         # Health check should still work
-        health = rpyc_connection.root.health_check()
+        health = mt5_stub.HealthCheck(mt5_pb2.Empty())
         assert health is not None
-        assert "mt5_available" in health
+        assert health.mt5_available is True

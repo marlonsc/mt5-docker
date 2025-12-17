@@ -15,7 +15,7 @@ set -euo pipefail
 # =============================================================================
 CONFIG_DIR="${CONFIG_DIR:-/config}"
 WINEPREFIX="${WINEPREFIX:-$CONFIG_DIR/.wine}"
-mt5server_port="${mt5server_port:-8001}"
+mt5server_port="${mt5server_port:-50051}"
 
 # Health check settings
 HEALTH_CHECK_INTERVAL="${HEALTH_CHECK_INTERVAL:-30}"
