@@ -35,6 +35,28 @@ if TYPE_CHECKING:
     from collections.abc import Generator
 
 # =============================================================================
+# TIMING INSTRUMENTATION
+# =============================================================================
+
+_timing_start: float = 0.0
+_current_phase: str = ""
+
+
+def _log(message: str, *, phase: bool = False) -> None:
+    """Log message to stderr (always visible in pytest)."""
+    import sys
+
+    elapsed = time.time() - _timing_start
+    if phase:
+        sys.stderr.write(f"\n{'='*60}\n")
+        sys.stderr.write(f"[{elapsed:5.1f}s] PHASE: {message}\n")
+        sys.stderr.write(f"{'='*60}\n")
+    else:
+        sys.stderr.write(f"[{elapsed:5.1f}s] {message}\n")
+    sys.stderr.flush()
+
+
+# =============================================================================
 # CONFIGURATION
 # =============================================================================
 
@@ -65,7 +87,7 @@ def get_test_container_config() -> DockerContainerConfig:
         grpc_port=int(os.environ.get("MT5_GRPC_PORT", "48812")),
         vnc_port=int(os.environ.get("MT5_VNC_PORT", "43000")),
         health_port=int(os.environ.get("MT5_HEALTH_PORT", "48002")),
-        startup_timeout=int(os.environ.get("MT5_STARTUP_TIMEOUT", "180")),
+        startup_timeout=int(os.environ.get("MT5_STARTUP_TIMEOUT", "420")),
         grpc_timeout=int(os.environ.get("MT5_GRPC_TIMEOUT", "60")),
         login=os.environ.get("MT5_LOGIN"),
         password=os.environ.get("MT5_PASSWORD"),
@@ -102,30 +124,35 @@ def _get_project_root() -> Path:
 def is_container_running(name: str | None = None) -> bool:
     """Check if container is running."""
     container_name = name or _config.container_name
+    _log(f"Checking if container '{container_name}' is running...")
     result = subprocess.run(
         ["docker", "ps", "-q", "-f", f"name=^{container_name}$"],
         capture_output=True,
         text=True,
         check=False,
     )
-    return bool(result.stdout.strip())
+    running = bool(result.stdout.strip())
+    _log(f"Container running: {running}")
+    return running
 
 
-def is_grpc_service_ready(host: str = "localhost", port: int | None = None) -> bool:
-    """Check if gRPC service is ready (actual handshake, not just port).
-
-    Uses grpc.insecure_channel() for MT5Service.
-    Uses a 60 second timeout because Wine/Python gRPC server can be slow.
-    """
+def is_grpc_service_ready(
+    host: str = "localhost",
+    port: int | None = None,
+    timeout: float = 10.0,
+) -> bool:
+    """Check if gRPC service is ready (actual handshake, not just port)."""
     grpc_port = port or _config.grpc_port
+    _log(f"gRPC check: {host}:{grpc_port} (timeout={timeout:.1f}s)...")
     try:
         channel = grpc.insecure_channel(f"{host}:{grpc_port}")
         stub = mt5_pb2_grpc.MT5ServiceStub(channel)
-        # Verify connection works by calling HealthCheck
-        response = stub.HealthCheck(mt5_pb2.Empty(), timeout=60)
+        response = stub.HealthCheck(mt5_pb2.Empty(), timeout=timeout)
         channel.close()
+        _log(f"gRPC check: healthy={response.healthy}")
         return response.healthy
-    except grpc.RpcError:
+    except grpc.RpcError as e:
+        _log(f"gRPC check: FAILED - {type(e).__name__}")
         return False
 
 
@@ -134,60 +161,87 @@ def wait_for_grpc_service(
     port: int | None = None,
     timeout: int | None = None,
 ) -> bool:
-    """Wait for gRPC service to become ready."""
+    """Wait for gRPC service to become ready using progressive backoff."""
     grpc_port = port or _config.grpc_port
     wait_timeout = timeout or _config.startup_timeout
+
+    _log(f"WAIT FOR GRPC: max {wait_timeout}s, port {grpc_port}", phase=True)
+
     start = time.time()
-    check_interval = 3
+    min_interval = 0.5
+    max_interval = 5.0
+    current_interval = min_interval
+    startup_health_timeout = 30.0
 
+    attempt = 0
     while time.time() - start < wait_timeout:
-        if is_grpc_service_ready(host, grpc_port):
-            return True
-        time.sleep(check_interval)
+        attempt += 1
+        remaining = wait_timeout - (time.time() - start)
 
+        _log(f"Attempt {attempt}: checking gRPC (remaining: {remaining:.0f}s)...")
+
+        if is_grpc_service_ready(host, grpc_port, timeout=startup_health_timeout):
+            elapsed = time.time() - start
+            _log(f"SUCCESS: gRPC ready after {elapsed:.1f}s ({attempt} attempts)")
+            return True
+
+        _log(f"Not ready. Waiting {current_interval:.1f}s before retry...")
+        time.sleep(current_interval)
+        current_interval = min(current_interval * 1.5, max_interval)
+
+    elapsed = time.time() - start
+    _log(f"TIMEOUT: gRPC not ready after {elapsed:.1f}s ({attempt} attempts)")
     return False
 
 
 def start_test_container() -> None:
-    """Start test container if not already running.
+    """Start test container if not already running."""
+    global _timing_start  # noqa: PLW0603
+    _timing_start = time.time()
 
-    Uses the main docker-compose.yaml with environment variables
-    to configure container name, ports, and volumes.
+    _log("CONTAINER VALIDATION START", phase=True)
+    _log(f"Container: {_config.container_name}")
+    _log(f"gRPC port: {_config.grpc_port}")
+    _log(f"Startup timeout: {_config.startup_timeout}s")
 
-    Reuses existing container if already running.
-
-    Raises
-    ------
-    pytest.skip
-        If MT5 credentials are not configured.
-
-    """
     project_root = _get_project_root()
 
-    # Check if container is already running - reuse it
+    # PHASE 1: Check if container is running
+    _log("PHASE 1: Check container status", phase=True)
     if is_container_running():
-        _logger.info(
-            "Container %s already running, reusing",
-            _config.container_name,
-        )
-        # Wait for gRPC to be ready if not already
-        if not is_grpc_service_ready():
-            _logger.info("Waiting for gRPC service...")
-            wait_for_grpc_service()
+        _log(f"Container '{_config.container_name}' is running - will reuse")
+
+        # PHASE 2: Fast-path gRPC check (2s timeout)
+        _log("PHASE 2: Fast-path gRPC check (2s timeout)", phase=True)
+        if is_grpc_service_ready(timeout=2.0):
+            _log("FAST-PATH SUCCESS: gRPC already ready!")
+            _log("Total validation time: {:.1f}s".format(time.time() - _timing_start))
+            return
+
+        # PHASE 3: Wait for gRPC with progressive backoff
+        _log("PHASE 3: Wait for gRPC (service not immediately ready)", phase=True)
+        if not wait_for_grpc_service():
+            _log("WARNING: gRPC not ready after full wait")
+        _log("Total validation time: {:.1f}s".format(time.time() - _timing_start))
         return
 
-    # Require credentials to start new container
+    # Container not running - need to start it
+    _log("Container NOT running - need to start")
+
+    # Check credentials
+    _log("PHASE 2: Check credentials", phase=True)
     if not has_mt5_credentials():
+        _log("SKIP: No MT5 credentials configured")
         pytest.skip(SKIP_NO_CREDENTIALS)
 
-    # Check compose file exists (compose.yaml is in docker/ subdirectory)
+    # Check compose file
     docker_dir = project_root / "docker"
     compose_file = docker_dir / "compose.yaml"
     if not compose_file.exists():
+        _log(f"SKIP: compose.yaml not found at {docker_dir}")
         pytest.skip(f"compose.yaml not found at {docker_dir}")
 
-    # Build environment with test-specific values
-    # These override the defaults in compose.yaml
+    # Build environment
     test_env = os.environ.copy()
     test_env.update(
         {
@@ -200,9 +254,9 @@ def start_test_container() -> None:
         },
     )
 
-    # Start container with test environment
-    # Use --project-name to isolate from production container
-    _logger.info("Starting test container %s...", _config.container_name)
+    # Start container
+    _log("PHASE 3: Start container with docker-compose", phase=True)
+    _log("Running: docker compose up -d...")
 
     result = subprocess.run(
         ["docker", "compose", "--project-name", "mt5docker-test", "up", "-d"],
@@ -214,10 +268,13 @@ def start_test_container() -> None:
     )
 
     if result.returncode != 0:
+        _log(f"FAILED: docker compose error: {result.stderr}")
         pytest.skip(f"Failed to start container: {result.stderr}")
 
-    # Wait for gRPC service
-    _logger.info("Waiting for gRPC service on port %s...", _config.grpc_port)
+    _log("Container started, now waiting for gRPC...")
+
+    # Wait for gRPC
+    _log("PHASE 4: Wait for gRPC service", phase=True)
 
     if not wait_for_grpc_service():
         logs = subprocess.run(

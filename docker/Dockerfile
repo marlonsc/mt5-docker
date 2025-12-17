@@ -15,8 +15,10 @@ ARG PYTHON_VERSION=3.12
 ARG GRPCIO_VERSION=1.76.0
 # NumPy 1.26.4: Wine compatible (2.x uses ucrtbase functions Wine hasn't implemented)
 ARG NUMPY_VERSION=1.26.4
-# Wine Mono 9.4.0: Compatible with Wine 9.17 (Alpine 3.21)
-ARG WINE_MONO_VERSION=9.4.0
+# Wine Mono 10.4.0: Compatible with Wine 10.x
+ARG WINE_MONO_VERSION=10.4.0
+# Wine Gecko 2.47.4: HTML rendering support for Wine 10.x
+ARG WINE_GECKO_VERSION=2.47.4
 
 # ============================================================
 # Stage 1: WINE-BASE - Base image with Wine installed (SHARED)
@@ -24,13 +26,12 @@ ARG WINE_MONO_VERSION=9.4.0
 FROM base AS wine-base
 
 # Install Wine and dependencies from Alpine repos
-# Wine 9.17 is available in Alpine 3.21 community repo
+# Wine 10.x from Alpine edge/community repo for improved MT5 compatibility
 # NO winetricks - we use direct Wine commands (like original repo)
 RUN --mount=type=cache,target=/var/cache/apk,sharing=locked \
     apk update && \
+    # First install all dependencies from stable Alpine 3.21 repos
     apk add --no-cache \
-        # Wine (no gecko - we use Mono instead)
-        wine \
         # X11 and display
         xvfb-run \
         # Python (Linux side)
@@ -48,7 +49,17 @@ RUN --mount=type=cache,target=/var/cache/apk,sharing=locked \
         font-noto \
         fontconfig \
         # gcompat for glibc compatibility if needed
-        gcompat
+        gcompat \
+        # Wine dependencies that may be needed from edge
+        libpcap \
+        pcsc-lite-libs \
+        libxkbcommon && \
+    # Add Alpine edge repos for Wine 10
+    echo "http://dl-cdn.alpinelinux.org/alpine/edge/main" >> /etc/apk/repositories && \
+    echo "http://dl-cdn.alpinelinux.org/alpine/edge/community" >> /etc/apk/repositories && \
+    apk update && \
+    # Install Wine 10 from edge (force to resolve from edge repos)
+    apk add --no-cache --repository http://dl-cdn.alpinelinux.org/alpine/edge/community wine
 
 # Update font cache
 RUN fc-cache -fv
@@ -62,6 +73,7 @@ ARG PYTHON_VERSION
 ARG GRPCIO_VERSION
 ARG NUMPY_VERSION
 ARG WINE_MONO_VERSION
+ARG WINE_GECKO_VERSION
 
 RUN apk add --no-cache curl
 
@@ -85,9 +97,17 @@ RUN --mount=type=cache,target=/downloads,id=mt5-downloads-alpine,sharing=locked 
             "https://dl.winehq.org/wine/wine-mono/${WINE_MONO_VERSION}/wine-mono-${WINE_MONO_VERSION}-x86.msi"; \
     fi && \
     cp /downloads/wine-mono-${WINE_MONO_VERSION}-x86.msi /staging/ && \
+    # Wine Gecko (~52MB) - for HTML rendering support
+    if [ ! -f /downloads/wine-gecko-${WINE_GECKO_VERSION}-x86_64.msi ]; then \
+        echo "Downloading Wine Gecko ${WINE_GECKO_VERSION}..." && \
+        curl -fSL -o /downloads/wine-gecko-${WINE_GECKO_VERSION}-x86_64.msi \
+            "https://dl.winehq.org/wine/wine-gecko/${WINE_GECKO_VERSION}/wine-gecko-${WINE_GECKO_VERSION}-x86_64.msi"; \
+    fi && \
+    cp /downloads/wine-gecko-${WINE_GECKO_VERSION}-x86_64.msi /staging/ && \
     # Create version manifest
     echo "PYTHON_VERSION=${PYTHON_FULL_VERSION}" > /staging/.versions && \
     echo "WINE_MONO_VERSION=${WINE_MONO_VERSION}" >> /staging/.versions && \
+    echo "WINE_GECKO_VERSION=${WINE_GECKO_VERSION}" >> /staging/.versions && \
     echo "GRPCIO_VERSION=${GRPCIO_VERSION}" >> /staging/.versions && \
     echo "NUMPY_VERSION=${NUMPY_VERSION}" >> /staging/.versions && \
     echo "BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> /staging/.versions && \
@@ -103,6 +123,7 @@ ARG PYTHON_VERSION
 ARG GRPCIO_VERSION
 ARG NUMPY_VERSION
 ARG WINE_MONO_VERSION
+ARG WINE_GECKO_VERSION
 
 # Build complete Wine prefix (Python + packages, NOT MT5)
 # Following original repo approach: Mono + direct registry (no winetricks)
@@ -113,11 +134,12 @@ RUN --mount=from=downloader,source=/staging,target=/staging \
     export WINEARCH=win64 && \
     export WINEPREFIX=/wine-build && \
     export HOME=/tmp && \
+    export WINEDLLOVERRIDES="winemenubuilder.exe=d;mscoree=d;mshtml=d" && \
     mkdir -p /wine-build && \
     # ============================================================
     # Step 1: Initialize Wine prefix with DLL overrides
     # ============================================================
-    echo "=== Step 1/5: Initializing Wine prefix ===" && \
+    echo "=== Step 1/6: Initializing Wine prefix ===" && \
     xvfb-run -a sh -c "\
         wine reg add 'HKCU\\Software\\Wine\\DllOverrides' /v winemenubuilder.exe /t REG_SZ /d '' /f && \
         wine reg add 'HKCU\\Software\\Wine\\DllOverrides' /v mscoree /t REG_SZ /d '' /f && \
@@ -127,23 +149,28 @@ RUN --mount=from=downloader,source=/staging,target=/staging \
     # ============================================================
     # Step 2: Install Wine Mono (for .NET support, like original repo)
     # ============================================================
-    echo "=== Step 2/5: Installing Wine Mono ${WINE_MONO_VERSION} ===" && \
-    export WINEDLLOVERRIDES="mscoree=d" && \
+    echo "=== Step 2/6: Installing Wine Mono ${WINE_MONO_VERSION} ===" && \
     xvfb-run -a sh -c "\
         wine msiexec /i /staging/wine-mono-${WINE_MONO_VERSION}-x86.msi /quiet && \
         wineserver -w" && \
-    unset WINEDLLOVERRIDES && \
     # ============================================================
-    # Step 3: Set Windows version to win10 (via registry, no winetricks)
+    # Step 3: Install Wine Gecko (for HTML rendering support)
     # ============================================================
-    echo "=== Step 3/5: Setting Windows version to win10 ===" && \
+    echo "=== Step 3/6: Installing Wine Gecko ${WINE_GECKO_VERSION} ===" && \
+    xvfb-run -a sh -c "\
+        wine msiexec /i /staging/wine-gecko-${WINE_GECKO_VERSION}-x86_64.msi /quiet && \
+        wineserver -w" && \
+    # ============================================================
+    # Step 4: Set Windows version to win10 (via registry, no winetricks)
+    # ============================================================
+    echo "=== Step 4/6: Setting Windows version to win10 ===" && \
     xvfb-run -a sh -c "\
         wine reg add 'HKEY_CURRENT_USER\\Software\\Wine' /v Version /t REG_SZ /d 'win10' /f && \
         wineserver -w" && \
     # ============================================================
-    # Step 4: Install Python for Windows
+    # Step 5: Install Python for Windows
     # ============================================================
-    echo "=== Step 4/5: Installing Python ===" && \
+    echo "=== Step 5/6: Installing Python ===" && \
     xvfb-run -a sh -c "\
         wine /staging/python-installer.exe /quiet TargetDir=C:\\\\Python Include_doc=0 InstallAllUsers=1 PrependPath=1 Include_pip=1 && \
         wineserver -w" && \
@@ -157,12 +184,13 @@ RUN --mount=from=downloader,source=/staging,target=/staging \
     echo "Python found at: $PYTHON_EXE" && \
     xvfb-run -a sh -c "wine '$PYTHON_EXE' --version; wineserver -w" || { echo "FAIL: Python cannot execute"; exit 1; } && \
     # ============================================================
-    # Step 5: Install Python packages (grpcio + numpy + protobuf)
+    # Step 6: Install Python packages (grpcio + numpy + protobuf)
+    # Use --only-binary to avoid compilation (use prebuilt wheels)
     # ============================================================
-    echo "=== Step 5/5: Installing Python packages (grpcio + numpy + protobuf) ===" && \
+    echo "=== Step 6/6: Installing Python packages (grpcio + numpy + protobuf) ===" && \
     xvfb-run -a sh -c "\
         wine '$PYTHON_EXE' -m pip install --upgrade --no-cache-dir pip && \
-        wine '$PYTHON_EXE' -m pip install --no-cache-dir \
+        wine '$PYTHON_EXE' -m pip install --no-cache-dir --only-binary :all: \
             'grpcio>=${GRPCIO_VERSION}' \
             'protobuf>=4.21.0' \
             'numpy==${NUMPY_VERSION}' && \
@@ -188,10 +216,11 @@ ARG PYTHON_VERSION
 ARG GRPCIO_VERSION
 ARG NUMPY_VERSION
 ARG WINE_MONO_VERSION
+ARG WINE_GECKO_VERSION
 
 # OCI-compliant image metadata
 LABEL org.opencontainers.image.title="MetaTrader5 Docker Alpine"
-LABEL org.opencontainers.image.description="MetaTrader5 with Wine on Alpine 3.21"
+LABEL org.opencontainers.image.description="MetaTrader5 with Wine 10 on Alpine 3.21"
 LABEL org.opencontainers.image.version="${VERSION}"
 LABEL org.opencontainers.image.created="${BUILD_DATE}"
 LABEL org.opencontainers.image.authors="marlonsc"
@@ -206,6 +235,7 @@ LABEL maintainer="marlonsc"
 LABEL mt5.python.version="${PYTHON_VERSION}"
 LABEL mt5.grpcio.version="${GRPCIO_VERSION}"
 LABEL mt5.wine.mono.version="${WINE_MONO_VERSION}"
+LABEL mt5.wine.gecko.version="${WINE_GECKO_VERSION}"
 LABEL mt5.base.os="alpine321"
 
 # Environment variables

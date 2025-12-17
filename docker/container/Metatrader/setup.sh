@@ -15,8 +15,8 @@
 # =============================================================================
 set -euo pipefail
 
-# Installer timeout - enough time for full installation
-MT5_INSTALL_TIMEOUT=120
+# Installer timeout - enough time for full installation (5 minutes)
+MT5_INSTALL_TIMEOUT=300
 
 # =============================================================================
 # LOGGING (inherited from start.sh, but define fallback)
@@ -153,21 +153,31 @@ install_mt5_terminal() {
         return 1
     }
 
-    # Run installer with timeout - let it complete naturally
+    # Run installer with timeout
     log INFO "[setup] Running installer (timeout: ${MT5_INSTALL_TIMEOUT}s)..."
     "$wine_executable" "$MT5_SETUP" "/auto" &
     local INSTALLER_PID=$!
 
     local elapsed=0
+    local terminal_detected=0
     while [ $elapsed -lt $MT5_INSTALL_TIMEOUT ]; do
         if ! kill -0 $INSTALLER_PID 2>/dev/null; then
             log INFO "[setup] Installer process completed"
             break
         fi
 
-        # Check for terminal but don't kill installer - let it finish
-        if [ -e "$mt5file" ] && [ $((elapsed % 10)) -eq 0 ]; then
-            log INFO "[setup] Terminal detected, waiting for installer to finish..."
+        # Check for terminal - when detected, wait 10s then proceed
+        if [ -e "$mt5file" ]; then
+            if [ $terminal_detected -eq 0 ]; then
+                log INFO "[setup] Terminal detected! Waiting 10s for installer to stabilize..."
+                terminal_detected=1
+                sleep 10
+                log INFO "[setup] Killing installer and proceeding..."
+                kill $INSTALLER_PID 2>/dev/null || true
+                pkill -f "mt5setup" 2>/dev/null || true
+                sleep 2
+                break
+            fi
         fi
 
         sleep 5

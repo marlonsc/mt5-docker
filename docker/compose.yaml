@@ -7,7 +7,8 @@ services:
         # Pin versions for reproducibility (update in versions.env)
         PYTHON_VERSION: "3.12"
         GRPCIO_VERSION: "1.76.0"
-        WINE_MONO_VERSION: "9.4.0"
+        WINE_MONO_VERSION: "10.4.0"
+        WINE_GECKO_VERSION: "2.47.4"
         NUMPY_VERSION: "1.26.4"
         # MT5 pip package installed at runtime (always latest)
         BUILD_DATE: "${BUILD_DATE:-}"
@@ -19,7 +20,7 @@ services:
       - config_data:/config:uid=911,gid=911
     ports:
       - "${MT5_VNC_PORT:-3000}:3000"      # KasmVNC web interface
-      - "${MT5_GRPC_PORT:-50051}:50051"   # gRPC server for mt5linux
+      - "${MT5_GRPC_PORT:-8001}:8001"     # gRPC server for mt5linux
       - "${MT5_HEALTH_PORT:-8002}:8002"   # Health check endpoint
     env_file:
       - path: ../.env
@@ -71,12 +72,12 @@ services:
     security_opt:
       - seccomp:unconfined
     healthcheck:
-      # Check gRPC server (primary API) - port 50051
-      test: ["CMD", "bash", "-c", "echo >/dev/tcp/localhost/50051"]
+      # Check gRPC server (primary API) - port 8001
+      test: ["CMD", "bash", "-c", "echo >/dev/tcp/localhost/8001"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 120s
+      start_period: 360s
     networks:
       - mt5-network
 

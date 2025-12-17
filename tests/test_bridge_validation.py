@@ -337,18 +337,17 @@ class TestBridgeFunctionSignatures:
         """Verify GetConstants is available (bridge-specific)."""
         result = mt5_stub.GetConstants(mt5_pb2.Empty())
         assert result is not None
-        assert result.constants_json
-        constants = json.loads(result.constants_json)
-        assert len(constants) > 50, f"Expected 50+ constants, got {len(constants)}"
+        assert result.values  # Constants.values is a map
+        assert len(result.values) > 50, f"Expected 50+ constants, got {len(result.values)}"
 
     def test_initialize_function(
         self,
         mt5_stub: mt5_pb2_grpc.MT5ServiceStub,
     ) -> None:
         """Verify Initialize is available."""
-        result = mt5_stub.Initialize(mt5_pb2.InitializeRequest())
+        result = mt5_stub.Initialize(mt5_pb2.InitRequest())
         assert result is not None
-        assert hasattr(result, "success")
+        assert hasattr(result, "result")
 
     def test_version_function(
         self,
@@ -366,7 +365,7 @@ class TestBridgeFunctionSignatures:
         result = mt5_stub.LastError(mt5_pb2.Empty())
         assert result is not None
         assert hasattr(result, "code")
-        assert hasattr(result, "description")
+        assert hasattr(result, "message")
 
 
 class TestBridgeConstants:
@@ -379,7 +378,7 @@ class TestBridgeConstants:
     ) -> dict[str, Any]:
         """Get constants from bridge."""
         response = mt5_stub.GetConstants(mt5_pb2.Empty())
-        return json.loads(response.constants_json)
+        return dict(response.values)
 
     def test_constants_not_empty(self, bridge_constants: dict[str, Any]) -> None:
         """Verify constants dict is not empty."""
@@ -603,7 +602,7 @@ class TestBridgeAPICompleteness:
         result = mt5_stub.LastError(mt5_pb2.Empty())
         assert result is not None
         assert hasattr(result, "code")
-        assert hasattr(result, "description")
+        assert hasattr(result, "message")
 
     def test_symbols_total_returns_response(
         self,
@@ -662,7 +661,7 @@ class TestFailureSimulation:
         mt5_stub: mt5_pb2_grpc.MT5ServiceStub,
     ) -> None:
         """Test bridge handles empty positions list."""
-        result = mt5_stub.PositionsGet(mt5_pb2.PositionsGetRequest())
+        result = mt5_stub.PositionsGet(mt5_pb2.PositionsRequest())
         # Should return response, not raise
         assert result is not None
 
@@ -671,7 +670,7 @@ class TestFailureSimulation:
         mt5_stub: mt5_pb2_grpc.MT5ServiceStub,
     ) -> None:
         """Test bridge handles empty orders list."""
-        result = mt5_stub.OrdersGet(mt5_pb2.OrdersGetRequest())
+        result = mt5_stub.OrdersGet(mt5_pb2.OrdersRequest())
         # Should return response, not raise
         assert result is not None
 

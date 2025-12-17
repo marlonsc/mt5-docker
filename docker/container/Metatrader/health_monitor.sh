@@ -15,7 +15,7 @@ set -euo pipefail
 # =============================================================================
 CONFIG_DIR="${CONFIG_DIR:-/config}"
 WINEPREFIX="${WINEPREFIX:-$CONFIG_DIR/.wine}"
-mt5server_port="${mt5server_port:-50051}"
+mt5server_port="${mt5server_port:-8001}"
 
 # Health check settings
 HEALTH_CHECK_INTERVAL="${HEALTH_CHECK_INTERVAL:-30}"
@@ -47,11 +47,13 @@ check_mt5_process() {
 }
 
 check_bridge_listening() {
-    ss -tuln 2>/dev/null | grep -q ":$mt5server_port"
+    # Use netstat on Alpine (ss not available)
+    netstat -tuln 2>/dev/null | grep -q ":$mt5server_port"
 }
 
 check_bridge_responding() {
-    timeout 5 bash -c "echo >/dev/tcp/localhost/$mt5server_port" 2>/dev/null
+    # Use nc (netcat) for TCP check - more portable than /dev/tcp
+    nc -z localhost "$mt5server_port" 2>/dev/null
 }
 
 # =============================================================================

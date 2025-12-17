@@ -38,8 +38,8 @@ from typing import TYPE_CHECKING
 
 import grpc
 import MetaTrader5  # pyright: ignore[reportMissingImports]
-import mt5_pb2
-import mt5_pb2_grpc
+
+from . import mt5_pb2, mt5_pb2_grpc
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -113,8 +113,21 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
     _mt5_lock: threading.RLock = threading.RLock()
 
     def __init__(self) -> None:
-        """Initialize the MT5 gRPC servicer."""
+        """Initialize the MT5 gRPC servicer and connect to MT5 terminal."""
         super().__init__()
+        log.info("MT5GRPCServicer initializing...")
+
+        # Auto-initialize connection to MT5 terminal
+        if self._mt5_module is not None:
+            result = self._mt5_module.initialize()
+            if result:
+                log.info("MT5 auto-initialize: SUCCESS")
+            else:
+                error = self._mt5_module.last_error()
+                log.warning("MT5 auto-initialize: FAILED - %s", error)
+        else:
+            log.warning("MT5 module not available for auto-initialize")
+
         log.info("MT5GRPCServicer initialized")
 
     # =========================================================================
@@ -519,6 +532,15 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
             # Position types
             "POSITION_TYPE_BUY",
             "POSITION_TYPE_SELL",
+            # Deal types
+            "DEAL_TYPE_BUY",
+            "DEAL_TYPE_SELL",
+            "DEAL_TYPE_BALANCE",
+            "DEAL_TYPE_CREDIT",
+            "DEAL_TYPE_CHARGE",
+            "DEAL_TYPE_CORRECTION",
+            "DEAL_TYPE_BONUS",
+            "DEAL_TYPE_COMMISSION",
             # Copy ticks flags
             "COPY_TICKS_ALL",
             "COPY_TICKS_INFO",
@@ -1161,9 +1183,7 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
             log.debug("PositionsGet: result=None")
             return mt5_pb2.DictList(json_items=[])
 
-        json_items = [
-            _json_serialize(self._namedtuple_to_dict(p)) for p in result
-        ]
+        json_items = [_json_serialize(self._namedtuple_to_dict(p)) for p in result]
         log.debug("PositionsGet: returned %s positions", len(json_items))
         return mt5_pb2.DictList(json_items=json_items)
 
@@ -1230,9 +1250,7 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
             log.debug("OrdersGet: result=None")
             return mt5_pb2.DictList(json_items=[])
 
-        json_items = [
-            _json_serialize(self._namedtuple_to_dict(o)) for o in result
-        ]
+        json_items = [_json_serialize(self._namedtuple_to_dict(o)) for o in result]
         log.debug("OrdersGet: returned %s orders", len(json_items))
         return mt5_pb2.DictList(json_items=json_items)
 
@@ -1318,9 +1336,7 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
         if result is None:
             return mt5_pb2.DictList(json_items=[])
 
-        json_items = [
-            _json_serialize(self._namedtuple_to_dict(o)) for o in result
-        ]
+        json_items = [_json_serialize(self._namedtuple_to_dict(o)) for o in result]
         log.debug("HistoryOrdersGet: returned %s orders", len(json_items))
         return mt5_pb2.DictList(json_items=json_items)
 
@@ -1402,9 +1418,7 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
         if result is None:
             return mt5_pb2.DictList(json_items=[])
 
-        json_items = [
-            _json_serialize(self._namedtuple_to_dict(d)) for d in result
-        ]
+        json_items = [_json_serialize(self._namedtuple_to_dict(d)) for d in result]
         log.debug("HistoryDealsGet: returned %s deals", len(json_items))
         return mt5_pb2.DictList(json_items=json_items)
 
@@ -1460,9 +1474,7 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
         result = self._mt5_module.market_book_get(request.symbol)
         if result is None:
             return mt5_pb2.DictList(json_items=[])
-        json_items = [
-            _json_serialize(self._namedtuple_to_dict(e)) for e in result
-        ]
+        json_items = [_json_serialize(self._namedtuple_to_dict(e)) for e in result]
         log.debug("MarketBookGet: returned %s entries", len(json_items))
         return mt5_pb2.DictList(json_items=json_items)
 

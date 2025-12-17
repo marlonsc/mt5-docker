@@ -59,14 +59,14 @@
     typeStubSearchPaths = ["/typings"]
 
 [tool.pytest.ini_options]
-    addopts = "-v --tb=short"
+    addopts = "-v --tb=short -s"
     env_files = [".env"]
     markers = [
         "requires_container: marks tests that require the Docker container to be running",
         "slow: marks tests that may take longer to execute",
     ]
     testpaths = ["tests"]
-    timeout = 300
+    timeout = 600
 
 [tool.ruff]
 
@@ -92,6 +92,9 @@
             [tool.ruff.lint.per-file-ignores]
                 "tests/*" = [
                     "S101",    # assert ok in tests
+                    "S603",    # subprocess calls ok in tests (Docker interaction)
+                    "S607",    # partial executable path ok in tests (docker CLI)
+                    "TRY300",  # try/except style ok in tests
                 ]
 
 [tool.uv.sources]

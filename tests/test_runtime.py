@@ -340,11 +340,9 @@ class TestMT5Integration:
         """Verify MT5 trading constants are accessible via GetConstants()."""
         response = mt5_stub.GetConstants(mt5_pb2.Empty())
         assert response is not None, "GetConstants() returned None"
-        assert response.constants_json, "constants_json is empty"
+        assert response.values, "values is empty"
 
-        import json
-
-        constants = json.loads(response.constants_json)
+        constants = dict(response.values)
 
         # Order types
         assert "ORDER_TYPE_BUY" in constants, "ORDER_TYPE_BUY missing"
@@ -368,23 +366,23 @@ class TestMT5AutoLogin:
         mt5_stub: mt5_pb2_grpc.MT5ServiceStub,
     ) -> None:
         """Verify MT5 Initialize() succeeds."""
-        response = mt5_stub.Initialize(mt5_pb2.InitializeRequest())
-        assert response.success is True, "MT5 Initialize() failed"
+        response = mt5_stub.Initialize(mt5_pb2.InitRequest())
+        assert response.result is True, "MT5 Initialize() failed"
 
     def test_mt5_account_info_available(
         self,
         mt5_stub: mt5_pb2_grpc.MT5ServiceStub,
     ) -> None:
         """Verify account info is available after login."""
-        mt5_stub.Initialize(mt5_pb2.InitializeRequest())
+        mt5_stub.Initialize(mt5_pb2.InitRequest())
         response = mt5_stub.AccountInfo(mt5_pb2.Empty())
 
         assert response is not None, "AccountInfo returned None - login failed"
-        assert response.account_json, "account_json is empty"
+        assert response.json_data, "json_data is empty"
 
         import json
 
-        account = json.loads(response.account_json)
+        account = json.loads(response.json_data)
         assert "login" in account, "Missing login field"
         assert "server" in account, "Missing server field"
         assert "balance" in account, "Missing balance field"
@@ -395,15 +393,15 @@ class TestMT5AutoLogin:
         mt5_stub: mt5_pb2_grpc.MT5ServiceStub,
     ) -> None:
         """Verify terminal is connected to server."""
-        mt5_stub.Initialize(mt5_pb2.InitializeRequest())
+        mt5_stub.Initialize(mt5_pb2.InitRequest())
         response = mt5_stub.TerminalInfo(mt5_pb2.Empty())
 
         assert response is not None, "TerminalInfo returned None"
-        assert response.terminal_json, "terminal_json is empty"
+        assert response.json_data, "json_data is empty"
 
         import json
 
-        terminal = json.loads(response.terminal_json)
+        terminal = json.loads(response.json_data)
         assert "connected" in terminal, "Missing connected field"
         assert terminal["connected"] is True, "Terminal not connected"
 

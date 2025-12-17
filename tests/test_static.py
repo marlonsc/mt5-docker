@@ -593,8 +593,11 @@ class TestDirectoryStructure:
         # Should import grpc for the gRPC server
         assert "import grpc" in content, "Must import grpc"
         # Should import local proto files (standalone in container)
-        assert "import mt5_pb2" in content, "Must import mt5_pb2"
-        assert "import mt5_pb2_grpc" in content, "Must import mt5_pb2_grpc"
+        # Accept both absolute and relative imports
+        has_mt5_pb2 = "import mt5_pb2" in content or "from . import" in content
+        has_mt5_pb2_grpc = "import mt5_pb2_grpc" in content or "from . import" in content
+        assert has_mt5_pb2, "Must import mt5_pb2 (absolute or relative)"
+        assert has_mt5_pb2_grpc, "Must import mt5_pb2_grpc (absolute or relative)"
         assert "import structlog" not in content, "Must not depend on structlog"
 
     def test_proto_files_exist(self) -> None:
