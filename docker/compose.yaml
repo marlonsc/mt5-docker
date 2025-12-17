@@ -5,6 +5,7 @@ services:
       dockerfile: Dockerfile
       args:
         # Pin versions for reproducibility (update in versions.env)
+        # Base: Debian Bookworm with Wine 10.0 from WineHQ
         PYTHON_VERSION: "3.12"
         GRPCIO_VERSION: "1.76.0"
         WINE_MONO_VERSION: "10.4.0"
@@ -13,7 +14,7 @@ services:
         # MT5 pip package installed at runtime (always latest)
         BUILD_DATE: "${BUILD_DATE:-}"
         VERSION: "${VERSION:-local}"
-    image: marlonsc/mt5-docker:local
+    image: marlonsc/mt5-docker:debian
     container_name: ${MT5_CONTAINER_NAME:-mt5}
     volumes:
       # Volume key is 'config_data', actual name is set by MT5_VOLUME_NAME in volumes section
@@ -26,7 +27,7 @@ services:
       - path: ../.env
         required: true
     labels:
-      org.opencontainers.image.title: "MetaTrader5 Docker (fork)"
+      org.opencontainers.image.title: "MetaTrader5 Docker Debian (Wine 10.0)"
       org.opencontainers.image.vendor: "marlonsc"
       org.opencontainers.image.source: "https://github.com/marlonsc/mt5-docker"
     environment:

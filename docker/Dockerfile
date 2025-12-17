@@ -2,9 +2,9 @@
 # Enable BuildKit features for cache mounts
 
 # ============================================================
-# BASE IMAGE - Alpine 3.21 with KasmVNC
+# BASE IMAGE - Debian Bookworm with KasmVNC
 # ============================================================
-FROM ghcr.io/linuxserver/baseimage-kasmvnc:alpine321 AS base
+FROM ghcr.io/linuxserver/baseimage-kasmvnc:debianbookworm AS base
 
 # Version ARGs (centralized for all stages)
 ARG BUILD_DATE
@@ -13,7 +13,7 @@ ARG VERSION
 ARG PYTHON_VERSION=3.12
 # gRPC 1.76.0: Required by mt5_pb2_grpc.py (GRPC_GENERATED_VERSION)
 ARG GRPCIO_VERSION=1.76.0
-# NumPy 1.26.4: Wine compatible (2.x uses ucrtbase functions Wine hasn't implemented)
+# NumPy 1.26.4: Wine 10.0 compatible (2.x requires crealf() not in Wine 10.0)
 ARG NUMPY_VERSION=1.26.4
 # Wine Mono 10.4.0: Compatible with Wine 10.x
 ARG WINE_MONO_VERSION=10.4.0
@@ -21,45 +21,46 @@ ARG WINE_MONO_VERSION=10.4.0
 ARG WINE_GECKO_VERSION=2.47.4
 
 # ============================================================
-# Stage 1: WINE-BASE - Base image with Wine installed (SHARED)
+# Stage 1: WINE-BASE - Base image with Wine 10.0 installed
 # ============================================================
 FROM base AS wine-base
 
-# Install Wine and dependencies from Alpine repos
-# Wine 10.x from Alpine edge/community repo for improved MT5 compatibility
-# NO winetricks - we use direct Wine commands (like original repo)
-RUN --mount=type=cache,target=/var/cache/apk,sharing=locked \
-    apk update && \
-    # First install all dependencies from stable Alpine 3.21 repos
-    apk add --no-cache \
+# Layer 1: Base packages (rarely changes)
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
+    rm -f /etc/apt/apt.conf.d/docker-clean && \
+    echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends \
         # X11 and display
-        xvfb-run \
+        xvfb \
         # Python (Linux side)
         python3 \
-        py3-pip \
+        python3-pip \
+        python3-venv \
         # Build tools and utilities
         wget \
         curl \
+        gnupg2 \
         ca-certificates \
-        bash \
-        coreutils \
-        # Free fonts (required for MT5 UI)
-        font-liberation \
-        font-dejavu \
-        font-noto \
-        fontconfig \
-        # gcompat for glibc compatibility if needed
-        gcompat \
-        # Wine dependencies that may be needed from edge
-        libpcap \
-        pcsc-lite-libs \
-        libxkbcommon && \
-    # Add Alpine edge repos for Wine 10
-    echo "http://dl-cdn.alpinelinux.org/alpine/edge/main" >> /etc/apk/repositories && \
-    echo "http://dl-cdn.alpinelinux.org/alpine/edge/community" >> /etc/apk/repositories && \
-    apk update && \
-    # Install Wine 10 from edge (force to resolve from edge repos)
-    apk add --no-cache --repository http://dl-cdn.alpinelinux.org/alpine/edge/community wine
+        software-properties-common \
+        cabextract \
+        # Fonts (required for MT5 UI)
+        fonts-liberation \
+        fonts-dejavu \
+        fontconfig && \
+    mkdir -pm755 /etc/apt/keyrings && \
+    wget -q -O /etc/apt/keyrings/winehq-archive.key \
+        "https://dl.winehq.org/wine-builds/winehq.key" && \
+    wget -qNP /etc/apt/sources.list.d/ \
+        "https://dl.winehq.org/wine-builds/debian/dists/bookworm/winehq-bookworm.sources" && \
+    dpkg --add-architecture i386 && \
+    apt-get update && \
+    apt-get install -y --install-recommends \
+        wine-stable=10.0.0.0~bookworm-1 \
+        wine-stable-amd64=10.0.0.0~bookworm-1 \
+        wine-stable-i386:i386=10.0.0.0~bookworm-1 \
+        winehq-stable=10.0.0.0~bookworm-1
 
 # Update font cache
 RUN fc-cache -fv
@@ -75,12 +76,10 @@ ARG NUMPY_VERSION
 ARG WINE_MONO_VERSION
 ARG WINE_GECKO_VERSION
 
-RUN apk add --no-cache curl
-
 WORKDIR /staging
 
 # Download large files with BuildKit cache
-RUN --mount=type=cache,target=/downloads,id=mt5-downloads-alpine,sharing=locked \
+RUN --mount=type=cache,target=/downloads,id=mt5-downloads-debian,sharing=locked \
     set -ex && \
     # Python Installer for Windows (~30MB)
     PYTHON_FULL_VERSION="3.12.8" && \
@@ -90,20 +89,27 @@ RUN --mount=type=cache,target=/downloads,id=mt5-downloads-alpine,sharing=locked 
             "https://www.python.org/ftp/python/${PYTHON_FULL_VERSION}/python-${PYTHON_FULL_VERSION}-amd64.exe"; \
     fi && \
     cp /downloads/python-${PYTHON_FULL_VERSION}-amd64.exe /staging/python-installer.exe && \
-    # Wine Mono (~75MB) - for .NET support (like original repo)
+    # Wine Mono (~75MB) - for .NET support
     if [ ! -f /downloads/wine-mono-${WINE_MONO_VERSION}-x86.msi ]; then \
         echo "Downloading Wine Mono ${WINE_MONO_VERSION}..." && \
         curl -fSL -o /downloads/wine-mono-${WINE_MONO_VERSION}-x86.msi \
             "https://dl.winehq.org/wine/wine-mono/${WINE_MONO_VERSION}/wine-mono-${WINE_MONO_VERSION}-x86.msi"; \
     fi && \
     cp /downloads/wine-mono-${WINE_MONO_VERSION}-x86.msi /staging/ && \
-    # Wine Gecko (~52MB) - for HTML rendering support
+    # Wine Gecko x86_64 (~52MB) - for HTML rendering support
     if [ ! -f /downloads/wine-gecko-${WINE_GECKO_VERSION}-x86_64.msi ]; then \
-        echo "Downloading Wine Gecko ${WINE_GECKO_VERSION}..." && \
+        echo "Downloading Wine Gecko x86_64 ${WINE_GECKO_VERSION}..." && \
         curl -fSL -o /downloads/wine-gecko-${WINE_GECKO_VERSION}-x86_64.msi \
             "https://dl.winehq.org/wine/wine-gecko/${WINE_GECKO_VERSION}/wine-gecko-${WINE_GECKO_VERSION}-x86_64.msi"; \
     fi && \
     cp /downloads/wine-gecko-${WINE_GECKO_VERSION}-x86_64.msi /staging/ && \
+    # Wine Gecko x86 (~30MB) - for 32-bit support
+    if [ ! -f /downloads/wine-gecko-${WINE_GECKO_VERSION}-x86.msi ]; then \
+        echo "Downloading Wine Gecko x86 ${WINE_GECKO_VERSION}..." && \
+        curl -fSL -o /downloads/wine-gecko-${WINE_GECKO_VERSION}-x86.msi \
+            "https://dl.winehq.org/wine/wine-gecko/${WINE_GECKO_VERSION}/wine-gecko-${WINE_GECKO_VERSION}-x86.msi"; \
+    fi && \
+    cp /downloads/wine-gecko-${WINE_GECKO_VERSION}-x86.msi /staging/ && \
     # Create version manifest
     echo "PYTHON_VERSION=${PYTHON_FULL_VERSION}" > /staging/.versions && \
     echo "WINE_MONO_VERSION=${WINE_MONO_VERSION}" >> /staging/.versions && \
@@ -111,7 +117,7 @@ RUN --mount=type=cache,target=/downloads,id=mt5-downloads-alpine,sharing=locked 
     echo "GRPCIO_VERSION=${GRPCIO_VERSION}" >> /staging/.versions && \
     echo "NUMPY_VERSION=${NUMPY_VERSION}" >> /staging/.versions && \
     echo "BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> /staging/.versions && \
-    echo "BASE_IMAGE=alpine321" >> /staging/.versions && \
+    echo "BASE_IMAGE=debianbookworm" >> /staging/.versions && \
     ls -la /staging/
 
 # ============================================================
@@ -126,7 +132,6 @@ ARG WINE_MONO_VERSION
 ARG WINE_GECKO_VERSION
 
 # Build complete Wine prefix (Python + packages, NOT MT5)
-# Following original repo approach: Mono + direct registry (no winetricks)
 RUN --mount=from=downloader,source=/staging,target=/staging \
     set -eux && \
     umask 0 && \
@@ -147,7 +152,7 @@ RUN --mount=from=downloader,source=/staging,target=/staging \
         wineserver -w" && \
     test -d /wine-build/drive_c || { echo "FAIL: Wine prefix not created"; exit 1; } && \
     # ============================================================
-    # Step 2: Install Wine Mono (for .NET support, like original repo)
+    # Step 2: Install Wine Mono (for .NET support)
     # ============================================================
     echo "=== Step 2/6: Installing Wine Mono ${WINE_MONO_VERSION} ===" && \
     xvfb-run -a sh -c "\
@@ -159,9 +164,10 @@ RUN --mount=from=downloader,source=/staging,target=/staging \
     echo "=== Step 3/6: Installing Wine Gecko ${WINE_GECKO_VERSION} ===" && \
     xvfb-run -a sh -c "\
         wine msiexec /i /staging/wine-gecko-${WINE_GECKO_VERSION}-x86_64.msi /quiet && \
+        wine msiexec /i /staging/wine-gecko-${WINE_GECKO_VERSION}-x86.msi /quiet && \
         wineserver -w" && \
     # ============================================================
-    # Step 4: Set Windows version to win10 (via registry, no winetricks)
+    # Step 4: Set Windows version to win10 (via registry)
     # ============================================================
     echo "=== Step 4/6: Setting Windows version to win10 ===" && \
     xvfb-run -a sh -c "\
@@ -219,24 +225,25 @@ ARG WINE_MONO_VERSION
 ARG WINE_GECKO_VERSION
 
 # OCI-compliant image metadata
-LABEL org.opencontainers.image.title="MetaTrader5 Docker Alpine"
-LABEL org.opencontainers.image.description="MetaTrader5 with Wine 10 on Alpine 3.21"
+LABEL org.opencontainers.image.title="MetaTrader5 Docker Debian"
+LABEL org.opencontainers.image.description="MetaTrader5 with Wine 10.0 on Debian Bookworm"
 LABEL org.opencontainers.image.version="${VERSION}"
 LABEL org.opencontainers.image.created="${BUILD_DATE}"
 LABEL org.opencontainers.image.authors="marlonsc"
 LABEL org.opencontainers.image.url="https://github.com/marlonsc/mt5-docker"
 LABEL org.opencontainers.image.source="https://github.com/marlonsc/mt5-docker"
 LABEL org.opencontainers.image.licenses="MIT"
-LABEL org.opencontainers.image.ref.name="mt5-docker-alpine"
+LABEL org.opencontainers.image.ref.name="mt5-docker-debian"
 LABEL org.opencontainers.image.vendor="marlonsc"
-LABEL org.opencontainers.image.base.name="ghcr.io/linuxserver/baseimage-kasmvnc:alpine321"
-LABEL build_version="Metatrader Docker Alpine:- ${VERSION} Build-date:- ${BUILD_DATE}"
+LABEL org.opencontainers.image.base.name="ghcr.io/linuxserver/baseimage-kasmvnc:debianbookworm"
+LABEL build_version="Metatrader Docker Debian:- ${VERSION} Build-date:- ${BUILD_DATE}"
 LABEL maintainer="marlonsc"
 LABEL mt5.python.version="${PYTHON_VERSION}"
 LABEL mt5.grpcio.version="${GRPCIO_VERSION}"
 LABEL mt5.wine.mono.version="${WINE_MONO_VERSION}"
 LABEL mt5.wine.gecko.version="${WINE_GECKO_VERSION}"
-LABEL mt5.base.os="alpine321"
+LABEL mt5.base.os="debianbookworm"
+LABEL mt5.wine.version="10.0"
 
 # Environment variables
 ENV TITLE=Metatrader5
