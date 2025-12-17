@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import NamedTuple
 
 # Terminal functions
 def initialize(
@@ -13,12 +14,12 @@ def login(login: int, password: str, server: str, timeout: int = 60000) -> bool:
 def shutdown() -> None: ...
 def version() -> tuple[int, int, str] | None: ...
 def last_error() -> tuple[int, str]: ...
-def terminal_info() -> TerminalInfo: ...
-def account_info() -> AccountInfo: ...
+def terminal_info() -> TerminalInfo | None: ...
+def account_info() -> AccountInfo | None: ...
 
 # Symbol functions
 def symbols_total() -> int: ...
-def symbols_get(group: str | None = None) -> tuple[SymbolInfo, ...]: ...
+def symbols_get(group: str | None = None) -> tuple[SymbolInfo, ...] | None: ...
 def symbol_info(symbol: str) -> SymbolInfo | None: ...
 def symbol_info_tick(symbol: str) -> Tick | None: ...
 def symbol_select(symbol: str, enable: bool = True) -> bool: ...
@@ -29,35 +30,38 @@ def copy_rates_from(
     timeframe: int,
     date_from: datetime | int,
     count: int,
-) -> tuple[tuple[int, float, float, float, float, int, int, int], ...]: ...
+) -> tuple[tuple[int, float, float, float, float, int, int, int], ...] | None: ...
 def copy_rates_from_pos(
     symbol: str,
     timeframe: int,
     start_pos: int,
     count: int,
-) -> tuple[tuple[int, float, float, float, float, int, int, int], ...]: ...
+) -> tuple[tuple[int, float, float, float, float, int, int, int], ...] | None: ...
 def copy_rates_range(
     symbol: str,
     timeframe: int,
     date_from: datetime | int,
     date_to: datetime | int,
-) -> tuple[tuple[int, float, float, float, float, int, int, int], ...]: ...
+) -> tuple[tuple[int, float, float, float, float, int, int, int], ...] | None: ...
 def copy_ticks_from(
     symbol: str,
     date_from: datetime | int,
     count: int,
     flags: int,
-) -> tuple[Tick, ...]: ...
+) -> tuple[Tick, ...] | None: ...
 def copy_ticks_range(
     symbol: str,
     date_from: datetime | int,
     date_to: datetime | int,
     flags: int,
-) -> tuple[Tick, ...]: ...
+) -> tuple[Tick, ...] | None: ...
 
 # Trading functions
 def order_calc_margin(
-    action: int, symbol: str, volume: float, price: float
+    action: int,
+    symbol: str,
+    volume: float,
+    price: float,
 ) -> float | None: ...
 def order_calc_profit(
     action: int,
@@ -66,8 +70,8 @@ def order_calc_profit(
     price_open: float,
     price_close: float,
 ) -> float | None: ...
-def order_check(request: dict[str, int | float | str]) -> OrderCheckResult: ...
-def order_send(request: dict[str, int | float | str]) -> OrderSendResult: ...
+def order_check(request: dict[str, int | float | str]) -> OrderCheckResult | None: ...
+def order_send(request: dict[str, int | float | str]) -> OrderSendResult | None: ...
 
 # Position functions
 def positions_total() -> int: ...
@@ -75,7 +79,7 @@ def positions_get(
     symbol: str | None = None,
     group: str | None = None,
     ticket: int | None = None,
-) -> tuple[TradePosition, ...]: ...
+) -> tuple[TradePosition, ...] | None: ...
 
 # Order functions
 def orders_total() -> int: ...
@@ -83,11 +87,12 @@ def orders_get(
     symbol: str | None = None,
     group: str | None = None,
     ticket: int | None = None,
-) -> tuple[TradeOrder, ...]: ...
+) -> tuple[TradeOrder, ...] | None: ...
 
 # History functions
 def history_orders_total(
-    date_from: datetime | int, date_to: datetime | int
+    date_from: datetime | int,
+    date_to: datetime | int,
 ) -> int | None: ...
 def history_orders_get(
     date_from: datetime | int | None = None,
@@ -95,9 +100,10 @@ def history_orders_get(
     group: str | None = None,
     ticket: int | None = None,
     position: int | None = None,
-) -> tuple[TradeOrder, ...]: ...
+) -> tuple[TradeOrder, ...] | None: ...
 def history_deals_total(
-    date_from: datetime | int, date_to: datetime | int
+    date_from: datetime | int,
+    date_to: datetime | int,
 ) -> int | None: ...
 def history_deals_get(
     date_from: datetime | int | None = None,
@@ -105,7 +111,7 @@ def history_deals_get(
     group: str | None = None,
     ticket: int | None = None,
     position: int | None = None,
-) -> tuple[TradeDeal, ...]: ...
+) -> tuple[TradeDeal, ...] | None: ...
 
 # Data classes (namedtuples)
 class TerminalInfo:
@@ -131,6 +137,7 @@ class TerminalInfo:
     path: str
     data_path: str
     commondata_path: str
+    def _asdict(self) -> dict[str, object]: ...
 
 class AccountInfo:
     login: int
@@ -161,6 +168,7 @@ class AccountInfo:
     server: str
     currency: str
     company: str
+    def _asdict(self) -> dict[str, object]: ...
 
 class SymbolInfo:
     custom: bool
@@ -260,6 +268,7 @@ class SymbolInfo:
     page: str
     path: str
 
+    def _asdict(self) -> dict[str, object]: ...
 class Tick:
     time: int
     bid: float
@@ -270,6 +279,7 @@ class Tick:
     flags: int
     volume_real: float
 
+    def _asdict(self) -> dict[str, object]: ...
 class TradePosition:
     ticket: int
     time: int
@@ -291,6 +301,7 @@ class TradePosition:
     comment: str
     external_id: str
 
+    def _asdict(self) -> dict[str, object]: ...
 class TradeOrder:
     ticket: int
     time_setup: int
@@ -317,6 +328,7 @@ class TradeOrder:
     comment: str
     external_id: str
 
+    def _asdict(self) -> dict[str, object]: ...
 class TradeDeal:
     ticket: int
     order: int
@@ -337,6 +349,7 @@ class TradeDeal:
     comment: str
     external_id: str
 
+    def _asdict(self) -> dict[str, object]: ...
 class OrderCheckResult:
     retcode: int
     balance: float
@@ -348,6 +361,7 @@ class OrderCheckResult:
     comment: str
     request: dict[str, int | float | str]
 
+    def _asdict(self) -> dict[str, object]: ...
 class OrderSendResult:
     retcode: int
     deal: int
@@ -360,3 +374,5 @@ class OrderSendResult:
     request_id: int
     retcode_external: int
     request: dict[str, int | float | str]
+
+    def _asdict(self) -> dict[str, object]: ...

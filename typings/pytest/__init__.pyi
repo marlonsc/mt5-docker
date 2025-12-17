@@ -1,5 +1,3 @@
-"""Type stubs for pytest."""
-
 from collections.abc import Callable
 from typing import Any, Literal, TypeVar, overload
 
@@ -18,12 +16,11 @@ mark: MarkGenerator
 
 # Overloads to support both @fixture and @fixture(scope=...)
 @overload
-def fixture(func: _F) -> _F: ...
+def fixture[F: Callable[..., Any]](func: _F) -> _F: ...
 @overload
 def fixture(
     scope: Literal["function", "class", "module", "package", "session"] = ...,
     autouse: bool = ...,
     name: str | None = ...,
 ) -> Callable[[_F], _F]: ...
-
 def skip(reason: str = ...) -> None: ...

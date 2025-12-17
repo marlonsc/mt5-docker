@@ -5,8 +5,10 @@ services:
       dockerfile: Dockerfile
       args:
         # Pin versions for reproducibility (update in versions.env)
-        PYTHON_VERSION: "3.12.8"
-        GECKO_VERSION: "2.47.4"
+        PYTHON_VERSION: "3.12"
+        GRPCIO_VERSION: "1.76.0"
+        WINE_MONO_VERSION: "9.4.0"
+        NUMPY_VERSION: "1.26.4"
         # MT5 pip package installed at runtime (always latest)
         BUILD_DATE: "${BUILD_DATE:-}"
         VERSION: "${VERSION:-local}"
@@ -17,7 +19,7 @@ services:
       - config_data:/config:uid=911,gid=911
     ports:
       - "${MT5_VNC_PORT:-3000}:3000"    # KasmVNC web interface
-      - "${MT5_RPYC_PORT:-8001}:8001"   # RPyC server for mt5linux
+      - "${MT5_GRPC_PORT:-8001}:8001"   # gRPC server for mt5linux
       - "${MT5_HEALTH_PORT:-8002}:8002" # Health check endpoint
     env_file:
       - path: ../.env
@@ -37,7 +39,7 @@ services:
       - HEALTH_CHECK_INTERVAL=${HEALTH_CHECK_INTERVAL:-30}
       - AUTO_RECOVERY_ENABLED=${AUTO_RECOVERY_ENABLED:-1}
       # Debug and update settings
-      - MT5_DEBUG=${MT5_DEBUG:-1}     # Enable debug logging in RPyC bridge (1=on, 0=off)
+      - MT5_DEBUG=${MT5_DEBUG:-1}     # Enable debug logging in gRPC bridge (1=on, 0=off)
       - MT5_UPDATE=${MT5_UPDATE:-1}   # Update components on startup (1=on, 0=off)
     restart: unless-stopped
     # Resource limits for production
@@ -69,7 +71,7 @@ services:
     security_opt:
       - seccomp:unconfined
     healthcheck:
-      # Check mt5linux RPyC server (primary API) - port 8001
+      # Check mt5linux gRPC server (primary API) - port 8001
       test: ["CMD", "bash", "-c", "echo >/dev/tcp/localhost/8001"]
       interval: 30s
       timeout: 10s

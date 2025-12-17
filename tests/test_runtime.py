@@ -10,7 +10,7 @@ Tests will automatically skip if:
 Categories:
 - ContainerHealth: Container is running and healthy
 - PortExposure: All ports are correctly exposed
-- RPyCService: RPyC server functionality
+- gRPCService: gRPC server functionality
 - WinePython: Python environment in Wine
 - LinuxPython: Python environment in Linux
 - MT5Integration: MetaTrader 5 functionality
@@ -24,7 +24,7 @@ import subprocess
 from typing import Any
 
 import pytest
-import rpyc
+from mt5linux import mt5_pb2, mt5_pb2_grpc
 
 # =============================================================================
 # CONSTANTS
@@ -141,15 +141,15 @@ class TestContainerHealth:
 class TestPortExposure:
     """Test all ports are correctly exposed."""
 
-    def test_rpyc_port_exposed(self, container_name: str, rpyc_port: int) -> None:
-        """Verify RPyC port is exposed."""
+    def test_grpc_port_exposed(self, container_name: str, grpc_port: int) -> None:
+        """Verify gRPC port is exposed."""
         result = subprocess.run(
             ["docker", "port", container_name],
             capture_output=True,
             text=True,
             check=False,
         )
-        assert f"{rpyc_port}" in result.stdout, f"RPyC port {rpyc_port} not exposed"
+        assert f"{grpc_port}" in result.stdout, f"gRPC port {grpc_port} not exposed"
 
     def test_vnc_port_exposed(self, container_name: str, vnc_port: int) -> None:
         """Verify VNC port is exposed."""
@@ -174,12 +174,15 @@ class TestPortExposure:
         )
 
     def test_ports_are_isolated(
-        self, rpyc_port: int, vnc_port: int, health_port: int
+        self,
+        grpc_port: int,
+        vnc_port: int,
+        health_port: int,
     ) -> None:
         """Verify test ports don't conflict with production."""
         # Production ports
         prod_ports = {8001, 3000, 8002}
-        test_ports = {rpyc_port, vnc_port, health_port}
+        test_ports = {grpc_port, vnc_port, health_port}
 
         assert not prod_ports & test_ports, (
             "Test ports must not overlap with production"
@@ -195,14 +198,16 @@ class TestRPyCService:
     """Test RPyC service functionality."""
 
     def test_rpyc_connection_established(
-        self, rpyc_connection: rpyc.Connection
+        self,
+        rpyc_connection: rpyc.Connection,
     ) -> None:
         """Verify RPyC connection can be established."""
         assert rpyc_connection is not None
         assert hasattr(rpyc_connection, "root")
 
     def test_rpyc_health_check_returns_valid_response(
-        self, rpyc_connection: rpyc.Connection
+        self,
+        rpyc_connection: rpyc.Connection,
     ) -> None:
         """Verify RPyC health check returns valid status structure.
 
@@ -250,7 +255,9 @@ class TestWinePython:
     def test_wine_python_version(self, container_name: str) -> None:
         """Verify Python 3.12.x is installed in Wine."""
         result = docker_exec(
-            container_name, ["wine", "python", "--version"], user="abc"
+            container_name,
+            ["wine", "python", "--version"],
+            user="abc",
         )
 
         assert result.returncode == 0, f"Python not found in Wine: {result.stderr}"
@@ -265,6 +272,17 @@ class TestWinePython:
         version = result.stdout.strip()
         assert version.startswith("6."), f"Expected rpyc 6.x, got {version}"
 
+    def test_wine_grpcio_version(self, container_name: str) -> None:
+        """Verify gRPC 1.76+ is installed in Wine Python (for mt5linux client)."""
+        result = wine_python(container_name, "import grpc; print(grpc.__version__)")
+
+        assert result.returncode == 0, f"grpcio not installed: {result.stderr}"
+        version = result.stdout.strip()
+        parts = version.split(".")
+        assert int(parts[0]) >= 1 and int(parts[1]) >= 76, (
+            f"Expected grpcio 1.76+, got {version}"
+        )
+
     def test_wine_numpy_version(self, container_name: str) -> None:
         """Verify numpy 1.26.x is installed in Wine Python."""
         result = wine_python(container_name, "import numpy; print(numpy.__version__)")
@@ -276,12 +294,14 @@ class TestWinePython:
     def test_wine_metatrader5_installed(self, container_name: str) -> None:
         """Verify MetaTrader5 package is installed in Wine Python."""
         result = wine_python(
-            container_name, "import MetaTrader5; print(MetaTrader5.__version__)"
+            container_name,
+            "import MetaTrader5; print(MetaTrader5.__version__)",
         )
 
         assert result.returncode == 0, f"MetaTrader5 not installed: {result.stderr}"
         version = result.stdout.strip()
         assert version.startswith("5."), f"Expected MT5 5.x, got {version}"
+
 
 # =============================================================================
 # LINUX PYTHON TESTS
@@ -390,7 +410,9 @@ class TestStartupScripts:
 
     @pytest.mark.parametrize("script", CONTAINER_MAIN_SCRIPTS)
     def test_main_script_exists_in_container(
-        self, container_name: str, script: str
+        self,
+        container_name: str,
+        script: str,
     ) -> None:
         """Verify main script/file exists in container."""
         result = docker_exec(container_name, ["test", "-f", script])
@@ -401,7 +423,9 @@ class TestStartupScripts:
         [s for s in CONTAINER_MAIN_SCRIPTS if s.endswith(".sh")],
     )
     def test_shell_script_is_executable_in_container(
-        self, container_name: str, script: str
+        self,
+        container_name: str,
+        script: str,
     ) -> None:
         """Verify shell scripts are executable in container."""
         result = docker_exec(container_name, ["test", "-x", script])
@@ -418,7 +442,7 @@ class TestStartupScripts:
 
         required_vars = [
             "PYTHON_VERSION",
-            "RPYC_VERSION",
+            "GRPCIO_VERSION",
             "NUMPY_VERSION",
         ]
         for var in required_vars:
@@ -476,7 +500,8 @@ class TestWinePrefix:
     def test_wine_python_directory_exists(self, container_name: str) -> None:
         """Verify Python is installed in Wine prefix."""
         result = docker_exec(
-            container_name, ["test", "-d", "/config/.wine/drive_c/Python"]
+            container_name,
+            ["test", "-d", "/config/.wine/drive_c/Python"],
         )
         assert result.returncode == 0, "Python directory not found in Wine prefix"
 

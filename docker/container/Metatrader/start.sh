@@ -46,8 +46,8 @@ fi
 
 # Version fallbacks (must match versions.env)
 export PYTHON_VERSION="${PYTHON_VERSION:-3.12.8}"
-export GECKO_VERSION="${GECKO_VERSION:-2.47.4}"
-export RPYC_VERSION="${RPYC_VERSION:-6.0.2}"
+export WINE_MONO_VERSION="${WINE_MONO_VERSION:-9.4.0}"
+export GRPCIO_VERSION="${GRPCIO_VERSION:-1.76.0}"
 export NUMPY_VERSION="${NUMPY_VERSION:-1.26.4}"
 
 # Startup markers (used by s6-overlay svc-mt5server)

@@ -1,5 +1,3 @@
-"""Type stubs for python-dotenv."""
-
 from pathlib import Path
 
 def load_dotenv(

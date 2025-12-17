@@ -39,8 +39,8 @@ ALL_SCRIPTS = [
 # Required version variables
 REQUIRED_VERSIONS = [
     "PYTHON_VERSION",
-    "GECKO_VERSION",
-    "RPYC_VERSION",
+    "WINE_MONO_VERSION",
+    "GRPCIO_VERSION",
     "NUMPY_VERSION",
 ]
 
@@ -98,32 +98,40 @@ class TestVersionsEnv:
         match = re.search(r"NUMPY_VERSION=(\S+)", content)
         assert match, "NUMPY_VERSION not found"
         version = match.group(1)
-        assert version.startswith(
-            "1.26"
-        ), f"NumPy must be 1.26.x for Wine, got {version}"
+        assert version.startswith("1.26"), (
+            f"NumPy must be 1.26.x for Wine, got {version}"
+        )
 
-    def test_rpyc_version_is_6x(self) -> None:
-        """Verify RPyC version is 6.x."""
+    def test_grpcio_version_is_176_or_higher(self) -> None:
+        """Verify gRPC version is 1.76.0 or higher (required by mt5_pb2_grpc.py)."""
         versions_file = PROJECT_ROOT / DOCKER_DIR / "versions.env"
         content = versions_file.read_text()
 
-        match = re.search(r"RPYC_VERSION=(\S+)", content)
-        assert match, "RPYC_VERSION not found"
+        match = re.search(r"GRPCIO_VERSION=(\S+)", content)
+        assert match, "GRPCIO_VERSION not found"
         version = match.group(1)
-        assert version.startswith("6."), f"RPyC must be 6.x, got {version}"
+        major, minor = version.split(".")[:2]
+        assert int(major) >= 1 and int(minor) >= 76, (
+            f"gRPC must be >= 1.76.0, got {version}"
+        )
 
 
 class TestVersionConsistency:
     """Test version consistency across all configuration files."""
 
     def test_dockerfile_args_match_versions_env(self) -> None:
-        """Verify Dockerfile ARG defaults match versions.env."""
+        """Verify Dockerfile ARG defaults match versions.env.
+
+        Note: PYTHON_VERSION in Dockerfile uses major.minor (e.g., 3.12)
+        while versions.env uses major.minor.patch (e.g., 3.12.8).
+        The test checks that major.minor matches.
+        """
         versions = self._load_versions_env()
         dockerfile = (PROJECT_ROOT / DOCKER_DIR / "Dockerfile").read_text()
 
         version_vars = [
             "PYTHON_VERSION",
-            "RPYC_VERSION",
+            "GRPCIO_VERSION",
             "NUMPY_VERSION",
         ]
         for var in version_vars:
@@ -133,16 +141,25 @@ class TestVersionConsistency:
             match = re.search(pattern, dockerfile)
             assert match, f"Dockerfile missing ARG {var}"
             actual = match.group(1)
-            assert (
-                actual == expected
-            ), f"{var}: Dockerfile={actual}, versions.env={expected}"
+            # For PYTHON_VERSION, compare major.minor only
+            if var == "PYTHON_VERSION" and expected:
+                expected_major_minor = ".".join(expected.split(".")[:2])
+                assert actual == expected_major_minor, (
+                    f"{var}: Dockerfile={actual}, versions.env major.minor={expected_major_minor}"
+                )
+            else:
+                assert actual == expected, (
+                    f"{var}: Dockerfile={actual}, versions.env={expected}"
+                )
 
-    def test_pyproject_references_versions_env(self) -> None:
-        """Verify pyproject.toml comments reference versions.env."""
+    def test_pyproject_has_python_version(self) -> None:
+        """Verify pyproject.toml specifies Python version consistent with versions.env."""
+        versions = self._load_versions_env()
         pyproject = (PROJECT_ROOT / "pyproject.toml").read_text()
-        assert (
-            "versions.env" in pyproject
-        ), "pyproject.toml should reference versions.env"
+        expected_major_minor = ".".join(versions.get("PYTHON_VERSION", "3.12").split(".")[:2])
+        assert expected_major_minor in pyproject, (
+            f"pyproject.toml should reference Python {expected_major_minor}"
+        )
 
     def test_start_sh_has_version_fallbacks(self) -> None:
         """Verify start.sh has version fallback values."""
@@ -150,7 +167,7 @@ class TestVersionConsistency:
         content = script_path.read_text()
         # Should have version fallback values
         assert "PYTHON_VERSION" in content, "start.sh must have PYTHON_VERSION"
-        assert "RPYC_VERSION" in content, "start.sh must have RPYC_VERSION"
+        assert "GRPCIO_VERSION" in content, "start.sh must have GRPCIO_VERSION"
 
     def _load_versions_env(self) -> dict[str, str]:
         """Load versions from versions.env file."""
@@ -207,7 +224,7 @@ class TestDockerfile:
 
         assert "EXPOSE" in content
         assert "3000" in content, "Must expose VNC port 3000"
-        assert "8001" in content, "Must expose RPyC port 8001"
+        assert "8001" in content, "Must expose gRPC/RPyC port 8001"
 
     def test_dockerfile_has_volume_config(self) -> None:
         """Verify Dockerfile declares /config volume."""
@@ -308,7 +325,7 @@ class TestDockerCompose:
         """Verify compose uses environment variables for port configuration."""
         content = (PROJECT_ROOT / DOCKER_DIR / "compose.yaml").read_text()
         assert "${MT5_VNC_PORT:-" in content, "VNC port should use env var"
-        assert "${MT5_RPYC_PORT:-" in content, "RPyC port should use env var"
+        assert "${MT5_GRPC_PORT:-" in content, "gRPC port should use env var"
         assert "${MT5_CONTAINER_NAME:-" in content, "Container name should use env var"
 
 
@@ -378,7 +395,7 @@ class TestStartupScriptContent:
         required_functions = [
             "unpack_config",
             "init_wine_prefix",
-            "install_winetricks_deps",
+            "configure_wine_settings",
             "install_mt5_pip",
             "install_mt5_terminal",
             "generate_mt5_config",
@@ -388,9 +405,10 @@ class TestStartupScriptContent:
             assert func in content, f"setup.sh must have {func} function"
 
     def test_setup_sh_uses_winetricks_unattended(self) -> None:
-        """Verify setup.sh uses unattended winetricks mode."""
+        """Verify setup.sh configures Wine properly (no winetricks needed)."""
         content = (PROJECT_ROOT / CONTAINER_DIR / "Metatrader/setup.sh").read_text()
-        assert "WINETRICKS_UNATTENDED=1" in content, "Must set WINETRICKS_UNATTENDED=1"
+        # Win10 is set via registry, not winetricks (simpler approach)
+        assert "win10" in content, "Must configure Windows version"
 
     def test_setup_sh_handles_mt5_installation(self) -> None:
         """Verify setup.sh handles MT5 installation."""

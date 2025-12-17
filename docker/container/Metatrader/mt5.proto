@@ -1,0 +1,242 @@
+// MT5 gRPC Protocol Definition
+// Replaces RPyC with gRPC for better async performance
+syntax = "proto3";
+package mt5;
+
+// =============================================================================
+// Basic Types
+// =============================================================================
+
+message Empty {}
+
+message BoolResponse {
+    bool result = 1;
+}
+
+message IntResponse {
+    int32 value = 1;
+}
+
+message FloatResponse {
+    optional double value = 1;
+}
+
+message ErrorInfo {
+    int32 code = 1;
+    string message = 2;
+}
+
+message MT5Version {
+    int32 major = 1;
+    int32 minor = 2;
+    string build = 3;
+}
+
+message Constants {
+    map<string, int32> values = 1;
+}
+
+// =============================================================================
+// Data Types (JSON-serialized dict representation)
+// =============================================================================
+
+// Generic dict data - fields are JSON-serialized values
+message DictData {
+    string json_data = 1;  // JSON string of the dict
+}
+
+// List of dicts
+message DictList {
+    repeated string json_items = 1;  // List of JSON strings
+}
+
+// Numpy array as bytes (replaces RPyC obtain())
+message NumpyArray {
+    bytes data = 1;       // numpy.tobytes()
+    string dtype = 2;     // numpy dtype string
+    repeated int32 shape = 3;
+}
+
+// Chunked symbols response (same as current bridge.py)
+message SymbolsResponse {
+    int32 total = 1;
+    repeated string chunks = 2;  // List of JSON arrays (chunked)
+}
+
+// =============================================================================
+// Health Check
+// =============================================================================
+
+message HealthStatus {
+    bool healthy = 1;
+    bool mt5_available = 2;
+    bool connected = 3;
+    bool trade_allowed = 4;
+    int32 build = 5;
+    string reason = 6;
+}
+
+// =============================================================================
+// Request Messages
+// =============================================================================
+
+message InitRequest {
+    optional string path = 1;
+    optional int64 login = 2;
+    optional string password = 3;
+    optional string server = 4;
+    optional int32 timeout = 5;
+    bool portable = 6;
+}
+
+message LoginRequest {
+    int64 login = 1;
+    string password = 2;
+    string server = 3;
+    int32 timeout = 4;
+}
+
+message SymbolRequest {
+    string symbol = 1;
+}
+
+message SymbolsRequest {
+    optional string group = 1;
+}
+
+message SymbolSelectRequest {
+    string symbol = 1;
+    bool enable = 2;
+}
+
+message CopyRatesRequest {
+    string symbol = 1;
+    int32 timeframe = 2;
+    int64 date_from = 3;
+    int32 count = 4;
+}
+
+message CopyRatesPosRequest {
+    string symbol = 1;
+    int32 timeframe = 2;
+    int32 start_pos = 3;
+    int32 count = 4;
+}
+
+message CopyRatesRangeRequest {
+    string symbol = 1;
+    int32 timeframe = 2;
+    int64 date_from = 3;
+    int64 date_to = 4;
+}
+
+message CopyTicksRequest {
+    string symbol = 1;
+    int64 date_from = 2;
+    int32 count = 3;
+    int32 flags = 4;
+}
+
+message CopyTicksRangeRequest {
+    string symbol = 1;
+    int64 date_from = 2;
+    int64 date_to = 3;
+    int32 flags = 4;
+}
+
+message OrderRequest {
+    string json_request = 1;  // JSON-serialized order dict
+}
+
+message PositionsRequest {
+    optional string symbol = 1;
+    optional string group = 2;
+    optional int64 ticket = 3;
+}
+
+message OrdersRequest {
+    optional string symbol = 1;
+    optional string group = 2;
+    optional int64 ticket = 3;
+}
+
+message HistoryRequest {
+    optional int64 date_from = 1;
+    optional int64 date_to = 2;
+    optional string group = 3;
+    optional int64 ticket = 4;
+    optional int64 position = 5;
+}
+
+message MarginRequest {
+    int32 action = 1;
+    string symbol = 2;
+    double volume = 3;
+    double price = 4;
+}
+
+message ProfitRequest {
+    int32 action = 1;
+    string symbol = 2;
+    double volume = 3;
+    double price_open = 4;
+    double price_close = 5;
+}
+
+// =============================================================================
+// MT5 Service Definition
+// =============================================================================
+
+service MT5Service {
+    // Terminal operations
+    rpc HealthCheck(Empty) returns (HealthStatus);
+    rpc Initialize(InitRequest) returns (BoolResponse);
+    rpc Login(LoginRequest) returns (BoolResponse);
+    rpc Shutdown(Empty) returns (Empty);
+    rpc Version(Empty) returns (MT5Version);
+    rpc LastError(Empty) returns (ErrorInfo);
+    rpc GetConstants(Empty) returns (Constants);
+
+    // Account/Terminal info
+    rpc TerminalInfo(Empty) returns (DictData);
+    rpc AccountInfo(Empty) returns (DictData);
+
+    // Symbol operations
+    rpc SymbolsTotal(Empty) returns (IntResponse);
+    rpc SymbolsGet(SymbolsRequest) returns (SymbolsResponse);
+    rpc SymbolInfo(SymbolRequest) returns (DictData);
+    rpc SymbolInfoTick(SymbolRequest) returns (DictData);
+    rpc SymbolSelect(SymbolSelectRequest) returns (BoolResponse);
+
+    // Market data - returns numpy arrays as bytes
+    rpc CopyRatesFrom(CopyRatesRequest) returns (NumpyArray);
+    rpc CopyRatesFromPos(CopyRatesPosRequest) returns (NumpyArray);
+    rpc CopyRatesRange(CopyRatesRangeRequest) returns (NumpyArray);
+    rpc CopyTicksFrom(CopyTicksRequest) returns (NumpyArray);
+    rpc CopyTicksRange(CopyTicksRangeRequest) returns (NumpyArray);
+
+    // Trading operations
+    rpc OrderCalcMargin(MarginRequest) returns (FloatResponse);
+    rpc OrderCalcProfit(ProfitRequest) returns (FloatResponse);
+    rpc OrderCheck(OrderRequest) returns (DictData);
+    rpc OrderSend(OrderRequest) returns (DictData);
+
+    // Position operations
+    rpc PositionsTotal(Empty) returns (IntResponse);
+    rpc PositionsGet(PositionsRequest) returns (DictList);
+
+    // Order operations
+    rpc OrdersTotal(Empty) returns (IntResponse);
+    rpc OrdersGet(OrdersRequest) returns (DictList);
+
+    // History operations
+    rpc HistoryOrdersTotal(HistoryRequest) returns (IntResponse);
+    rpc HistoryOrdersGet(HistoryRequest) returns (DictList);
+    rpc HistoryDealsTotal(HistoryRequest) returns (IntResponse);
+    rpc HistoryDealsGet(HistoryRequest) returns (DictList);
+
+    // Market Depth (DOM) operations
+    rpc MarketBookAdd(SymbolRequest) returns (BoolResponse);
+    rpc MarketBookGet(SymbolRequest) returns (DictList);
+    rpc MarketBookRelease(SymbolRequest) returns (BoolResponse);
+}

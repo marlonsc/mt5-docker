@@ -3,22 +3,20 @@
     build-backend = "poetry.core.masonry.api"
 
 [tool.mypy]
-    exclude = ["typings/"]
+    exclude = [
+        "*.pyi",
+        "docker/container/Metatrader/mt5_pb2.py",
+        "docker/container/Metatrader/mt5_pb2_grpc.py",
+        "typings/",
+    ]
     mypy_path = "typings"
     python_version = "3.12"
     strict = true
-    warn_return_any = true
-    warn_unused_configs = true
 
-    [[tool.mypy.overrides]]
-        disallow_untyped_calls = false
-        disallow_untyped_defs = false
-        disable_error_code = ["type-var", "call-arg", "operator"]
-        module = "tests.*"
 
 [tool.poetry]
     authors = ["marlonsc <marlonsc@gmail.com>"]
-    description = "Dockerized MetaTrader 5 environment with RPyC bridge"
+    description = "Dockerized MetaTrader 5 environment with gRPC bridge"
     license = "MIT"
     name = "mt5docker"
     package-mode = false
@@ -26,9 +24,9 @@
     version = "0.1.9"
 
     [tool.poetry.dependencies]
+        grpcio = "^1.60.0"
         python = ">=3.12"
         python-dotenv = "^1.0.0" # For loading .env files
-        rpyc = "6.0.2"           # RPYC_VERSION in versions.env
 
     [tool.poetry.group.dev.dependencies]
         hypothesis = "^6.148.7"
@@ -37,16 +35,28 @@
         pytest = "^8.0.0"
         pytest-dotenv = "^0.5.0"
         pytest-timeout = "^2.0.0"
-        ruff = "^0.8.0"
+        ruff = "0.11.13"
+
+[tool.pyrefly]
+    exclude = [
+        "*.pyi",
+        "mt5linux/mt5_pb2.py",
+        "mt5linux/mt5_pb2_grpc.py",
+        "typings/",
+    ]
 
 [tool.pyright]
-    exclude = ["typings", ".venv"]
+    exclude = [
+        "*.pyi",
+        "docker/container/Metatrader/mt5_pb2.py",
+        "docker/container/Metatrader/mt5_pb2_grpc.py",
+        "typings/",
+    ]
     pythonPlatform = "Linux"
     pythonVersion = "3.12"
-    reportMissingImports = false
-    reportMissingTypeStubs = false
     stubPath = "typings"
     typeCheckingMode = "strict"
+    typeStubSearchPaths = ["/typings"]
 
 [tool.pytest.ini_options]
     addopts = "-v --tb=short"
@@ -59,8 +69,7 @@
     timeout = 300
 
 [tool.ruff]
-    # bridge.py is bundled from mt5linux - external file, don't lint
-    extend-exclude = ["typings", "docker/container/Metatrader/bridge.py"]
+
     line-length = 88
     target-version = "py312"
 
@@ -71,15 +80,16 @@
             "D203",    # incorrect-blank-line-before-class (incompatible with D211)
             "D213",    # multi-line-summary-second-line (incompatible with D212)
         ]
+        exclude = [
+            "*.pyi",
+            "mt5linux/mt5_pb2.py",
+            "mt5linux/mt5_pb2_grpc.py",
+            "typings/",
+        ]
         select = ["ALL"]
 
-    [tool.ruff.lint.per-file-ignores]
-        "tests/*" = [
-            "ANN401",   # Any ok for dynamic rpyc module access
-            "PLR2004",  # magic values ok in tests
-            "S101",     # assert ok in tests
-            "S603",     # subprocess ok in tests
-            "S607",     # partial path ok in tests
-            "SLF001",   # private member access ok for rpyc internals
-            "TC003",    # stdlib type imports in TYPE_CHECKING ok
-        ]
+
+            [tool.ruff.lint.per-file-ignores]
+                "tests/*" = [
+                    "S101",    # assert ok in tests
+                ]

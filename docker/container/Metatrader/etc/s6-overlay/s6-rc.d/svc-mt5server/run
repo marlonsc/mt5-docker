@@ -1,7 +1,7 @@
 #!/usr/bin/with-contenv bash
-# s6 service: MT5 Terminal + RPyC Bridge Manager
+# s6 service: MT5 Terminal + gRPC Bridge Manager
 # =============================================================================
-# Manages both MT5 terminal and RPyC bridge server lifecycle.
+# Manages both MT5 terminal and gRPC bridge server lifecycle.
 # Monitors restart token from health_monitor and performs full restart.
 #
 # Token-based communication:
@@ -48,7 +48,7 @@ is_mt5_running() {
 }
 
 is_bridge_running() {
-    pgrep -f "wine.*python.*mt5linux.bridge" >/dev/null 2>&1
+    pgrep -f "wine.*python.*bridge" >/dev/null 2>&1
 }
 
 kill_mt5() {
@@ -59,10 +59,10 @@ kill_mt5() {
 }
 
 kill_bridge() {
-    log "Stopping bridge server..."
-    pkill -f "wine.*python.*mt5linux.bridge" 2>/dev/null || true
+    log "Stopping gRPC bridge server..."
+    pkill -f "wine.*python.*bridge" 2>/dev/null || true
     sleep 1
-    pkill -9 -f "wine.*python.*mt5linux.bridge" 2>/dev/null || true
+    pkill -9 -f "wine.*python.*bridge" 2>/dev/null || true
 }
 
 start_mt5_terminal() {
@@ -103,9 +103,9 @@ start_mt5_terminal() {
 }
 
 start_bridge() {
-    log "Starting bridge server on port ${mt5server_port}..."
+    log "Starting gRPC bridge server on port ${mt5server_port}..."
 
-    bridge_args="--host 0.0.0.0 -p ${mt5server_port}"
+    bridge_args="--host 0.0.0.0 --port ${mt5server_port}"
     if [ "${MT5_DEBUG:-1}" = "1" ]; then
         bridge_args="${bridge_args} --debug"
     fi
@@ -115,10 +115,10 @@ start_bridge() {
 
     sleep 3
     if is_bridge_running; then
-        log "Bridge server started (PID: $BRIDGE_PID)"
+        log "gRPC bridge server started (PID: $BRIDGE_PID)"
         return 0
     else
-        log "ERROR: Bridge server failed to start"
+        log "ERROR: gRPC bridge server failed to start"
         return 1
     fi
 }

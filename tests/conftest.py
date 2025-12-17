@@ -22,14 +22,17 @@ import logging
 import os
 import subprocess
 import time
-from collections.abc import Generator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
+import grpc
 import pytest
-import rpyc
 from dotenv import load_dotenv
+from mt5linux import mt5_pb2, mt5_pb2_grpc
+
+if TYPE_CHECKING:
+    from collections.abc import Generator
 
 # =============================================================================
 # CONFIGURATION
@@ -45,11 +48,11 @@ class DockerContainerConfig:
     """Configuration for the test container."""
 
     container_name: str
-    rpyc_port: int
+    grpc_port: int  # Port for gRPC bridge
     vnc_port: int
     health_port: int
     startup_timeout: int
-    rpyc_timeout: int
+    grpc_timeout: int
     login: str | None
     password: str | None
     server: str
@@ -59,11 +62,11 @@ def get_test_container_config() -> DockerContainerConfig:
     """Get test container configuration from environment."""
     return DockerContainerConfig(
         container_name=os.environ.get("MT5_CONTAINER_NAME", "mt5docker-test"),
-        rpyc_port=int(os.environ.get("MT5_RPYC_PORT", "48812")),
+        grpc_port=int(os.environ.get("MT5_GRPC_PORT", "48812")),
         vnc_port=int(os.environ.get("MT5_VNC_PORT", "43000")),
         health_port=int(os.environ.get("MT5_HEALTH_PORT", "48002")),
         startup_timeout=int(os.environ.get("MT5_STARTUP_TIMEOUT", "180")),
-        rpyc_timeout=int(os.environ.get("MT5_RPYC_TIMEOUT", "60")),
+        grpc_timeout=int(os.environ.get("MT5_GRPC_TIMEOUT", "60")),
         login=os.environ.get("MT5_LOGIN"),
         password=os.environ.get("MT5_PASSWORD"),
         server=os.environ.get("MT5_SERVER", "MetaQuotes-Demo"),
@@ -108,37 +111,37 @@ def is_container_running(name: str | None = None) -> bool:
     return bool(result.stdout.strip())
 
 
-def is_rpyc_service_ready(host: str = "localhost", port: int | None = None) -> bool:
-    """Check if RPyC service is ready (actual handshake, not just port).
+def is_grpc_service_ready(host: str = "localhost", port: int | None = None) -> bool:
+    """Check if gRPC service is ready (actual handshake, not just port).
 
-    Uses rpyc.connect() for our custom MT5Service.
-    Uses a 60 second timeout because Wine/Python RPyC server can be slow.
+    Uses grpc.insecure_channel() for MT5Service.
+    Uses a 60 second timeout because Wine/Python gRPC server can be slow.
     """
-    rpyc_port = port or _config.rpyc_port
+    grpc_port = port or _config.grpc_port
     try:
-        conn = rpyc.connect(host, rpyc_port, config={"sync_request_timeout": 60})
-        # Verify connection works by calling health_check
-        _ = conn.root.health_check()
-        conn.close()
-    except (OSError, ConnectionError, TimeoutError, EOFError):
+        channel = grpc.insecure_channel(f"{host}:{grpc_port}")
+        stub = mt5_pb2_grpc.MT5ServiceStub(channel)
+        # Verify connection works by calling HealthCheck
+        response = stub.HealthCheck(mt5_pb2.Empty(), timeout=60)
+        channel.close()
+        return response.healthy
+    except grpc.RpcError:
         return False
-    else:
-        return True
 
 
-def wait_for_rpyc_service(
+def wait_for_grpc_service(
     host: str = "localhost",
     port: int | None = None,
     timeout: int | None = None,
 ) -> bool:
-    """Wait for RPyC service to become ready."""
-    rpyc_port = port or _config.rpyc_port
+    """Wait for gRPC service to become ready."""
+    grpc_port = port or _config.grpc_port
     wait_timeout = timeout or _config.startup_timeout
     start = time.time()
     check_interval = 3
 
     while time.time() - start < wait_timeout:
-        if is_rpyc_service_ready(host, rpyc_port):
+        if is_grpc_service_ready(host, grpc_port):
             return True
         time.sleep(check_interval)
 
@@ -167,10 +170,10 @@ def start_test_container() -> None:
             "Container %s already running, reusing",
             _config.container_name,
         )
-        # Wait for RPyC to be ready if not already
-        if not is_rpyc_service_ready():
-            _logger.info("Waiting for RPyC service...")
-            wait_for_rpyc_service()
+        # Wait for gRPC to be ready if not already
+        if not is_grpc_service_ready():
+            _logger.info("Waiting for gRPC service...")
+            wait_for_grpc_service()
         return
 
     # Require credentials to start new container
@@ -189,12 +192,12 @@ def start_test_container() -> None:
     test_env.update(
         {
             "MT5_CONTAINER_NAME": _config.container_name,
-            "MT5_RPYC_PORT": str(_config.rpyc_port),
+            "MT5_GRPC_PORT": str(_config.grpc_port),
             "MT5_VNC_PORT": str(_config.vnc_port),
             "MT5_HEALTH_PORT": str(_config.health_port),
             "MT5_VOLUME_NAME": f"{_config.container_name}-data",
             "MT5_NETWORK_NAME": f"{_config.container_name}-network",
-        }
+        },
     )
 
     # Start container with test environment
@@ -213,10 +216,10 @@ def start_test_container() -> None:
     if result.returncode != 0:
         pytest.skip(f"Failed to start container: {result.stderr}")
 
-    # Wait for RPyC service
-    _logger.info("Waiting for RPyC service on port %s...", _config.rpyc_port)
+    # Wait for gRPC service
+    _logger.info("Waiting for gRPC service on port %s...", _config.grpc_port)
 
-    if not wait_for_rpyc_service():
+    if not wait_for_grpc_service():
         logs = subprocess.run(
             ["docker", "logs", _config.container_name, "--tail", "50"],
             capture_output=True,
@@ -224,14 +227,14 @@ def start_test_container() -> None:
             check=False,
         )
         pytest.skip(
-            f"RPyC service not ready after {_config.startup_timeout}s.\n"
-            f"Logs: {logs.stdout[-500:] if logs.stdout else logs.stderr[-500:]}"
+            f"gRPC service not ready after {_config.startup_timeout}s.\n"
+            f"Logs: {logs.stdout[-500:] if logs.stdout else logs.stderr[-500:]}",
         )
 
     _logger.info(
         "Test container %s ready on port %s",
         _config.container_name,
-        _config.rpyc_port,
+        _config.grpc_port,
     )
 
 
@@ -269,9 +272,9 @@ def container_name(docker_container: None) -> str:  # noqa: ARG001
 
 
 @pytest.fixture(scope="session")
-def rpyc_port(docker_container: None) -> int:  # noqa: ARG001
-    """Provide test RPyC port (requires container)."""
-    return _config.rpyc_port
+def grpc_port(docker_container: None) -> int:  # noqa: ARG001
+    """Provide test gRPC port (requires container)."""
+    return _config.grpc_port
 
 
 @pytest.fixture(scope="session")
@@ -287,38 +290,22 @@ def vnc_port(docker_container: None) -> int:  # noqa: ARG001
 
 
 @pytest.fixture
-def rpyc_connection(
+def grpc_channel(
     docker_container: None,  # noqa: ARG001
-) -> Generator[rpyc.Connection, None, None]:
-    """Provide RPyC connection to test container.
-
-    Uses rpyc.connect() for our custom MT5Service.
-    """
-    conn = rpyc.connect(
-        "localhost",
-        _config.rpyc_port,
-        config={"sync_request_timeout": _config.rpyc_timeout},
-    )
-    yield conn
-    conn.close()
+) -> Generator[grpc.Channel, None, None]:
+    """Provide gRPC channel to test container."""
+    channel = grpc.insecure_channel(f"localhost:{_config.grpc_port}")
+    yield channel
+    channel.close()
 
 
 @pytest.fixture
-def mt5_service(rpyc_connection: rpyc.Connection) -> Any:
-    """Provide MT5Service root object via RPyC."""
-    root = rpyc_connection.root
-    assert root is not None, "RPyC root is None"
-    return root
+def mt5_stub(grpc_channel: grpc.Channel) -> mt5_pb2_grpc.MT5ServiceStub:
+    """Provide MT5Service stub via gRPC."""
+    return mt5_pb2_grpc.MT5ServiceStub(grpc_channel)
 
 
 @pytest.fixture
-def mt5_module(rpyc_connection: rpyc.Connection) -> Any:
-    """Provide MT5 service root via RPyC.
-
-    Note: get_mt5() was removed for security (exposed raw module).
-    The root service directly exposes all MT5 functions like version(),
-    last_error(), copy_rates(), etc.
-    """
-    root = rpyc_connection.root
-    assert root is not None, "RPyC root is None"
-    return root
+def mt5_service(grpc_channel: grpc.Channel) -> mt5_pb2_grpc.MT5ServiceStub:
+    """Provide MT5Service stub via gRPC (alias for mt5_stub)."""
+    return mt5_pb2_grpc.MT5ServiceStub(grpc_channel)

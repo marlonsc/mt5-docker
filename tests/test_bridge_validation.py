@@ -9,7 +9,6 @@ Tests include:
 
 from __future__ import annotations
 
-import inspect
 import subprocess
 import time
 from typing import Any
@@ -200,49 +199,84 @@ OFFICIAL_MT5_FUNCTIONS = {
 OFFICIAL_MT5_CONSTANTS = {
     # Timeframes (21 total)
     "timeframes": [
-        "TIMEFRAME_M1", "TIMEFRAME_M2", "TIMEFRAME_M3", "TIMEFRAME_M4",
-        "TIMEFRAME_M5", "TIMEFRAME_M6", "TIMEFRAME_M10", "TIMEFRAME_M12",
-        "TIMEFRAME_M15", "TIMEFRAME_M20", "TIMEFRAME_M30", "TIMEFRAME_H1",
-        "TIMEFRAME_H2", "TIMEFRAME_H3", "TIMEFRAME_H4", "TIMEFRAME_H6",
-        "TIMEFRAME_H8", "TIMEFRAME_H12", "TIMEFRAME_D1", "TIMEFRAME_W1",
+        "TIMEFRAME_M1",
+        "TIMEFRAME_M2",
+        "TIMEFRAME_M3",
+        "TIMEFRAME_M4",
+        "TIMEFRAME_M5",
+        "TIMEFRAME_M6",
+        "TIMEFRAME_M10",
+        "TIMEFRAME_M12",
+        "TIMEFRAME_M15",
+        "TIMEFRAME_M20",
+        "TIMEFRAME_M30",
+        "TIMEFRAME_H1",
+        "TIMEFRAME_H2",
+        "TIMEFRAME_H3",
+        "TIMEFRAME_H4",
+        "TIMEFRAME_H6",
+        "TIMEFRAME_H8",
+        "TIMEFRAME_H12",
+        "TIMEFRAME_D1",
+        "TIMEFRAME_W1",
         "TIMEFRAME_MN1",
     ],
     # Order types (9 total)
     "order_types": [
-        "ORDER_TYPE_BUY", "ORDER_TYPE_SELL", "ORDER_TYPE_BUY_LIMIT",
-        "ORDER_TYPE_SELL_LIMIT", "ORDER_TYPE_BUY_STOP", "ORDER_TYPE_SELL_STOP",
-        "ORDER_TYPE_BUY_STOP_LIMIT", "ORDER_TYPE_SELL_STOP_LIMIT",
+        "ORDER_TYPE_BUY",
+        "ORDER_TYPE_SELL",
+        "ORDER_TYPE_BUY_LIMIT",
+        "ORDER_TYPE_SELL_LIMIT",
+        "ORDER_TYPE_BUY_STOP",
+        "ORDER_TYPE_SELL_STOP",
+        "ORDER_TYPE_BUY_STOP_LIMIT",
+        "ORDER_TYPE_SELL_STOP_LIMIT",
         "ORDER_TYPE_CLOSE_BY",
     ],
     # Trade actions (6 total)
     "trade_actions": [
-        "TRADE_ACTION_DEAL", "TRADE_ACTION_PENDING", "TRADE_ACTION_SLTP",
-        "TRADE_ACTION_MODIFY", "TRADE_ACTION_REMOVE", "TRADE_ACTION_CLOSE_BY",
+        "TRADE_ACTION_DEAL",
+        "TRADE_ACTION_PENDING",
+        "TRADE_ACTION_SLTP",
+        "TRADE_ACTION_MODIFY",
+        "TRADE_ACTION_REMOVE",
+        "TRADE_ACTION_CLOSE_BY",
     ],
     # Order filling modes (4 total)
     "order_filling": [
-        "ORDER_FILLING_FOK", "ORDER_FILLING_IOC", "ORDER_FILLING_RETURN",
+        "ORDER_FILLING_FOK",
+        "ORDER_FILLING_IOC",
+        "ORDER_FILLING_RETURN",
         "ORDER_FILLING_BOC",
     ],
     # Order time types (4 total)
     "order_time": [
-        "ORDER_TIME_GTC", "ORDER_TIME_DAY", "ORDER_TIME_SPECIFIED",
+        "ORDER_TIME_GTC",
+        "ORDER_TIME_DAY",
+        "ORDER_TIME_SPECIFIED",
         "ORDER_TIME_SPECIFIED_DAY",
     ],
     # Position types (2 total)
     "position_types": ["POSITION_TYPE_BUY", "POSITION_TYPE_SELL"],
     # Deal types (17+ total)
     "deal_types": [
-        "DEAL_TYPE_BUY", "DEAL_TYPE_SELL", "DEAL_TYPE_BALANCE",
-        "DEAL_TYPE_CREDIT", "DEAL_TYPE_CHARGE", "DEAL_TYPE_CORRECTION",
-        "DEAL_TYPE_BONUS", "DEAL_TYPE_COMMISSION",
+        "DEAL_TYPE_BUY",
+        "DEAL_TYPE_SELL",
+        "DEAL_TYPE_BALANCE",
+        "DEAL_TYPE_CREDIT",
+        "DEAL_TYPE_CHARGE",
+        "DEAL_TYPE_CORRECTION",
+        "DEAL_TYPE_BONUS",
+        "DEAL_TYPE_COMMISSION",
     ],
     # Copy ticks flags (3 total)
     "copy_ticks": ["COPY_TICKS_ALL", "COPY_TICKS_INFO", "COPY_TICKS_TRADE"],
     # Book types (4 total)
     "book_types": [
-        "BOOK_TYPE_SELL", "BOOK_TYPE_BUY",
-        "BOOK_TYPE_SELL_MARKET", "BOOK_TYPE_BUY_MARKET",
+        "BOOK_TYPE_SELL",
+        "BOOK_TYPE_BUY",
+        "BOOK_TYPE_SELL_MARKET",
+        "BOOK_TYPE_BUY_MARKET",
     ],
 }
 
@@ -285,23 +319,20 @@ class TestBridgeFunctionSignatures:
         """Get bridge service root."""
         return rpyc_connection.root
 
-    def test_all_official_functions_exposed(
-        self, bridge_service: Any
-    ) -> None:
+    def test_all_official_functions_exposed(self, bridge_service: Any) -> None:
         """Verify all official MT5 functions are exposed in bridge."""
-        missing_functions = []
-        for func_name in OFFICIAL_MT5_FUNCTIONS:
-            if not hasattr(bridge_service, func_name):
-                missing_functions.append(func_name)
+        missing_functions = [
+            func_name
+            for func_name in OFFICIAL_MT5_FUNCTIONS
+            if not hasattr(bridge_service, func_name)
+        ]
 
         assert not missing_functions, (
             f"Missing official MT5 functions in bridge: {missing_functions}"
         )
 
     @pytest.mark.parametrize("func_name", list(OFFICIAL_MT5_FUNCTIONS.keys()))
-    def test_function_is_callable(
-        self, bridge_service: Any, func_name: str
-    ) -> None:
+    def test_function_is_callable(self, bridge_service: Any, func_name: str) -> None:
         """Verify each function is callable."""
         func = getattr(bridge_service, func_name, None)
         assert func is not None, f"Function {func_name} not found"
@@ -335,7 +366,10 @@ class TestBridgeConstants:
         """Verify constants dict is not empty."""
         assert len(bridge_constants) > 0, "Constants dict is empty"
 
-    @pytest.mark.parametrize("category,constants", list(OFFICIAL_MT5_CONSTANTS.items()))
+    @pytest.mark.parametrize(
+        ("category", "constants"),
+        list(OFFICIAL_MT5_CONSTANTS.items()),
+    )
     def test_category_constants_present(
         self,
         bridge_constants: dict[str, Any],
@@ -347,7 +381,8 @@ class TestBridgeConstants:
         assert not missing, f"Missing {category} constants: {missing}"
 
     def test_timeframe_values_are_integers(
-        self, bridge_constants: dict[str, Any]
+        self,
+        bridge_constants: dict[str, Any],
     ) -> None:
         """Verify timeframe constants are integers."""
         for tf in OFFICIAL_MT5_CONSTANTS["timeframes"]:
@@ -357,7 +392,8 @@ class TestBridgeConstants:
                 )
 
     def test_order_type_values_are_integers(
-        self, bridge_constants: dict[str, Any]
+        self,
+        bridge_constants: dict[str, Any],
     ) -> None:
         """Verify order type constants are integers."""
         for ot in OFFICIAL_MT5_CONSTANTS["order_types"]:
@@ -381,7 +417,9 @@ class TestServiceRecovery:
     """
 
     def test_bridge_survives_reconnection(
-        self, container_name: str, rpyc_port: int
+        self,
+        container_name: str,
+        rpyc_port: int,
     ) -> None:
         """Test bridge handles client reconnection gracefully."""
         # First connection
@@ -400,7 +438,9 @@ class TestServiceRecovery:
         conn2.close()
 
     def test_bridge_handles_rapid_connections(
-        self, container_name: str, rpyc_port: int
+        self,
+        container_name: str,
+        rpyc_port: int,
     ) -> None:
         """Test bridge handles rapid connect/disconnect cycles."""
         for i in range(5):
@@ -470,8 +510,11 @@ class TestUpgrade:
         result = docker_exec(
             container_name,
             [
-                "su", "-", "abc", "-c",
-                "wine /config/.wine/drive_c/Python/python.exe -m pip list --outdated"
+                "su",
+                "-",
+                "abc",
+                "-c",
+                "wine /config/.wine/drive_c/Python/python.exe -m pip list --outdated",
             ],
             timeout=60,
         )
@@ -483,9 +526,12 @@ class TestUpgrade:
         result = docker_exec(
             container_name,
             [
-                "su", "-", "abc", "-c",
+                "su",
+                "-",
+                "abc",
+                "-c",
                 "wine /config/.wine/drive_c/Python/python.exe -c "
-                "'import MetaTrader5; print(MetaTrader5.__version__)'"
+                "'import MetaTrader5; print(MetaTrader5.__version__)'",
             ],
             timeout=60,
         )
@@ -497,14 +543,38 @@ class TestUpgrade:
         result = docker_exec(
             container_name,
             [
-                "su", "-", "abc", "-c",
+                "su",
+                "-",
+                "abc",
+                "-c",
                 "wine /config/.wine/drive_c/Python/python.exe -c "
-                "'import rpyc; print(rpyc.__version__)'"
+                "'import rpyc; print(rpyc.__version__)'",
             ],
             timeout=60,
         )
         assert result.returncode == 0
         assert result.stdout.strip().startswith("6.")
+
+    def test_grpcio_package_version(self, container_name: str) -> None:
+        """Verify gRPC package version is retrievable (for mt5linux client)."""
+        result = docker_exec(
+            container_name,
+            [
+                "su",
+                "-",
+                "abc",
+                "-c",
+                "wine /config/.wine/drive_c/Python/python.exe -c "
+                "'import grpc; print(grpc.__version__)'",
+            ],
+            timeout=60,
+        )
+        assert result.returncode == 0
+        version = result.stdout.strip()
+        parts = version.split(".")
+        assert int(parts[0]) >= 1 and int(parts[1]) >= 76, (
+            f"Expected grpcio 1.76+, got {version}"
+        )
 
 
 # =============================================================================
@@ -516,22 +586,22 @@ class TestBridgeAPICompleteness:
     """Test bridge API completeness and behavior."""
 
     def test_version_returns_tuple_or_none(
-        self, rpyc_connection: rpyc.Connection
+        self,
+        rpyc_connection: rpyc.Connection,
     ) -> None:
         """Test version() returns expected type."""
         result = rpyc_connection.root.version()
         assert result is None or isinstance(result, tuple)
 
-    def test_last_error_returns_tuple(
-        self, rpyc_connection: rpyc.Connection
-    ) -> None:
+    def test_last_error_returns_tuple(self, rpyc_connection: rpyc.Connection) -> None:
         """Test last_error() returns expected type."""
         result = rpyc_connection.root.last_error()
         assert isinstance(result, tuple)
         assert len(result) == 2  # (code, description)
 
     def test_symbols_total_returns_int_or_none(
-        self, rpyc_connection: rpyc.Connection
+        self,
+        rpyc_connection: rpyc.Connection,
     ) -> None:
         """Test symbols_total() returns integer or None if not connected."""
         result = rpyc_connection.root.symbols_total()
@@ -539,7 +609,8 @@ class TestBridgeAPICompleteness:
         assert result is None or isinstance(result, int)
 
     def test_positions_total_returns_int_or_none(
-        self, rpyc_connection: rpyc.Connection
+        self,
+        rpyc_connection: rpyc.Connection,
     ) -> None:
         """Test positions_total() returns integer or None if not connected."""
         result = rpyc_connection.root.positions_total()
@@ -547,7 +618,8 @@ class TestBridgeAPICompleteness:
         assert result is None or isinstance(result, int)
 
     def test_orders_total_returns_int_or_none(
-        self, rpyc_connection: rpyc.Connection
+        self,
+        rpyc_connection: rpyc.Connection,
     ) -> None:
         """Test orders_total() returns integer or None if not connected."""
         result = rpyc_connection.root.orders_total()
@@ -568,7 +640,8 @@ class TestFailureSimulation:
     """
 
     def test_bridge_recovers_from_invalid_symbol(
-        self, rpyc_connection: rpyc.Connection
+        self,
+        rpyc_connection: rpyc.Connection,
     ) -> None:
         """Test bridge handles invalid symbol gracefully."""
         # Try to get info for a non-existent symbol
@@ -577,7 +650,8 @@ class TestFailureSimulation:
         assert result is None
 
     def test_bridge_handles_empty_positions(
-        self, rpyc_connection: rpyc.Connection
+        self,
+        rpyc_connection: rpyc.Connection,
     ) -> None:
         """Test bridge handles empty positions list."""
         result = rpyc_connection.root.positions_get()
@@ -585,7 +659,8 @@ class TestFailureSimulation:
         assert result is None or isinstance(result, tuple)
 
     def test_bridge_handles_empty_orders(
-        self, rpyc_connection: rpyc.Connection
+        self,
+        rpyc_connection: rpyc.Connection,
     ) -> None:
         """Test bridge handles empty orders list."""
         result = rpyc_connection.root.orders_get()
@@ -593,18 +668,24 @@ class TestFailureSimulation:
         assert result is None or isinstance(result, tuple)
 
     def test_bridge_handles_invalid_timeframe(
-        self, rpyc_connection: rpyc.Connection
+        self,
+        rpyc_connection: rpyc.Connection,
     ) -> None:
         """Test bridge handles invalid timeframe value."""
         import datetime
+
         result = rpyc_connection.root.copy_rates_from(
-            "EURUSD", 99999, datetime.datetime.now(), 10
+            "EURUSD",
+            99999,
+            datetime.datetime.now(),
+            10,
         )
         # Should return None for invalid timeframe
         assert result is None
 
     def test_health_check_after_many_operations(
-        self, rpyc_connection: rpyc.Connection
+        self,
+        rpyc_connection: rpyc.Connection,
     ) -> None:
         """Test health check still works after many operations."""
         # Perform many operations

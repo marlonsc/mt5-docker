@@ -4,9 +4,12 @@
 # Consolidates all setup operations (previously in scripts/ folder):
 # 1. Config unpack (from 05_config_unpack.sh)
 # 2. Wine prefix init (from 10_prefix_init.sh)
-# 3. Winetricks deps (from 20_winetricks.sh)
+# 3. Wine configuration (simplified - no winetricks needed)
 # 4. MT5 installation (from 30_mt5.sh)
 # 5. Bridge copy (from 50_copy_bridge.sh)
+#
+# Note: Win10 is set at build time. Wine Mono provides .NET support.
+# No winetricks required (following original gmag11/MetaTrader5-Docker-Image).
 #
 # Environment variables are inherited from start.sh (must be exported)
 # =============================================================================
@@ -64,36 +67,30 @@ init_wine_prefix() {
 }
 
 # =============================================================================
-# 3. WINETRICKS DEPS (from 20_winetricks.sh)
+# 3. WINE CONFIGURATION (simplified - no winetricks needed)
+# Win10 is set during build; Wine Mono provides .NET support
 # =============================================================================
-install_winetricks_deps() {
+configure_wine_settings() {
     if [ -f "$DEPS_MARKER" ]; then
-        log INFO "[setup] Winetricks deps already installed"
+        log INFO "[setup] Wine already configured"
         return 0
     fi
 
-    log INFO "[setup] Installing winetricks dependencies..."
-    export WINEDLLOVERRIDES="winemenubuilder.exe,mscoree,mshtml="
-    export WINETRICKS_UNATTENDED=1
-    export XDG_CACHE_HOME="${XDG_CACHE_HOME:-/tmp/.cache}"
-    export W_CACHE="${W_CACHE:-/tmp/.cache/winetricks}"
-    mkdir -p "$W_CACHE"
+    log INFO "[setup] Configuring Wine settings..."
 
-    # vcrun2019 (recommended for MT5)
-    log INFO "[setup] Installing vcrun2019..."
-    xvfb-run sh -c "winetricks -q vcrun2019; wineserver -w" || \
-        log WARN "[setup] vcrun2019 failed (non-critical)"
-
-    # Restore win10 version (winetricks may reset to winxp)
-    log INFO "[setup] Setting Windows version to win10..."
-    xvfb-run sh -c "winetricks -q win10; wineserver -w" || \
-        log WARN "[setup] win10 failed (non-critical)"
-
-    # Cleanup cache
-    rm -rf "$W_CACHE"/*
+    # Verify Windows version is set to win10 (done at build time)
+    # If not, set it via registry (no winetricks needed)
+    if ! wine reg query 'HKEY_CURRENT_USER\Software\Wine' /v Version 2>/dev/null | grep -q "win10"; then
+        log INFO "[setup] Setting Windows version to win10..."
+        wine reg add 'HKEY_CURRENT_USER\Software\Wine' /v Version /t REG_SZ /d 'win10' /f 2>/dev/null || \
+            log WARN "[setup] Failed to set win10 (non-critical)"
+        wineserver -w 2>/dev/null || true
+    else
+        log INFO "[setup] Windows version already set to win10"
+    fi
 
     touch "$DEPS_MARKER"
-    log INFO "[setup] Winetricks deps installed"
+    log INFO "[setup] Wine configured"
 }
 
 # =============================================================================
@@ -126,10 +123,10 @@ install_mt5_pip() {
     log INFO "[setup] Verifying package imports..."
     "$wine_executable" "$WINE_PYTHON_PATH" -c "
 import MetaTrader5
-import rpyc
+import grpc
 import numpy
 print(f'MetaTrader5 {MetaTrader5.__version__}')
-print(f'rpyc {rpyc.__version__}')
+print(f'grpcio {grpc.__version__}')
 print(f'numpy {numpy.__version__}')
 " 2>/dev/null || {
         log ERROR "[setup] Package verification failed"
@@ -251,30 +248,38 @@ EOF
 }
 
 # =============================================================================
-# 5. BRIDGE COPY (from 50_copy_bridge.sh)
+# 5. BRIDGE COPY (gRPC bridge + proto files)
 # =============================================================================
 copy_bridge() {
-    local BRIDGE_SOURCE="/Metatrader/bridge.py"
+    local METATRADER_DIR="/Metatrader"
     local SITE_PACKAGES="$WINEPREFIX/drive_c/Python/Lib/site-packages"
     local TARGET_DIR="$SITE_PACKAGES/mt5linux"
 
-    if [ ! -f "$BRIDGE_SOURCE" ]; then
-        log ERROR "[setup] FATAL: bridge.py not found at $BRIDGE_SOURCE"
-        return 1
-    fi
+    # Required files for gRPC bridge
+    local REQUIRED_FILES="bridge.py mt5_pb2.py mt5_pb2_grpc.py"
+
+    for file in $REQUIRED_FILES; do
+        if [ ! -f "$METATRADER_DIR/$file" ]; then
+            log ERROR "[setup] FATAL: $file not found at $METATRADER_DIR/$file"
+            return 1
+        fi
+    done
 
     if [ ! -d "$SITE_PACKAGES" ]; then
         log ERROR "[setup] FATAL: Wine Python site-packages not found at $SITE_PACKAGES"
         return 1
     fi
 
-    log INFO "[setup] Copying bridge.py to Wine Python..."
+    log INFO "[setup] Copying gRPC bridge files to Wine Python..."
 
     # Create mt5linux package directory
     mkdir -p "$TARGET_DIR"
 
-    # Copy bridge.py
-    cp "$BRIDGE_SOURCE" "$TARGET_DIR/bridge.py"
+    # Copy all bridge files
+    for file in $REQUIRED_FILES; do
+        cp "$METATRADER_DIR/$file" "$TARGET_DIR/$file"
+        log INFO "[setup] Copied $file"
+    done
 
     # Create __init__.py if missing
     if [ ! -f "$TARGET_DIR/__init__.py" ]; then
@@ -290,7 +295,7 @@ if __name__ == "__main__":
     main()
 EOF
 
-    log INFO "[setup] bridge.py copied to: $TARGET_DIR"
+    log INFO "[setup] gRPC bridge files copied to: $TARGET_DIR"
 }
 
 # =============================================================================
@@ -300,7 +305,7 @@ log INFO "[setup] Starting MT5 Docker setup..."
 
 unpack_config
 init_wine_prefix
-install_winetricks_deps
+configure_wine_settings
 install_mt5_pip
 install_mt5_terminal
 generate_mt5_config
