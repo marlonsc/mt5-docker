@@ -21,7 +21,7 @@
     name = "mt5docker"
     package-mode = false
     readme = "README.md"
-    version = "0.1.9"
+    version = "2.2.1"
 
     [tool.poetry.dependencies]
         grpcio = "^1.60.0"
