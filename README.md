@@ -1,18 +1,37 @@
 # MetaTrader5 Docker Image (Fork)
 
-This is a fork of the original project by [gmag11](https://github.com/gmag11/MetaTrader5-Docker-Image).
+This is a fork of the original project by
+[gmag11](https://github.com/gmag11/MetaTrader5-Docker-Image).
 It provides a Docker image for running MetaTrader5 with remote access via VNC, based on the
-[KasmVNC](https://github.com/kasmtech/KasmVNC) project and [KasmVNC Base Image from LinuxServer](https://github.com/linuxserver/docker-baseimage-kasmvnc).
+[KasmVNC](https://github.com/kasmtech/KasmVNC) project and
+[KasmVNC Base Image from LinuxServer](https://github.com/linuxserver/docker-baseimage-kasmvnc).
 
-Changes in this fork:
+## What's New in This Fork
 
-- Added Expert Advisor (EA) automation support with Windows .NET Framework under Wine. Mono is removed.
-- Consolidated startup scripts (`start.sh` + `setup.sh`) for cleaner container startup.
-- Added auto-login support via environment variables (`MT5_LOGIN`, `MT5_PASSWORD`, `MT5_SERVER`).
-- Added health monitoring and auto-recovery for MT5 and RPyC server.
-- RPyC bridge server bundled (standalone `bridge.py` from mt5linux).
-- Updated image metadata and labels following OCI standards.
-- Fail-fast startup: scripts exit immediately on critical failures.
+### v2.2.x (Latest)
+
+- **Dual Python Architecture**: System Python 3.13 + Wine Python 3.12 for optimal compatibility
+- **Poetry Integration**: Modern dependency management with local path dependencies
+- **Dependabot Compatibility**: Automatic dependency updates (mt5linux ignored for local dev)
+- **Enhanced Testing**: 67 comprehensive tests covering static analysis and runtime validation
+- **Production Ready**: Automated dependency setup for different environments
+
+### Core Features
+
+- **Expert Advisor Support**: Windows .NET Framework 4.8 under Wine (Mono removed)
+- **Consolidated Scripts**: Single `start.sh` + `setup.sh` for reliable startup
+- **Auto-Login**: Environment-based MT5 authentication
+- **Health Monitoring**: Auto-recovery for MT5 and RPyC server failures
+- **RPyC Bridge**: Bundled standalone bridge from mt5linux
+- **OCI Standards**: Modern container metadata and labels
+- **Fail-Fast Design**: Immediate exit on critical startup failures
+
+### Technical Improvements
+
+- **Python Versions**: 3.13 (system) + 3.12 (Wine) for numpy/MT5 compatibility
+- **Dependency Management**: Poetry with local path dependencies for development
+- **Testing Framework**: pytest with comprehensive coverage (static + runtime)
+- **GitHub Integration**: Dependabot, automated releases, CI/CD pipeline
 
 ## Features
 
@@ -42,43 +61,101 @@ always have latest MT5 version.
 ```bash
 mt5docker/
 ├── docker/                         # Docker-related files
-│   ├── Dockerfile                  # Multi-stage build
+│   ├── Dockerfile                  # Multi-stage build (Python 3.12 for Wine, 3.13 for system)
 │   ├── compose.yaml                # Docker Compose configuration
-│   ├── versions.env                # Component versions
+│   ├── versions.env                # Component versions (Wine Python: 3.12, System: 3.13)
 │   └── container/                  # Files copied into container
 │       ├── Metatrader/            # Startup scripts and services
 │       └── root/                  # LinuxServer defaults
-├── config/                        # Configuration templates
-│   └── .env.example              # Example environment file
-├── scripts/                       # Development scripts
-│   ├── check-updates.sh          # Check for dependency updates
-│   └── test-container.sh         # Start test container
-├── tests/                         # Test suite
+├── scripts/                       # Development and setup scripts
+│   └── setup-dependencies.sh      # Configure mt5linux dependency (local/git)
+├── tests/                         # Test suite (pytest with Poetry)
 ├── .env                          # Your credentials (gitignored)
-├── pyproject.toml
+├── .github/                       # GitHub configuration
+│   └── dependabot.yml            # Dependabot config (ignores mt5linux)
+├── pyproject.toml                # Poetry configuration (Python 3.13, mt5linux path dep)
+├── poetry.lock                   # Locked dependencies
 └── README.md
 ```
 
 ## Requirements
 
-- Docker installed on your machine.
-- Only intelx86/amd64 host is supported
-- Internet connectivity on first run (downloads MT5, Wine components, and optional .NET).
+- **Docker**: installed on your machine
+- **Architecture**: Only x86_64/amd64 hosts supported
+- **Python**: >= 3.13 (system), 3.12 (Wine container)
+- **Poetry**: for dependency management (optional, see Makefile)
+- **Internet connectivity**: Required on first run (downloads MT5, Wine components, and optional .NET)
+- **Environment file**: `.env` with required credentials (see setup below)
+
+## Quick Start with Makefile
+
+For the fastest setup, use the provided Makefile:
+
+```bash
+# Clone and setup everything automatically
+git clone https://github.com/marlonsc/mt5-docker
+cd mt5-docker
+
+# Setup development environment
+make setup
+
+# Run tests to verify everything works
+make test
+
+# Build and run the container
+make build
+make run
+```
+
+See `make help` for all available commands.
+
+## Development Setup
+
+### Python Version Architecture
+
+This project uses a dual Python version setup:
+
+- **System Python (Linux)**: 3.13+ for mt5linux compatibility and modern tooling
+- **Wine Python (Windows)**: 3.12 for numpy 1.26.4 compatibility (MetaTrader5 requirement)
+
+### Dependency Management
+
+The project uses Poetry with local path dependencies for development:
+
+```toml
+# pyproject.toml
+[tool.poetry.dependencies]
+python = ">=3.13,<3.14"        # System Python requirement
+mt5linux = { path = "../mt5linux", develop = true }  # Local development
+```
+
+For production deployment, use the setup script to configure git dependencies:
+
+```bash
+# Automatically detects environment and configures dependencies
+./scripts/setup-dependencies.sh
+```
+
+### GitHub Integration
+
+- **Dependabot**: Configured to ignore mt5linux updates (uses local version)
+- **CI/CD**: Poetry-based testing and linting
+- **Releases**: Automated Docker image builds
 
 ## Usage from repository
 
 1. Clone this repository:
 
-```bash
-git clone https://github.com/marlonsc/mt5-docker
-cd mt5-docker
-```
+   ```bash
+   git clone https://github.com/marlonsc/mt5-docker
+   cd mt5-docker
+   ```
 
 2. Build the Docker image:
 
-```bash
-docker build -f docker/Dockerfile -t marlonsc/mt5-docker:debian docker/
-```
+   ```bash
+   docker build -f docker/Dockerfile -t marlonsc/mt5-docker:debian docker/
+   ```
 
 3. Run the Docker image:
 
@@ -96,41 +173,41 @@ The process is automatic and you should end up with MetaTrader5 running in your 
 
 1. Create a folder in a path where you have permission. For instance in your home.
 
-```bash
-mkdir MT5
-cd MT5
-```
+   ```bash
+   mkdir MT5
+   cd MT5
+   ```
 
 2. Create `docker-compose.yaml` file.
 
-```bash
-nano docker-compose.yaml
-```
+   ```bash
+   nano docker-compose.yaml
+   ```
 
-Use this content, optionally adding your MT5 credentials for auto-login.
+  Use this content, optionally adding your MT5 credentials for auto-login.
 
-```yaml
-version: '3'
+  ```yaml
+  version: '3'
 
-services:
-  mt5:
-    image: marlonsc/mt5-docker
-    container_name: mt5
-    volumes:
-      - ./config:/config
-    ports:
-      - 3000:3000
-      - 8001:8001
-    environment:
-      # Auto-login credentials (optional - can login manually via VNC instead)
-      - MT5_LOGIN=your_account_number
-      - MT5_PASSWORD=your_password
-      - MT5_SERVER=MetaQuotes-Demo
-      # Optional features
-      - ENABLE_WIN_DOTNET=1   # Install .NET Framework 4.8 for .NET EAs (default: 1)
-      - AUTO_RECOVERY_ENABLED=1  # Auto-restart on failures (default: 1)
-      - TZ=UTC                # Timezone for logs and MT5
-```
+  services:
+    mt5:
+      image: marlonsc/mt5-docker
+      container_name: mt5
+      volumes:
+        - ./config:/config
+      ports:
+        - 3000:3000
+        - 8001:8001
+      environment:
+        # Auto-login credentials (optional - can login manually via VNC instead)
+        - MT5_LOGIN=your_account_number
+        - MT5_PASSWORD=your_password
+        - MT5_SERVER=MetaQuotes-Demo
+        # Optional features
+        - ENABLE_WIN_DOTNET=1   # Install .NET Framework 4.8 for .NET EAs (default: 1)
+        - AUTO_RECOVERY_ENABLED=1  # Auto-restart on failures (default: 1)
+        - TZ=UTC                # Timezone for logs and MT5
+  ```
 
 ## .NET Support
 
@@ -138,33 +215,35 @@ services:
   - Installed via `winetricks dotnet48` into `WINEPREFIX=/config/.wine`.
   - Enables EAs that depend on .NET Framework when running MT5 under Wine.
 
-Disable by setting `ENABLE_WIN_DOTNET=0` in compose.
+  Disable by setting `ENABLE_WIN_DOTNET=0` in compose.
 
-**Notice**: If you do not need to do remote python programming you can get a much smaller installation changing this line:
+  **Notice**: If you do not need to do remote python programming you can get a much smaller installation changing this line:
 
-```yaml
-image: marlonsc/mt5-docker
-```
+  ```yaml
+  image: marlonsc/mt5-docker
+  ```
 
-by this one
+  by this one
 
-```yaml
-image: marlonsc/mt5-docker:1.1
-```
+  ```yaml
+  image: marlonsc/mt5-docker:1.1
+  ```
 
 3. Start the container
 
-```bash
-docker compose -f docker/compose.yaml up -d
-```
+   ```bash
+   docker compose -f docker/compose.yaml up -d
+   ```
 
-In some systems `docker compose` command does not exists. Try to use `docker-compose -f docker/compose.yaml up -d` instead.
+  In some systems `docker compose` command does not exists. Try to use
+   `docker-compose -f docker/compose.yaml up -d` instead.
 
 4. Connect to web interface
-   Start your browser pointing http://&lt;your ip address&gt;:3000
 
-On first run it may take a few minutes to install MT5, Wine dependencies, and optionally .NET Framework and should take aprox 5 minutes.
-The process is automatic and you should end up with MetaTrader5 running in your web session.
+  Start your browser pointing http://&lt;your ip address&gt;:3000
+
+  On first run it may take a few minutes to install MT5, Wine dependencies, andoptionally .NET Framework and should take aprox 5 minutes.
+  The process is automatic and you should end up with MetaTrader5 running in your web session.
 
 ## Where to place MQ5 and EX5 files
 
@@ -189,15 +268,20 @@ Remember that **image version is not stuck to a specific MetaTrader 5 version**.
 Install [mt5linux](https://github.com/marlonsc/mt5linux) on your Python host (any OS):
 
 ```bash
-pip install git+https://github.com/marlonsc/mt5linux.git@master
+# From PyPI (recommended for production)
+pip install mt5linux
+
+# Or from git (latest development version)
+pip install git+https://github.com/marlonsc/mt5linux.git@main
 ```
 
 **Required library versions:**
 
-- Python >= 3.13
-- mt5linux >= 0.2.1
-- numpy >= 2.1.0
-- rpyc == 6.0.2
+- **Python**: >= 3.13 (system), 3.12 (Wine container)
+- **mt5linux**: >= 0.6.0 (from main branch)
+- **numpy**: >= 1.26.4 (Wine), >= 1.26.4 (system)
+- **grpcio**: >= 1.60.0
+- **protobuf**: >= 4.25.0
 
 **Example usage (synchronous):**
 
@@ -274,16 +358,17 @@ print(local_array)  # [1 2 3]
 | **Features** |||
 | `AUTO_RECOVERY_ENABLED` | `1` | Auto-restart MT5/RPyC on failures |
 | `HEALTH_CHECK_INTERVAL` | `30` | Health check interval (seconds) |
-| `ENABLE_WIN_DOTNET` | `0` | Install .NET Framework 4.8 for .NET EAs |
+| `ENABLE_WIN_DOTNET` | `1` | Install .NET Framework 4.8 for .NET EAs |
 | `MT5_DEBUG` | `1` | Enable debug logging in RPyC bridge |
 | `MT5_UPDATE` | `1` | Update MetaTrader5 pip package on startup |
 | **Container Settings** |||
 | `TZ` | `UTC` | Container timezone |
-| `PUID` | `1000` | User ID for file permissions |
-| `PGID` | `1000` | Group ID for file permissions |
+| `PUID` | `911` | User ID for file permissions (KasmVNC) |
+| `PGID` | `911` | Group ID for file permissions (KasmVNC) |
 | **Advanced** |||
 | `WINEPREFIX` | `/config/.wine` | Wine environment directory |
 | `WINEDEBUG` | `-all` | Wine debug output (silent by default) |
+| `STAGING_DIR` | `/opt/mt5-staging` | MT5 staging directory |
 
 ### Ports
 
@@ -363,27 +448,49 @@ docker logs mt5 2>&1 | grep ERROR
 docker logs mt5 2>&1 | grep health
 ```
 
-## Testing
+## Development & Testing
 
-The project includes automated tests using pytest. Tests run against an isolated test container (`mt5docker-test`) with separate ports to
-avoid conflicts with production or other test environments.
+The project uses Poetry for dependency management and includes comprehensive automated tests using pytest.
 
 ### Prerequisites
 
-1. **Configure credentials**: Copy the example file and fill in your MT5 credentials:
+1. **Install Poetry** (if not already installed):
+
+   ```bash
+   curl -sSL https://install.python.org/ | python3 -
+   # Or using pip
+   pip install poetry
+   ```
+
+2. **Install dependencies**:
+
+   ```bash
+   # Install all dependencies (including dev dependencies)
+   poetry install
+
+   # Or use the setup script (detects environment automatically)
+   ./scripts/setup-dependencies.sh
+   ```
+
+3. **Configure credentials**: Copy the template file and fill in your credentials:
 
 ```bash
-cp .env.example .env
+cp config.env.template .env
 ```
 
-2. **Edit `.env`** with your MetaTrader 5 credentials:
+4. **Edit `.env`** with your required credentials:
 
 ```bash
-# Required for tests
+# REQUIRED for production builds
 MT5_LOGIN=your_login_number
 MT5_PASSWORD=your_password
 MT5_SERVER=MetaQuotes-Demo
+VNC_PASSWORD=your_secure_vnc_password
+
+# Optional settings available in template
 ```
+
+**⚠️ IMPORTANT**: `MT5_LOGIN`, `MT5_PASSWORD`, and `VNC_PASSWORD` are **mandatory** for builds and runs.
 
 To create a MetaQuotes Demo account:
 
@@ -392,51 +499,41 @@ To create a MetaQuotes Demo account:
 - Fill in the registration form
 - Copy your login and password to `.env`
 
-3. **Install test dependencies**:
-
-```bash
-pip install pytest rpyc
-```
-
 ### Running Tests
 
 ```bash
-# Start the isolated test container
-./scripts/test-container.sh
+# Run all tests through Poetry
+poetry run pytest tests/ -v
 
-# Run all tests
-pytest tests/ -v
+# Run specific test file
+poetry run pytest tests/test_static.py -v
 
 # Run specific test class
-pytest tests/test_container.py::TestContainerIsolation -v
+poetry run pytest tests/test_static.py::TestVersionsEnv -v
 
-# Stop test container when done
-./scripts/test-container.sh --stop
+# Run with coverage
+poetry run pytest tests/ --cov=src --cov-report=html
 ```
 
-### Test Container Isolation
+### Test Categories
 
-The test container uses isolated ports to avoid conflicts:
-
-| Service | Production | mt5docker-test |
-|---------|------------|----------------|
-| VNC     | 3000       | 43000          |
-| RPyC    | 8001       | 48812          |
-| Health  | 8002       | 48002          |
+- **Static Tests** (`test_static.py`): Configuration validation, file checks, no container needed
+- **Runtime Tests** (`test_runtime.py`): Container functionality, requires Docker
+- **Bridge Tests** (`test_bridge_validation.py`): RPyC bridge validation
 
 ### Environment Variables
 
-All test configuration can be overridden via environment variables or `.env`:
+Test configuration can be overridden via environment variables or `.env`:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `MT5_LOGIN` | (required) | MT5 account login |
 | `MT5_PASSWORD` | (required) | MT5 account password |
 | `MT5_SERVER` | MetaQuotes-Demo | MT5 server name |
-| `MT5_CONTAINER_NAME` | mt5docker-test | Container name |
-| `MT5_RPYC_PORT` | 48812 | RPyC service port |
-| `MT5_VNC_PORT` | 43000 | VNC web interface port |
-| `MT5_HEALTH_PORT` | 48002 | Health check port |
+| `MT5_CONTAINER_NAME` | mt5docker-test | Test container name |
+| `MT5_RPYC_PORT` | 48812 | RPyC service port for tests |
+| `MT5_VNC_PORT` | 43000 | VNC web interface port for tests |
+| `MT5_HEALTH_PORT` | 48002 | Health check port for tests |
 
 ## Contributions
 
@@ -449,7 +546,120 @@ This fork retains the original license: [MIT](LICENSE.md). Please review upstrea
 - [KasmVNC GPLv2](https://github.com/kasmtech/KasmVNC/blob/master/LICENSE.TXT)
 - [LinuxServer KasmVNC Base GPLv3](https://github.com/linuxserver/docker-baseimage-kasmvnc/blob/master/LICENSE)
 
+## Troubleshooting
+
+### Common Issues
+
+**Dependabot failures with mt5linux:**
+
+```bash
+# mt5linux is configured to use local path in development
+# For production, run setup script:
+./scripts/setup-dependencies.sh
+```
+
+**Python version conflicts:**
+
+- System uses Python 3.13+ (mt5linux requirement)
+- Wine container uses Python 3.12 (numpy/MT5 requirement)
+- Both versions are automatically managed
+
+**Test failures:**
+
+```bash
+# Ensure dependencies are installed
+poetry install
+
+# Run tests through Poetry
+poetry run pytest tests/ -v
+```
+
+**Container startup issues:**
+
+```bash
+# Check logs for specific errors
+docker logs mt5
+
+# Verify MT5 credentials in .env
+cat .env
+
+# Test with minimal configuration
+docker run -e MT5_DEBUG=1 marlonsc/mt5-docker:debian
+```
+
+### Dependency Architecture
+
+**Development Environment:**
+
+- Uses local `../mt5linux` path dependency
+- Automatic detection by `setup-dependencies.sh`
+- Poetry manages all dependencies
+
+**Production Environment:**
+
+- Uses git dependency: `https://github.com/marlonsc/mt5linux.git`
+- Configured automatically by setup script
+- Dependabot ignores mt5linux updates
+
+**Docker Build:**
+
+- System: Python 3.13+ base image
+- Wine: Python 3.12 pre-installed for MT5 compatibility
+- NumPy 1.26.4 in both environments
+
+## Makefile Commands
+
+The project includes a comprehensive Makefile for development and operations:
+
+### Development Workflow
+
+```bash
+make setup          # Complete development setup (creates .env)
+make show-env-status # Check if required credentials are set
+make validate-env   # Validate .env configuration
+make test           # Run all tests
+make lint           # Code quality checks
+make format         # Format code
+make check          # Run all checks (lint + test)
+```
+
+### Docker Operations
+
+```bash
+make build          # Build Docker image
+make run            # Start container
+make stop           # Stop container
+make logs           # View logs
+make shell          # Open shell in container
+```
+
+### Maintenance
+
+```bash
+make clean          # Clean build artifacts
+make update-deps    # Update dependencies
+make health         # System health check
+make version        # Show version info
+make help           # Show all commands
+```
+
+### Environment Validation
+
+```bash
+make validate-env   # Validate required credentials in .env
+make show-env-status # Show status of environment variables
+```
+
+### CI/CD
+
+```bash
+make ci            # Run full CI pipeline
+make export-requirements  # Export requirements.txt
+```
+
 ## Acknowledgments
 
-- Original author: [gmag11](https://github.com/gmag11/MetaTrader5-Docker-Image)
-- Projects: [KasmVNC](https://github.com/kasmtech/KasmVNC), [mt5linux](https://github.com/lucas-campagna/mt5linux)
+- **Original Author**: [gmag11](https://github.com/gmag11/MetaTrader5-Docker-Image)
+- **Core Technologies**: [KasmVNC](https://github.com/kasmtech/KasmVNC), [mt5linux](https://github.com/marlonsc/mt5linux)
+- **Infrastructure**: [LinuxServer.io](https://github.com/linuxserver/docker-baseimage-kasmvnc), [WineHQ](https://winehq.org)
+- **Community**: MetaTrader5, Docker, and open-source contributors

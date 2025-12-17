@@ -10,7 +10,7 @@
         "typings/",
     ]
     mypy_path = "typings"
-    python_version = "3.12"
+    python_version = "3.13"
     strict = true
 
 
@@ -25,7 +25,8 @@
 
     [tool.poetry.dependencies]
         grpcio = "^1.60.0"
-        python = ">=3.12,<4"
+        mt5linux = { path = "../mt5linux", develop = true }
+        python = ">=3.13,<3.14"
         python-dotenv = "^1.0.0" # For loading .env files
 
     [tool.poetry.group.dev.dependencies]
@@ -53,7 +54,7 @@
         "typings/",
     ]
     pythonPlatform = "Linux"
-    pythonVersion = "3.12"
+    pythonVersion = "3.13"
     stubPath = "typings"
     typeCheckingMode = "strict"
     typeStubSearchPaths = ["/typings"]
@@ -71,7 +72,7 @@
 [tool.ruff]
 
     line-length = 88
-    target-version = "py312"
+    target-version = "py313"
 
     [tool.ruff.lint]
         ignore = [
@@ -97,10 +98,5 @@
                     "TRY300",  # try/except style ok in tests
                 ]
 
-[tool.uv.sources]
-mt5linux = { path = "../mt5linux", editable = true }
-
 [dependency-groups]
-dev = [
-    "mt5linux",
-]
+dev = []

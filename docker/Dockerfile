@@ -9,7 +9,7 @@ FROM ghcr.io/linuxserver/baseimage-kasmvnc:debianbookworm AS base
 # Version ARGs (centralized for all stages)
 ARG BUILD_DATE
 ARG VERSION
-# Python 3.12: Required for numpy 1.26.4 pre-built wheels
+# Python 3.12: Required for numpy 1.26.4 pre-built wheels (Wine side)
 ARG PYTHON_VERSION=3.12
 # gRPC 1.76.0: Required by mt5_pb2_grpc.py (GRPC_GENERATED_VERSION)
 ARG GRPCIO_VERSION=1.76.0

@@ -13,6 +13,8 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    ignore:
+      - dependency-name: "mt5linux"
   - package-ecosystem: "docker-compose"
     directory: "/docker"
     schedule:

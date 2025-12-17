@@ -153,14 +153,12 @@ class TestVersionConsistency:
                 )
 
     def test_pyproject_has_python_version(self) -> None:
-        """Verify pyproject.toml specifies Python version consistent with versions.env."""
-        versions = self._load_versions_env()
+        """Verify pyproject.toml specifies Python 3.13 for Linux system compatibility with mt5linux."""
         pyproject = (PROJECT_ROOT / "pyproject.toml").read_text()
-        expected_major_minor = ".".join(
-            versions.get("PYTHON_VERSION", "3.12").split(".")[:2]
-        )
-        assert expected_major_minor in pyproject, (
-            f"pyproject.toml should reference Python {expected_major_minor}"
+        # Linux system uses Python 3.13 for mt5linux compatibility
+        # Wine environment uses Python 3.12 (defined in versions.env)
+        assert "3.13" in pyproject, (
+            "pyproject.toml should reference Python 3.13 for Linux system compatibility"
         )
 
     def test_start_sh_has_version_fallbacks(self) -> None:
