@@ -197,7 +197,8 @@ RUN --mount=from=downloader,source=/staging,target=/staging \
         wine '$PYTHON_EXE' -m pip install --no-cache-dir --only-binary :all: \
             'grpcio>=${GRPCIO_VERSION}' \
             'protobuf>=4.21.0' \
-            'numpy==${NUMPY_VERSION}' && \
+            'numpy==${NUMPY_VERSION}' \
+            'orjson>=3.9.0' && \
         wineserver -w" && \
     # Cleanup
     echo "=== Cleanup ===" && \

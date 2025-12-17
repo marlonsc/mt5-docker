@@ -162,17 +162,17 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
         """
         if not hasattr(obj, "_asdict"):
             return {}
-        data: dict[str, JSONValue] = obj._asdict()  # type: ignore[attr-defined]
+        data: dict[str, JSONValue] = obj._asdict()
         if nested_fields:
             for field in nested_fields:
                 nested = data.get(field)
                 if nested is not None and hasattr(nested, "_asdict"):
-                    data[field] = nested._asdict()  # type: ignore[attr-defined]
+                    data[field] = nested._asdict()
         return data
 
     def _numpy_to_proto(
         self,
-        arr: "NDArray[np.void] | None",  # noqa: UP037 # quotes needed for TYPE_CHECKING import
+        arr: NDArray[np.void] | None,
     ) -> mt5_pb2.NumpyArray:
         """Convert numpy array to protobuf NumpyArray message.
 
@@ -265,10 +265,10 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
     # TERMINAL OPERATIONS
     # =========================================================================
 
-    def HealthCheck(  # noqa: N802 # gRPC service method must match protobuf interface  # noqa: N802 # gRPC service method must match protobuf interface
+    def HealthCheck(
         self,
-        request: mt5_pb2.Empty,  # noqa: ARG002 # gRPC service method argument required by interface
-        context: grpc.ServicerContext,  # noqa: ARG002 # gRPC service method argument required by interface
+        request: mt5_pb2.Empty,
+        context: grpc.ServicerContext,
     ) -> mt5_pb2.HealthStatus:
         """Check MT5 service health status.
 
@@ -320,10 +320,10 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
             reason="",
         )
 
-    def Initialize(  # noqa: N802 # gRPC service method must match protobuf interface
+    def Initialize(
         self,
         request: mt5_pb2.InitRequest,
-        context: grpc.ServicerContext,  # noqa: ARG002 # gRPC service method argument required by interface
+        context: grpc.ServicerContext,
     ) -> mt5_pb2.BoolResponse:
         """Initialize MT5 terminal connection.
 
@@ -363,10 +363,10 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
         log.info("Initialize: result=%s", result)
         return mt5_pb2.BoolResponse(result=bool(result))
 
-    def Login(  # noqa: N802 # gRPC service method must match protobuf interface
+    def Login(
         self,
         request: mt5_pb2.LoginRequest,
-        context: grpc.ServicerContext,  # noqa: ARG002 # gRPC service method argument required by interface
+        context: grpc.ServicerContext,
     ) -> mt5_pb2.BoolResponse:
         """Login to MT5 account.
 
@@ -393,10 +393,10 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
         log.info("Login: result=%s", result)
         return mt5_pb2.BoolResponse(result=bool(result))
 
-    def Shutdown(  # noqa: N802 # gRPC service method must match protobuf interface
+    def Shutdown(
         self,
-        request: mt5_pb2.Empty,  # noqa: ARG002 # gRPC service method argument required by interface
-        context: grpc.ServicerContext,  # noqa: ARG002 # gRPC service method argument required by interface
+        request: mt5_pb2.Empty,
+        context: grpc.ServicerContext,
     ) -> mt5_pb2.Empty:
         """Shutdown MT5 terminal connection.
 
@@ -413,10 +413,10 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
         log.info("Shutdown: completed")
         return mt5_pb2.Empty()
 
-    def Version(  # noqa: N802 # gRPC service method must match protobuf interface
+    def Version(
         self,
-        request: mt5_pb2.Empty,  # noqa: ARG002 # gRPC service method argument required by interface
-        context: grpc.ServicerContext,  # noqa: ARG002 # gRPC service method argument required by interface
+        request: mt5_pb2.Empty,
+        context: grpc.ServicerContext,
     ) -> mt5_pb2.MT5Version:
         """Get MT5 terminal version.
 
@@ -439,10 +439,10 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
             build=str(result[2]),
         )
 
-    def LastError(  # noqa: N802 # gRPC service method must match protobuf interface
+    def LastError(
         self,
-        request: mt5_pb2.Empty,  # noqa: ARG002 # gRPC service method argument required by interface
-        context: grpc.ServicerContext,  # noqa: ARG002 # gRPC service method argument required by interface
+        request: mt5_pb2.Empty,
+        context: grpc.ServicerContext,
     ) -> mt5_pb2.ErrorInfo:
         """Get last MT5 error code and description.
 
@@ -459,10 +459,10 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
         log.debug("LastError: result=%s", result)
         return mt5_pb2.ErrorInfo(code=result[0], message=result[1])
 
-    def GetConstants(  # noqa: N802 # gRPC service method must match protobuf interface
+    def GetConstants(
         self,
-        request: mt5_pb2.Empty,  # noqa: ARG002 # gRPC service method argument required by interface
-        context: grpc.ServicerContext,  # noqa: ARG002 # gRPC service method argument required by interface
+        request: mt5_pb2.Empty,
+        context: grpc.ServicerContext,
     ) -> mt5_pb2.Constants:
         """Get all MT5 constants for client-side usage.
 
@@ -586,10 +586,10 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
     # ACCOUNT/TERMINAL INFO
     # =========================================================================
 
-    def TerminalInfo(  # noqa: N802 # gRPC service method must match protobuf interface
+    def TerminalInfo(
         self,
-        request: mt5_pb2.Empty,  # noqa: ARG002 # gRPC service method argument required by interface
-        context: grpc.ServicerContext,  # noqa: ARG002 # gRPC service method argument required by interface
+        request: mt5_pb2.Empty,
+        context: grpc.ServicerContext,
     ) -> mt5_pb2.DictData:
         """Get terminal information.
 
@@ -611,10 +611,10 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
         log.debug("TerminalInfo: returned terminal info")
         return mt5_pb2.DictData(json_data=_json_serialize(data))
 
-    def AccountInfo(  # noqa: N802 # gRPC service method must match protobuf interface
+    def AccountInfo(
         self,
-        request: mt5_pb2.Empty,  # noqa: ARG002 # gRPC service method argument required by interface
-        context: grpc.ServicerContext,  # noqa: ARG002 # gRPC service method argument required by interface
+        request: mt5_pb2.Empty,
+        context: grpc.ServicerContext,
     ) -> mt5_pb2.DictData:
         """Get account information.
 
@@ -640,10 +640,10 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
     # SYMBOL OPERATIONS
     # =========================================================================
 
-    def SymbolsTotal(  # noqa: N802 # gRPC service method must match protobuf interface
+    def SymbolsTotal(
         self,
-        request: mt5_pb2.Empty,  # noqa: ARG002 # gRPC service method argument required by interface
-        context: grpc.ServicerContext,  # noqa: ARG002 # gRPC service method argument required by interface
+        request: mt5_pb2.Empty,
+        context: grpc.ServicerContext,
     ) -> mt5_pb2.IntResponse:
         """Get total number of available symbols.
 
@@ -660,10 +660,10 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
         log.debug("SymbolsTotal: result=%s", result)
         return mt5_pb2.IntResponse(value=int(result) if result else 0)
 
-    def SymbolsGet(  # noqa: N802 # gRPC service method must match protobuf interface
+    def SymbolsGet(
         self,
         request: mt5_pb2.SymbolsRequest,
-        context: grpc.ServicerContext,  # noqa: ARG002 # gRPC service method argument required by interface
+        context: grpc.ServicerContext,
     ) -> mt5_pb2.SymbolsResponse:
         """Get available symbols with optional group filter.
 
@@ -705,10 +705,10 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
         log.debug("SymbolsGet: returned %s chunks", len(chunks))
         return mt5_pb2.SymbolsResponse(total=total, chunks=chunks)
 
-    def SymbolInfo(  # noqa: N802 # gRPC service method must match protobuf interface
+    def SymbolInfo(
         self,
         request: mt5_pb2.SymbolRequest,
-        context: grpc.ServicerContext,  # noqa: ARG002 # gRPC service method argument required by interface
+        context: grpc.ServicerContext,
     ) -> mt5_pb2.DictData:
         """Get detailed symbol information.
 
@@ -731,10 +731,10 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
         log.debug("SymbolInfo: found symbol")
         return mt5_pb2.DictData(json_data=_json_serialize(data))
 
-    def SymbolInfoTick(  # noqa: N802 # gRPC service method must match protobuf interface
+    def SymbolInfoTick(
         self,
         request: mt5_pb2.SymbolRequest,
-        context: grpc.ServicerContext,  # noqa: ARG002 # gRPC service method argument required by interface
+        context: grpc.ServicerContext,
     ) -> mt5_pb2.DictData:
         """Get current tick data for a symbol.
 
@@ -761,10 +761,10 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
         )
         return mt5_pb2.DictData(json_data=_json_serialize(data))
 
-    def SymbolSelect(  # noqa: N802 # gRPC service method must match protobuf interface
+    def SymbolSelect(
         self,
         request: mt5_pb2.SymbolSelectRequest,
-        context: grpc.ServicerContext,  # noqa: ARG002 # gRPC service method argument required by interface
+        context: grpc.ServicerContext,
     ) -> mt5_pb2.BoolResponse:
         """Select or deselect symbol in Market Watch.
 
@@ -791,10 +791,10 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
     # MARKET DATA - RATES
     # =========================================================================
 
-    def CopyRatesFrom(  # noqa: N802 # gRPC service method must match protobuf interface
+    def CopyRatesFrom(
         self,
         request: mt5_pb2.CopyRatesRequest,
-        context: grpc.ServicerContext,  # noqa: ARG002 # gRPC service method argument required by interface
+        context: grpc.ServicerContext,
     ) -> mt5_pb2.NumpyArray:
         """Copy OHLCV rates from a specific date.
 
@@ -829,10 +829,10 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
         )
         return self._numpy_to_proto(result)
 
-    def CopyRatesFromPos(  # noqa: N802 # gRPC service method must match protobuf interface
+    def CopyRatesFromPos(
         self,
         request: mt5_pb2.CopyRatesPosRequest,
-        context: grpc.ServicerContext,  # noqa: ARG002 # gRPC service method argument required by interface
+        context: grpc.ServicerContext,
     ) -> mt5_pb2.NumpyArray:
         """Copy OHLCV rates from a bar position.
 
@@ -867,10 +867,10 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
         )
         return self._numpy_to_proto(result)
 
-    def CopyRatesRange(  # noqa: N802 # gRPC service method must match protobuf interface
+    def CopyRatesRange(
         self,
         request: mt5_pb2.CopyRatesRangeRequest,
-        context: grpc.ServicerContext,  # noqa: ARG002 # gRPC service method argument required by interface
+        context: grpc.ServicerContext,
     ) -> mt5_pb2.NumpyArray:
         """Copy OHLCV rates in a date range.
 
@@ -913,10 +913,10 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
     # MARKET DATA - TICKS
     # =========================================================================
 
-    def CopyTicksFrom(  # noqa: N802 # gRPC service method must match protobuf interface
+    def CopyTicksFrom(
         self,
         request: mt5_pb2.CopyTicksRequest,
-        context: grpc.ServicerContext,  # noqa: ARG002 # gRPC service method argument required by interface
+        context: grpc.ServicerContext,
     ) -> mt5_pb2.NumpyArray:
         """Copy tick data from a specific date.
 
@@ -951,10 +951,10 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
         )
         return self._numpy_to_proto(result)
 
-    def CopyTicksRange(  # noqa: N802 # gRPC service method must match protobuf interface
+    def CopyTicksRange(
         self,
         request: mt5_pb2.CopyTicksRangeRequest,
-        context: grpc.ServicerContext,  # noqa: ARG002 # gRPC service method argument required by interface
+        context: grpc.ServicerContext,
     ) -> mt5_pb2.NumpyArray:
         """Copy tick data in a date range.
 
@@ -997,10 +997,10 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
     # TRADING OPERATIONS
     # =========================================================================
 
-    def OrderCalcMargin(  # noqa: N802 # gRPC service method must match protobuf interface
+    def OrderCalcMargin(
         self,
         request: mt5_pb2.MarginRequest,
-        context: grpc.ServicerContext,  # noqa: ARG002 # gRPC service method argument required by interface
+        context: grpc.ServicerContext,
     ) -> mt5_pb2.FloatResponse:
         """Calculate margin required for an order.
 
@@ -1030,10 +1030,10 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
             return mt5_pb2.FloatResponse()
         return mt5_pb2.FloatResponse(value=float(result))
 
-    def OrderCalcProfit(  # noqa: N802 # gRPC service method must match protobuf interface
+    def OrderCalcProfit(
         self,
         request: mt5_pb2.ProfitRequest,
-        context: grpc.ServicerContext,  # noqa: ARG002 # gRPC service method argument required by interface
+        context: grpc.ServicerContext,
     ) -> mt5_pb2.FloatResponse:
         """Calculate potential profit for an order.
 
@@ -1065,10 +1065,10 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
             return mt5_pb2.FloatResponse()
         return mt5_pb2.FloatResponse(value=float(result))
 
-    def OrderCheck(  # noqa: N802 # gRPC service method must match protobuf interface
+    def OrderCheck(
         self,
         request: mt5_pb2.OrderRequest,
-        context: grpc.ServicerContext,  # noqa: ARG002 # gRPC service method argument required by interface
+        context: grpc.ServicerContext,
     ) -> mt5_pb2.DictData:
         """Check order validity without sending.
 
@@ -1090,10 +1090,10 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
         log.debug("OrderCheck: retcode=%s", data.get("retcode"))
         return mt5_pb2.DictData(json_data=_json_serialize(data))
 
-    def OrderSend(  # noqa: N802 # gRPC service method must match protobuf interface
+    def OrderSend(
         self,
         request: mt5_pb2.OrderRequest,
-        context: grpc.ServicerContext,  # noqa: ARG002 # gRPC service method argument required by interface
+        context: grpc.ServicerContext,
     ) -> mt5_pb2.DictData:
         """Send trading order to MT5.
 
@@ -1124,10 +1124,10 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
     # POSITION OPERATIONS
     # =========================================================================
 
-    def PositionsTotal(  # noqa: N802 # gRPC service method must match protobuf interface
+    def PositionsTotal(
         self,
-        request: mt5_pb2.Empty,  # noqa: ARG002 # gRPC service method argument required by interface
-        context: grpc.ServicerContext,  # noqa: ARG002 # gRPC service method argument required by interface
+        request: mt5_pb2.Empty,
+        context: grpc.ServicerContext,
     ) -> mt5_pb2.IntResponse:
         """Get total number of open positions.
 
@@ -1144,10 +1144,10 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
         log.debug("PositionsTotal: result=%s", result)
         return mt5_pb2.IntResponse(value=int(result) if result else 0)
 
-    def PositionsGet(  # noqa: N802 # gRPC service method must match protobuf interface
+    def PositionsGet(
         self,
         request: mt5_pb2.PositionsRequest,
-        context: grpc.ServicerContext,  # noqa: ARG002 # gRPC service method argument required by interface
+        context: grpc.ServicerContext,
     ) -> mt5_pb2.DictList:
         """Get open positions with optional filters.
 
@@ -1191,10 +1191,10 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
     # ORDER OPERATIONS
     # =========================================================================
 
-    def OrdersTotal(  # noqa: N802 # gRPC service method must match protobuf interface
+    def OrdersTotal(
         self,
-        request: mt5_pb2.Empty,  # noqa: ARG002 # gRPC service method argument required by interface
-        context: grpc.ServicerContext,  # noqa: ARG002 # gRPC service method argument required by interface
+        request: mt5_pb2.Empty,
+        context: grpc.ServicerContext,
     ) -> mt5_pb2.IntResponse:
         """Get total number of pending orders.
 
@@ -1211,10 +1211,10 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
         log.debug("OrdersTotal: result=%s", result)
         return mt5_pb2.IntResponse(value=int(result) if result else 0)
 
-    def OrdersGet(  # noqa: N802 # gRPC service method must match protobuf interface
+    def OrdersGet(
         self,
         request: mt5_pb2.OrdersRequest,
-        context: grpc.ServicerContext,  # noqa: ARG002 # gRPC service method argument required by interface
+        context: grpc.ServicerContext,
     ) -> mt5_pb2.DictList:
         """Get pending orders with optional filters.
 
@@ -1258,10 +1258,10 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
     # HISTORY OPERATIONS
     # =========================================================================
 
-    def HistoryOrdersTotal(  # noqa: N802 # gRPC service method must match protobuf interface
+    def HistoryOrdersTotal(
         self,
         request: mt5_pb2.HistoryRequest,
-        context: grpc.ServicerContext,  # noqa: ARG002 # gRPC service method argument required by interface
+        context: grpc.ServicerContext,
     ) -> mt5_pb2.IntResponse:
         """Get total count of historical orders in date range.
 
@@ -1289,10 +1289,10 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
         log.debug("HistoryOrdersTotal: result=%s", result)
         return mt5_pb2.IntResponse(value=int(result) if result else 0)
 
-    def HistoryOrdersGet(  # noqa: N802 # gRPC service method must match protobuf interface
+    def HistoryOrdersGet(
         self,
         request: mt5_pb2.HistoryRequest,
-        context: grpc.ServicerContext,  # noqa: ARG002 # gRPC service method argument required by interface
+        context: grpc.ServicerContext,
     ) -> mt5_pb2.DictList:
         """Get historical orders with filters.
 
@@ -1340,10 +1340,10 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
         log.debug("HistoryOrdersGet: returned %s orders", len(json_items))
         return mt5_pb2.DictList(json_items=json_items)
 
-    def HistoryDealsTotal(  # noqa: N802 # gRPC service method must match protobuf interface
+    def HistoryDealsTotal(
         self,
         request: mt5_pb2.HistoryRequest,
-        context: grpc.ServicerContext,  # noqa: ARG002 # gRPC service method argument required by interface
+        context: grpc.ServicerContext,
     ) -> mt5_pb2.IntResponse:
         """Get total count of historical deals in date range.
 
@@ -1371,10 +1371,10 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
         log.debug("HistoryDealsTotal: result=%s", result)
         return mt5_pb2.IntResponse(value=int(result) if result else 0)
 
-    def HistoryDealsGet(  # noqa: N802 # gRPC service method must match protobuf interface
+    def HistoryDealsGet(
         self,
         request: mt5_pb2.HistoryRequest,
-        context: grpc.ServicerContext,  # noqa: ARG002 # gRPC service method argument required by interface
+        context: grpc.ServicerContext,
     ) -> mt5_pb2.DictList:
         """Get historical deals with filters.
 
@@ -1426,10 +1426,10 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
     # MARKET DEPTH (DOM) OPERATIONS
     # =========================================================================
 
-    def MarketBookAdd(  # noqa: N802 # gRPC service method must match protobuf interface
+    def MarketBookAdd(
         self,
         request: mt5_pb2.SymbolRequest,
-        context: grpc.ServicerContext,  # noqa: ARG002 # gRPC service method argument required by interface
+        context: grpc.ServicerContext,
     ) -> mt5_pb2.BoolResponse:
         """Subscribe to market depth (DOM) for a symbol.
 
@@ -1450,10 +1450,10 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
         log.debug("MarketBookAdd: result=%s", result)
         return mt5_pb2.BoolResponse(result=bool(result))
 
-    def MarketBookGet(  # noqa: N802 # gRPC service method must match protobuf interface
+    def MarketBookGet(
         self,
         request: mt5_pb2.SymbolRequest,
-        context: grpc.ServicerContext,  # noqa: ARG002 # gRPC service method argument required by interface
+        context: grpc.ServicerContext,
     ) -> mt5_pb2.DictList:
         """Get market depth (DOM) data for a symbol.
 
@@ -1478,10 +1478,10 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
         log.debug("MarketBookGet: returned %s entries", len(json_items))
         return mt5_pb2.DictList(json_items=json_items)
 
-    def MarketBookRelease(  # noqa: N802 # gRPC service method must match protobuf interface
+    def MarketBookRelease(
         self,
         request: mt5_pb2.SymbolRequest,
-        context: grpc.ServicerContext,  # noqa: ARG002 # gRPC service method argument required by interface
+        context: grpc.ServicerContext,
     ) -> mt5_pb2.BoolResponse:
         """Unsubscribe from market depth (DOM) for a symbol.
 
@@ -1538,7 +1538,7 @@ def _graceful_shutdown(signum: int, frame: FrameType | None) -> None:
 
 
 def serve(
-    host: str = "0.0.0.0",  # noqa: S104
+    host: str = "0.0.0.0",
     port: int = 50051,
     max_workers: int = 10,
 ) -> None:
@@ -1550,7 +1550,7 @@ def serve(
         max_workers: Maximum number of worker threads.
 
     """
-    global _server  # noqa: PLW0603
+    global _server
 
     _server = grpc.server(futures.ThreadPoolExecutor(max_workers=max_workers))
     mt5_pb2_grpc.add_MT5ServiceServicer_to_server(MT5GRPCServicer(), _server)
@@ -1578,7 +1578,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="MT5 gRPC Bridge Server")
     parser.add_argument(
         "--host",
-        default="0.0.0.0",  # noqa: S104
+        default="0.0.0.0",
         help="Host to bind (default: 0.0.0.0)",
     )
     parser.add_argument(

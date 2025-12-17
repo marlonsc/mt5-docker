@@ -1,102 +1,118 @@
 [build-system]
-    requires = ["poetry-core>=1.0.0"]
-    build-backend = "poetry.core.masonry.api"
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
 
 [tool.mypy]
-    exclude = [
-        "*.pyi",
-        "docker/container/Metatrader/mt5_pb2.py",
-        "docker/container/Metatrader/mt5_pb2_grpc.py",
-        "typings/",
-    ]
-    mypy_path = "typings"
-    python_version = "3.13"
-    strict = true
+exclude = [
+    "*.pyi",
+    "docker/container/Metatrader/mt5_pb2.py",
+    "docker/container/Metatrader/mt5_pb2_grpc.py",
+    "typings/",
+]
+mypy_path = "typings"
+python_version = "3.13"
+strict = true
 
 
 [tool.poetry]
-    authors = ["marlonsc <marlonsc@gmail.com>"]
-    description = "Dockerized MetaTrader 5 environment with gRPC bridge"
-    license = "MIT"
-    name = "mt5docker"
-    package-mode = false
-    readme = "README.md"
-    version = "2.2.1"
+authors = ["marlonsc <marlonsc@gmail.com>"]
+description = "Dockerized MetaTrader 5 environment with gRPC bridge"
+license = "MIT"
+name = "mt5docker"
+package-mode = false
+readme = "README.md"
+version = "2.2.1"
 
-    [tool.poetry.dependencies]
-        grpcio = "^1.60.0"
-        mt5linux = { git = "https://github.com/marlonsc/mt5linux.git", branch = "main" }
-        python = ">=3.13,<3.14"
-        python-dotenv = "^1.0.0" # For loading .env files
+[tool.poetry.dependencies]
+grpcio = "^1.60.0"
+mt5linux = { git = "https://github.com/marlonsc/mt5linux.git", branch = "main" }
+python = ">=3.13,<3.14"
+python-dotenv = "^1.0.0"                                                         # For loading .env files
 
-    [tool.poetry.group.dev.dependencies]
-        hypothesis = "^6.148.7"
-        mypy = "^1.0.0"
-        pyright = "^1.1.0"
-        pytest = "^8.0.0"
-        pytest-dotenv = "^0.5.0"
-        pytest-timeout = "^2.0.0"
-        ruff = "0.11.13"
+[tool.poetry.group.dev.dependencies]
+hypothesis = "^6.148.7"
+mypy = "^1.0.0"
+pyright = "^1.1.0"
+pytest = "^8.0.0"
+pytest-dotenv = "^0.5.0"
+pytest-timeout = "^2.0.0"
+ruff = "0.11.13"
 
 [tool.pyrefly]
-    exclude = [
-        "*.pyi",
-        "mt5linux/mt5_pb2.py",
-        "mt5linux/mt5_pb2_grpc.py",
-        "typings/",
-    ]
+exclude = [
+    "*.pyi",
+    "mt5linux/mt5_pb2.py",
+    "mt5linux/mt5_pb2_grpc.py",
+    "typings/",
+]
 
 [tool.pyright]
-    exclude = [
-        "*.pyi",
-        "docker/container/Metatrader/mt5_pb2.py",
-        "docker/container/Metatrader/mt5_pb2_grpc.py",
-        "typings/",
-    ]
-    pythonPlatform = "Linux"
-    pythonVersion = "3.13"
-    stubPath = "typings"
-    typeCheckingMode = "strict"
-    typeStubSearchPaths = ["/typings"]
+exclude = [
+    "*.pyi",
+    "docker/container/Metatrader/mt5_pb2.py",
+    "docker/container/Metatrader/mt5_pb2_grpc.py",
+    "typings/",
+]
+pythonPlatform = "Linux"
+pythonVersion = "3.13"
+stubPath = "typings"
+
+# Execution environment
+executionEnvironments = [{ root = ".", extraPaths = ["."] }]
+
+typeCheckingMode = "strict"
+typeStubSearchPaths = ["typings"]
 
 [tool.pytest.ini_options]
-    addopts = "-v --tb=short -s"
-    env_files = [".env"]
-    markers = [
-        "requires_container: marks tests that require the Docker container to be running",
-        "slow: marks tests that may take longer to execute",
-    ]
-    testpaths = ["tests"]
-    timeout = 600
+addopts = "-v --tb=short -s"
+env_files = [".env"]
+markers = [
+    "requires_container: marks tests that require the Docker container to be running",
+    "slow: marks tests that may take longer to execute",
+]
+testpaths = ["tests"]
+timeout = 600
 
 [tool.ruff]
 
-    line-length = 88
-    target-version = "py313"
+line-length = 88
+target-version = "py313"
 
-    [tool.ruff.lint]
-        ignore = [
-            "COM812",  # missing-trailing-comma (conflicts with formatter)
-            "ISC001",  # single-line-implicit-string-concatenation (conflicts with formatter)
-            "D203",    # incorrect-blank-line-before-class (incompatible with D211)
-            "D213",    # multi-line-summary-second-line (incompatible with D212)
-        ]
-        exclude = [
-            "*.pyi",
-            "mt5linux/mt5_pb2.py",
-            "mt5linux/mt5_pb2_grpc.py",
-            "typings/",
-        ]
-        select = ["ALL"]
+[tool.ruff.lint]
+ignore = [
+    "COM812", # missing-trailing-comma (conflicts with formatter)
+    "ISC001", # single-line-implicit-string-concatenation (conflicts with formatter)
+    "D203",   # incorrect-blank-line-before-class (incompatible with D211)
+    "D213",   # multi-line-summary-second-line (incompatible with D212)
+]
+exclude = [
+    "*.pyi",
+    "mt5linux/mt5_pb2.py",
+    "mt5linux/mt5_pb2_grpc.py",
+    "typings/",
+]
+select = ["ALL"]
 
 
-            [tool.ruff.lint.per-file-ignores]
-                "tests/*" = [
-                    "S101",    # assert ok in tests
-                    "S603",    # subprocess calls ok in tests (Docker interaction)
-                    "S607",    # partial executable path ok in tests (docker CLI)
-                    "TRY300",  # try/except style ok in tests
-                ]
-
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = [
+    "S101",   # assert ok in tests
+    "S603",   # subprocess calls ok in tests (Docker interaction)
+    "S607",   # partial executable path ok in tests (docker CLI)
+    "TRY300", # try/except style ok in tests
+]
+"docker/container/Metatrader/bridge.py" = [
+    "ARG002",  # unused arguments are required by gRPC framework (request, context)
+    "N802",    # function names must be PascalCase for gRPC service methods
+    "PLW0603", # global statement needed for server lifecycle management
+    "S104",    # binding to all interfaces is intentional for gRPC server
+]
+"tests/test_bridge_validation.py" = [
+    "PT019",   # fixture without value injected as parameter - test setup requirement
+    "S105",    # hardcoded password - test token for controlled testing
+    "S108",    # hardcoded temp file - test token file in /tmp for restart tests
+    "PT018",   # composite assertion - complex validation in single assertion
+    "PLR2004", # magic value comparison - specific length validation in tests
+]
 [dependency-groups]
 dev = []

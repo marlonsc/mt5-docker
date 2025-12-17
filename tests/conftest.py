@@ -31,6 +31,10 @@ import pytest
 from dotenv import load_dotenv
 from mt5linux import mt5_pb2, mt5_pb2_grpc
 
+from tests.constants import TestConstants as c  # noqa: N813
+
+__all__: list[str] = ["c"]
+
 if TYPE_CHECKING:
     from collections.abc import Generator
 
@@ -48,9 +52,9 @@ def _log(message: str, *, phase: bool = False) -> None:
 
     elapsed = time.time() - _timing_start
     if phase:
-        sys.stderr.write(f"\n{'='*60}\n")
+        sys.stderr.write(f"\n{'=' * 60}\n")
         sys.stderr.write(f"[{elapsed:5.1f}s] PHASE: {message}\n")
-        sys.stderr.write(f"{'='*60}\n")
+        sys.stderr.write(f"{'=' * 60}\n")
     else:
         sys.stderr.write(f"[{elapsed:5.1f}s] {message}\n")
     sys.stderr.flush()
@@ -98,12 +102,7 @@ def get_test_container_config() -> DockerContainerConfig:
 _config = get_test_container_config()
 _logger = logging.getLogger(__name__)
 
-# Skip message for tests requiring credentials
-SKIP_NO_CREDENTIALS = (
-    "MT5 credentials not configured. "
-    "To run container tests, create .env file with MT5_LOGIN and MT5_PASSWORD. "
-    "See .env.example for details."
-)
+# Skip message moved to TestConstants class
 
 
 def has_mt5_credentials() -> bool:
@@ -149,8 +148,12 @@ def is_grpc_service_ready(
         stub = mt5_pb2_grpc.MT5ServiceStub(channel)
         response = stub.HealthCheck(mt5_pb2.Empty(), timeout=timeout)
         channel.close()
-        _log(f"gRPC check: healthy={response.healthy}")
-        return response.healthy
+        _log(
+            f"gRPC check: healthy={response.healthy}, "
+            f"mt5_available={response.mt5_available}"
+        )
+        # Service is ready if MT5 module is available (even if not broker-connected)
+        return response.mt5_available
     except grpc.RpcError as e:
         _log(f"gRPC check: FAILED - {type(e).__name__}")
         return False
@@ -171,7 +174,7 @@ def wait_for_grpc_service(
     min_interval = 0.5
     max_interval = 5.0
     current_interval = min_interval
-    startup_health_timeout = 30.0
+    startup_health_timeout = c.STARTUP_HEALTH_TIMEOUT
 
     attempt = 0
     while time.time() - start < wait_timeout:
@@ -213,16 +216,16 @@ def start_test_container() -> None:
 
         # PHASE 2: Fast-path gRPC check (2s timeout)
         _log("PHASE 2: Fast-path gRPC check (2s timeout)", phase=True)
-        if is_grpc_service_ready(timeout=2.0):
+        if is_grpc_service_ready(timeout=c.FAST_PATH_TIMEOUT):
             _log("FAST-PATH SUCCESS: gRPC already ready!")
-            _log("Total validation time: {:.1f}s".format(time.time() - _timing_start))
+            _log(f"Total validation time: {time.time() - _timing_start:.1f}s")
             return
 
         # PHASE 3: Wait for gRPC with progressive backoff
         _log("PHASE 3: Wait for gRPC (service not immediately ready)", phase=True)
         if not wait_for_grpc_service():
             _log("WARNING: gRPC not ready after full wait")
-        _log("Total validation time: {:.1f}s".format(time.time() - _timing_start))
+        _log(f"Total validation time: {time.time() - _timing_start:.1f}s")
         return
 
     # Container not running - need to start it
@@ -232,7 +235,7 @@ def start_test_container() -> None:
     _log("PHASE 2: Check credentials", phase=True)
     if not has_mt5_credentials():
         _log("SKIP: No MT5 credentials configured")
-        pytest.skip(SKIP_NO_CREDENTIALS)
+        pytest.skip(c.SKIP_NO_CREDENTIALS)
 
     # Check compose file
     docker_dir = project_root / "docker"
@@ -278,14 +281,19 @@ def start_test_container() -> None:
 
     if not wait_for_grpc_service():
         logs = subprocess.run(
-            ["docker", "logs", _config.container_name, "--tail", "50"],
+            ["docker", "logs", _config.container_name, "--tail", str(c.LOG_TAIL_LINES)],
             capture_output=True,
             text=True,
             check=False,
         )
+        log_output = (
+            logs.stdout[-c.MAX_LOG_LENGTH :]
+            if logs.stdout
+            else logs.stderr[-c.MAX_LOG_LENGTH :]
+        )
         pytest.skip(
             f"gRPC service not ready after {_config.startup_timeout}s.\n"
-            f"Logs: {logs.stdout[-500:] if logs.stdout else logs.stderr[-500:]}",
+            f"Logs: {log_output}",
         )
 
     _logger.info(
@@ -349,7 +357,7 @@ def vnc_port(docker_container: None) -> int:  # noqa: ARG001
 @pytest.fixture
 def grpc_channel(
     docker_container: None,  # noqa: ARG001
-) -> Generator[grpc.Channel, None, None]:
+) -> Generator[grpc.Channel]:
     """Provide gRPC channel to test container."""
     channel = grpc.insecure_channel(f"localhost:{_config.grpc_port}")
     yield channel

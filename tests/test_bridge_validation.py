@@ -9,7 +9,6 @@ Tests include:
 
 from __future__ import annotations
 
-import json
 import subprocess
 import time
 from typing import Any
@@ -17,6 +16,8 @@ from typing import Any
 import grpc
 import pytest
 from mt5linux import mt5_pb2, mt5_pb2_grpc
+
+from tests.conftest import c
 
 # =============================================================================
 # OFFICIAL MT5 API FUNCTION SIGNATURES
@@ -291,7 +292,7 @@ OFFICIAL_MT5_CONSTANTS = {
 def docker_exec(
     container: str,
     command: list[str],
-    timeout: int = 30,
+    timeout: int = c.DEFAULT_TIMEOUT,
 ) -> subprocess.CompletedProcess[str]:
     """Execute command in container."""
     return subprocess.run(
@@ -304,7 +305,7 @@ def docker_exec(
 
 
 def get_grpc_stub(
-    port: int = 48812,
+    port: int = c.TEST_GRPC_PORT,
 ) -> tuple[grpc.Channel, mt5_pb2_grpc.MT5ServiceStub]:
     """Get gRPC channel and stub to bridge server."""
     channel = grpc.insecure_channel(f"localhost:{port}")
@@ -338,7 +339,9 @@ class TestBridgeFunctionSignatures:
         result = mt5_stub.GetConstants(mt5_pb2.Empty())
         assert result is not None
         assert result.values  # Constants.values is a map
-        assert len(result.values) > 50, f"Expected 50+ constants, got {len(result.values)}"
+        assert len(result.values) > c.MIN_CONSTANTS_COUNT, (
+            f"Expected {c.MIN_CONSTANTS_COUNT}+ constants, got {len(result.values)}"
+        )
 
     def test_initialize_function(
         self,
@@ -382,7 +385,7 @@ class TestBridgeConstants:
 
     def test_constants_not_empty(self, bridge_constants: dict[str, Any]) -> None:
         """Verify constants dict is not empty."""
-        assert len(bridge_constants) > 0, "Constants dict is empty"
+        assert len(bridge_constants) > c.MIN_LOGIN_VALUE, "Constants dict is empty"
 
     @pytest.mark.parametrize(
         ("category", "constants"),
@@ -436,7 +439,6 @@ class TestServiceRecovery:
 
     def test_bridge_survives_reconnection(
         self,
-        container_name: str,
         grpc_port: int,
     ) -> None:
         """Test bridge handles client reconnection gracefully."""
@@ -457,7 +459,6 @@ class TestServiceRecovery:
 
     def test_bridge_handles_rapid_connections(
         self,
-        container_name: str,
         grpc_port: int,
     ) -> None:
         """Test bridge handles rapid connect/disconnect cycles."""
@@ -470,7 +471,7 @@ class TestServiceRecovery:
     def test_restart_token_creation(self, container_name: str) -> None:
         """Test that restart token mechanism works (non-destructive)."""
         # Test using a different file to avoid triggering actual restart
-        test_token = "/tmp/.mt5-restart-test-token"
+        test_token = f"{c.TMP_PATH}/{c.RESTART_TEST_TOKEN_FILE}"
         result = docker_exec(
             container_name,
             ["touch", test_token],
@@ -488,9 +489,11 @@ class TestServiceRecovery:
         # (check parent dir permissions without creating actual token)
         result = docker_exec(
             container_name,
-            ["test", "-w", "/tmp"],
+            ["test", "-w", c.TMP_PATH],
         )
-        assert result.returncode == 0, "/tmp must be writable for restart tokens"
+        assert result.returncode == c.SUCCESS_RETURN_CODE, (
+            f"{c.TMP_PATH} must be writable for restart tokens"
+        )
 
         # Clean up
         docker_exec(container_name, ["rm", "-f", test_token])
@@ -544,7 +547,7 @@ class TestUpgrade:
                 "-c",
                 "wine /config/.wine/drive_c/Python/python.exe -m pip list --outdated",
             ],
-            timeout=60,
+            timeout=c.COMMAND_TIMEOUT,
         )
         # Command should succeed (returncode 0)
         assert result.returncode == 0 or "No matching distribution" not in result.stderr
@@ -561,10 +564,10 @@ class TestUpgrade:
                 "wine /config/.wine/drive_c/Python/python.exe -c "
                 "'import MetaTrader5; print(MetaTrader5.__version__)'",
             ],
-            timeout=60,
+            timeout=c.COMMAND_TIMEOUT,
         )
         assert result.returncode == 0
-        assert result.stdout.strip().startswith("5.")
+        assert result.stdout.strip().startswith(c.MT5_VERSION_PREFIX)
 
     def test_grpcio_package_version(self, container_name: str) -> None:
         """Verify gRPC package version is retrievable."""
@@ -578,7 +581,7 @@ class TestUpgrade:
                 "wine /config/.wine/drive_c/Python/python.exe -c "
                 "'import grpc; print(grpc.__version__)'",
             ],
-            timeout=60,
+            timeout=c.COMMAND_TIMEOUT,
         )
         assert result.returncode == 0
         version = result.stdout.strip()
@@ -690,7 +693,7 @@ class TestFailureSimulation:
     ) -> None:
         """Test health check still works after many operations."""
         # Perform many operations
-        for _ in range(10):
+        for _ in range(c.MAX_RANGE_RETRIES):
             mt5_stub.Version(mt5_pb2.Empty())
             mt5_stub.LastError(mt5_pb2.Empty())
             mt5_stub.SymbolsTotal(mt5_pb2.Empty())

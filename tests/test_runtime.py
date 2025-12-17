@@ -25,17 +25,7 @@ import subprocess
 import pytest
 from mt5linux import mt5_pb2, mt5_pb2_grpc
 
-# =============================================================================
-# CONSTANTS
-# =============================================================================
-
-# Main scripts to test in container (consolidated structure)
-CONTAINER_MAIN_SCRIPTS = [
-    "/Metatrader/start.sh",
-    "/Metatrader/setup.sh",
-    "/Metatrader/health_monitor.sh",
-    "/Metatrader/bridge.py",
-]
+from tests.conftest import c
 
 # =============================================================================
 # HELPER FUNCTIONS
@@ -71,7 +61,7 @@ def parse_version(version_str: str) -> tuple[int, ...]:
     """Parse version string to tuple for comparison."""
     # Handle versions like "6.0.2", "1.26.4", "3.12.8"
     parts = re.findall(r"\d+", version_str)
-    return tuple(int(p) for p in parts[:3])
+    return tuple(int(p) for p in parts[: c.VERSION_PARTS_COUNT])
 
 
 # =============================================================================
@@ -129,7 +119,9 @@ class TestContainerHealth:
             check=False,
         )
         restart_count = int(result.stdout.strip())
-        assert restart_count < 3, f"Container restarted {restart_count} times"
+        assert restart_count < c.MAX_CONTAINER_RESTARTS, (
+            f"Container restarted {restart_count} times"
+        )
 
 
 # =============================================================================
@@ -225,9 +217,7 @@ class TestGRPCService:
 
         # If connected to broker, should be healthy
         if health.connected is True:
-            assert health.healthy is True, (
-                "Connected but not healthy - unexpected"
-            )
+            assert health.healthy is True, "Connected but not healthy - unexpected"
 
 
 # =============================================================================
@@ -248,7 +238,9 @@ class TestWinePython:
 
         assert result.returncode == 0, f"Python not found in Wine: {result.stderr}"
         version = result.stdout.strip()
-        assert "3.12" in version, f"Expected Python 3.12.x, got {version}"
+        assert c.PYTHON_VERSION_PREFIX in version, (
+            f"Expected Python {c.PYTHON_VERSION_PREFIX}.x, got {version}"
+        )
 
     def test_wine_grpcio_version(self, container_name: str) -> None:
         """Verify gRPC 1.76+ is installed in Wine Python."""
@@ -257,8 +249,11 @@ class TestWinePython:
         assert result.returncode == 0, f"grpcio not installed: {result.stderr}"
         version = result.stdout.strip()
         parts = version.split(".")
-        assert int(parts[0]) >= 1 and int(parts[1]) >= 76, (
-            f"Expected grpcio 1.76+, got {version}"
+        assert int(parts[0]) >= c.MIN_GRPC_MAJOR, (
+            f"Expected grpcio {c.MIN_GRPC_MAJOR}.{c.MIN_GRPC_MINOR}+, got {version}"
+        )
+        assert int(parts[1]) >= c.MIN_GRPC_MINOR, (
+            f"Expected grpcio {c.MIN_GRPC_MAJOR}.{c.MIN_GRPC_MINOR}+, got {version}"
         )
 
     def test_wine_numpy_version(self, container_name: str) -> None:
@@ -267,7 +262,9 @@ class TestWinePython:
 
         assert result.returncode == 0, f"numpy not installed: {result.stderr}"
         version = result.stdout.strip()
-        assert version.startswith("1.26"), f"Expected numpy 1.26.x, got {version}"
+        assert version.startswith(c.NUMPY_VERSION_PREFIX), (
+            f"Expected numpy {c.NUMPY_VERSION_PREFIX}.x, got {version}"
+        )
 
     def test_wine_metatrader5_installed(self, container_name: str) -> None:
         """Verify MetaTrader5 package is installed in Wine Python."""
@@ -278,7 +275,9 @@ class TestWinePython:
 
         assert result.returncode == 0, f"MetaTrader5 not installed: {result.stderr}"
         version = result.stdout.strip()
-        assert version.startswith("5."), f"Expected MT5 5.x, got {version}"
+        assert version.startswith(c.MT5_VERSION_PREFIX), (
+            f"Expected MT5 {c.MT5_VERSION_PREFIX}x, got {version}"
+        )
 
 
 # =============================================================================
@@ -298,7 +297,7 @@ class TestLinuxPython:
         result = docker_exec(container_name, ["python3", "--version"])
 
         assert result.returncode == 0, f"Python3 not found: {result.stderr}"
-        assert "Python 3" in result.stdout
+        assert c.PYTHON_VERSION_STRING in result.stdout
 
 
 # =============================================================================
@@ -414,7 +413,7 @@ class TestMT5AutoLogin:
 class TestStartupScripts:
     """Test main scripts in container (consolidated structure)."""
 
-    @pytest.mark.parametrize("script", CONTAINER_MAIN_SCRIPTS)
+    @pytest.mark.parametrize("script", c.CONTAINER_MAIN_SCRIPTS)
     def test_main_script_exists_in_container(
         self,
         container_name: str,
@@ -426,7 +425,7 @@ class TestStartupScripts:
 
     @pytest.mark.parametrize(
         "script",
-        [s for s in CONTAINER_MAIN_SCRIPTS if s.endswith(".sh")],
+        [s for s in c.CONTAINER_MAIN_SCRIPTS if s.endswith(".sh")],
     )
     def test_shell_script_is_executable_in_container(
         self,
@@ -534,7 +533,7 @@ class TestVolumePersistence:
             text=True,
             check=False,
         )
-        assert "/config" in result.stdout, "/config volume not mounted"
+        assert c.CONFIG_PATH in result.stdout, f"{c.CONFIG_PATH} volume not mounted"
 
     def test_config_directory_writable(self, container_name: str) -> None:
         """Verify /config directory is writable."""
@@ -575,8 +574,8 @@ class TestGRPCCompatibility:
         container_version = result.stdout.strip()
 
         # Major.minor version should be compatible
-        local_parts = local_version.split(".")[:2]
-        container_parts = container_version.split(".")[:2]
+        local_parts = local_version.split(".")[: c.VERSION_MAJOR_MINOR_PARTS]
+        container_parts = container_version.split(".")[: c.VERSION_MAJOR_MINOR_PARTS]
         assert local_parts[0] == container_parts[0], (
             f"gRPC major version mismatch: "
             f"local={local_version}, container={container_version}"
