@@ -25,7 +25,7 @@
 
     [tool.poetry.dependencies]
         grpcio = "^1.60.0"
-        mt5linux = { path = "../mt5linux", develop = true }
+        mt5linux = { git = "https://github.com/marlonsc/mt5linux.git", branch = "main" }
         python = ">=3.13,<3.14"
         python-dotenv = "^1.0.0" # For loading .env files
 

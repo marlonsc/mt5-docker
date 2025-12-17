@@ -102,6 +102,11 @@ start_mt5_terminal() {
     return 0
 }
 
+is_port_listening() {
+    # Check if port is listening using ss (iproute2)
+    ss -tuln 2>/dev/null | grep -q ":$mt5server_port"
+}
+
 start_bridge() {
     log "Starting gRPC bridge server on port ${mt5server_port}..."
 
@@ -113,9 +118,22 @@ start_bridge() {
     run_as_abc ${wine_executable} "$WINE_PYTHON_PATH" -m mt5linux.bridge ${bridge_args} &
     BRIDGE_PID=$!
 
-    sleep 3
+    # Wait for port to be listening (max 30s)
+    local waited=0
+    local max_wait=30
+    while [ $waited -lt $max_wait ]; do
+        if is_port_listening; then
+            log "gRPC bridge server started (PID: $BRIDGE_PID, port $mt5server_port listening)"
+            return 0
+        fi
+        sleep 2
+        waited=$((waited + 2))
+        [ $((waited % 10)) -eq 0 ] && log "Waiting for bridge to bind port... (${waited}s/${max_wait}s)"
+    done
+
+    # Check if process is at least running
     if is_bridge_running; then
-        log "gRPC bridge server started (PID: $BRIDGE_PID)"
+        log "WARN: Bridge process running but port not detected as listening yet"
         return 0
     else
         log "ERROR: gRPC bridge server failed to start"

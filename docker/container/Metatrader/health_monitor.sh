@@ -47,8 +47,9 @@ check_mt5_process() {
 }
 
 check_bridge_listening() {
-    # Use netstat on Alpine (ss not available)
-    netstat -tuln 2>/dev/null | grep -q ":$mt5server_port"
+    # Use ss (iproute2) - available on modern Linux images
+    # netstat is NOT available in Alpine/minimal containers
+    ss -tuln 2>/dev/null | grep -q ":$mt5server_port"
 }
 
 check_bridge_responding() {

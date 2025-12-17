@@ -184,50 +184,50 @@ The process is automatic and you should end up with MetaTrader5 running in your 
    nano docker-compose.yaml
    ```
 
-  Use this content, optionally adding your MT5 credentials for auto-login.
+   Use this content, optionally adding your MT5 credentials for auto-login.
 
-  ```yaml
-  version: '3'
+   ```yaml
+   version: '3'
 
-  services:
-    mt5:
-      image: marlonsc/mt5-docker
-      container_name: mt5
-      volumes:
-        - ./config:/config
-      ports:
-        - 3000:3000
-        - 8001:8001
-      environment:
-        # Auto-login credentials (optional - can login manually via VNC instead)
-        - MT5_LOGIN=your_account_number
-        - MT5_PASSWORD=your_password
-        - MT5_SERVER=MetaQuotes-Demo
-        # Optional features
-        - ENABLE_WIN_DOTNET=1   # Install .NET Framework 4.8 for .NET EAs (default: 1)
-        - AUTO_RECOVERY_ENABLED=1  # Auto-restart on failures (default: 1)
-        - TZ=UTC                # Timezone for logs and MT5
-  ```
+   services:
+     mt5:
+       image: marlonsc/mt5-docker
+       container_name: mt5
+       volumes:
+         - ./config:/config
+       ports:
+         - 3000:3000
+         - 8001:8001
+       environment:
+         # Auto-login credentials (optional - can login manually via VNC instead)
+         - MT5_LOGIN=your_account_number
+         - MT5_PASSWORD=your_password
+         - MT5_SERVER=MetaQuotes-Demo
+         # Optional features
+         - ENABLE_WIN_DOTNET=1   # Install .NET Framework 4.8 for .NET EAs (default: 1)
+         - AUTO_RECOVERY_ENABLED=1  # Auto-restart on failures (default: 1)
+         - TZ=UTC                # Timezone for logs and MT5
+   ```
 
-## .NET Support
+   .NET Support
 
-- Windows `.NET Framework` inside Wine:
-  - Installed via `winetricks dotnet48` into `WINEPREFIX=/config/.wine`.
-  - Enables EAs that depend on .NET Framework when running MT5 under Wine.
+   Windows `.NET Framework` inside Wine:
+   Installed via `winetricks dotnet48` into `WINEPREFIX=/config/.wine`.
+   Enables EAs that depend on .NET Framework when running MT5 under Wine.
 
-  Disable by setting `ENABLE_WIN_DOTNET=0` in compose.
+   Disable by setting `ENABLE_WIN_DOTNET=0` in compose.
 
-  **Notice**: If you do not need to do remote python programming you can get a much smaller installation changing this line:
+   **Notice**: If you do not need to do remote python programming you can get a much  smaller installation changing this line:
 
-  ```yaml
-  image: marlonsc/mt5-docker
-  ```
+   ```yaml
+   image: marlonsc/mt5-docker
+   ```
 
-  by this one
+   by this one
 
-  ```yaml
-  image: marlonsc/mt5-docker:1.1
-  ```
+   ```yaml
+   image: marlonsc/mt5-docker:1.1
+   ```
 
 3. Start the container
 
@@ -235,15 +235,15 @@ The process is automatic and you should end up with MetaTrader5 running in your 
    docker compose -f docker/compose.yaml up -d
    ```
 
-  In some systems `docker compose` command does not exists. Try to use
-   `docker-compose -f docker/compose.yaml up -d` instead.
+   In some systems `docker compose` command does not exists. Try to use
+    `docker-compose -f docker/compose.yaml up -d` instead.
 
 4. Connect to web interface
 
-  Start your browser pointing http://&lt;your ip address&gt;:3000
+   Start your browser pointing http://&lt;your ip address&gt;:3000
 
-  On first run it may take a few minutes to install MT5, Wine dependencies, andoptionally .NET Framework and should take aprox 5 minutes.
-  The process is automatic and you should end up with MetaTrader5 running in your web session.
+   On first run it may take a few minutes to install MT5, Wine dependencies,  andoptionally .NET Framework and should take aprox 5 minutes.
+   The process is automatic and you should end up with MetaTrader5 running in your web  session.
 
 ## Where to place MQ5 and EX5 files
 
@@ -474,30 +474,30 @@ The project uses Poetry for dependency management and includes comprehensive aut
 
 3. **Configure credentials**: Copy the template file and fill in your credentials:
 
-```bash
-cp config.env.template .env
-```
+   ```bash
+   cp config.env.template .env
+   ```
 
 4. **Edit `.env`** with your required credentials:
 
-```bash
-# REQUIRED for production builds
-MT5_LOGIN=your_login_number
-MT5_PASSWORD=your_password
-MT5_SERVER=MetaQuotes-Demo
-VNC_PASSWORD=your_secure_vnc_password
+   ```bash
+   # REQUIRED for production builds
+   MT5_LOGIN=your_login_number
+   MT5_PASSWORD=your_password
+   MT5_SERVER=MetaQuotes-Demo
+   VNC_PASSWORD=your_secure_vnc_password
 
-# Optional settings available in template
-```
+   # Optional settings available in template
+   ```
 
-**⚠️ IMPORTANT**: `MT5_LOGIN`, `MT5_PASSWORD`, and `VNC_PASSWORD` are **mandatory** for builds and runs.
+   **⚠️ IMPORTANT**: `MT5_LOGIN`, `MT5_PASSWORD`, and `VNC_PASSWORD` are **mandatory** for builds and runs.
 
-To create a MetaQuotes Demo account:
+   To create a MetaQuotes Demo account:
 
-- Open MT5 in the container (`http://localhost:3000`)
-- File → Open an Account → MetaQuotes-Demo
-- Fill in the registration form
-- Copy your login and password to `.env`
+   - Open MT5 in the container (`http://localhost:3000`)
+   - File → Open an Account → MetaQuotes-Demo
+   - Fill in the registration form
+   - Copy your login and password to `.env`
 
 ### Running Tests
 

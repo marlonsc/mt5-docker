@@ -29,6 +29,33 @@ if ! declare -f log > /dev/null 2>&1; then
 fi
 
 # =============================================================================
+# RETRY HELPER
+# =============================================================================
+retry_with_backoff() {
+    local max_attempts=$1
+    local func_name=$2
+    local attempt=1
+    local delay=5
+
+    while [ $attempt -le $max_attempts ]; do
+        log INFO "[setup] Attempt $attempt/$max_attempts: $func_name"
+        if "$func_name"; then
+            log INFO "[setup] $func_name succeeded on attempt $attempt"
+            return 0
+        fi
+        if [ $attempt -lt $max_attempts ]; then
+            log WARN "[setup] $func_name failed (attempt $attempt/$max_attempts), retrying in ${delay}s..."
+            sleep $delay
+            delay=$((delay * 2))
+        fi
+        attempt=$((attempt + 1))
+    done
+
+    log ERROR "[setup] $func_name failed after $max_attempts attempts"
+    return 1
+}
+
+# =============================================================================
 # 1. CONFIG UNPACK (from 05_config_unpack.sh)
 # =============================================================================
 unpack_config() {
@@ -313,11 +340,23 @@ EOF
 # =============================================================================
 log INFO "[setup] Starting MT5 Docker setup..."
 
+# Non-critical steps (no retry needed)
 unpack_config
 init_wine_prefix
 configure_wine_settings
-install_mt5_pip
-install_mt5_terminal
+
+# Critical steps with retry
+if ! retry_with_backoff 3 install_mt5_pip; then
+    log ERROR "[setup] FATAL: Could not install MT5 pip package after retries"
+    exit 1
+fi
+
+if ! retry_with_backoff 2 install_mt5_terminal; then
+    log ERROR "[setup] FATAL: Could not install MT5 terminal after retries"
+    exit 1
+fi
+
+# Non-critical steps
 generate_mt5_config
 copy_bridge
 
