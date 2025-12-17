@@ -54,11 +54,11 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         "https://dl.winehq.org/wine-builds/winehq.key" && \
     wget -qNP /etc/apt/sources.list.d/ \
         "https://dl.winehq.org/wine-builds/debian/dists/bookworm/winehq-bookworm.sources" && \
+    dpkg --add-architecture i386 && \
     apt-get update && \
-    # Wine 64-bit only (no i386) - MT5 is 64-bit only, saves ~1GB
-    apt-get install -y --no-install-recommends \
-        wine-stable=10.0.0.0~bookworm-1 \
-        wine-stable-amd64=10.0.0.0~bookworm-1
+    # Wine 10.0 with full i386 support (required for wine64 loader to work)
+    apt-get install -y --install-recommends \
+        winehq-stable=10.0.0.0~bookworm-1
 
 # Update font cache
 RUN fc-cache -fv
@@ -101,7 +101,14 @@ RUN --mount=type=cache,target=/downloads,id=mt5-downloads-debian,sharing=locked 
             "https://dl.winehq.org/wine/wine-gecko/${WINE_GECKO_VERSION}/wine-gecko-${WINE_GECKO_VERSION}-x86_64.msi"; \
     fi && \
     cp /downloads/wine-gecko-${WINE_GECKO_VERSION}-x86_64.msi /staging/ && \
-    # Create version manifest (64-bit only - no x86 Gecko needed)
+    # Wine Gecko x86 (~30MB) - for 32-bit support
+    if [ ! -f /downloads/wine-gecko-${WINE_GECKO_VERSION}-x86.msi ]; then \
+        echo "Downloading Wine Gecko x86 ${WINE_GECKO_VERSION}..." && \
+        curl -fSL -o /downloads/wine-gecko-${WINE_GECKO_VERSION}-x86.msi \
+            "https://dl.winehq.org/wine/wine-gecko/${WINE_GECKO_VERSION}/wine-gecko-${WINE_GECKO_VERSION}-x86.msi"; \
+    fi && \
+    cp /downloads/wine-gecko-${WINE_GECKO_VERSION}-x86.msi /staging/ && \
+    # Create version manifest
     echo "PYTHON_VERSION=${PYTHON_FULL_VERSION}" > /staging/.versions && \
     echo "WINE_MONO_VERSION=${WINE_MONO_VERSION}" >> /staging/.versions && \
     echo "WINE_GECKO_VERSION=${WINE_GECKO_VERSION}" >> /staging/.versions && \
@@ -150,11 +157,12 @@ RUN --mount=from=downloader,source=/staging,target=/staging \
         wine msiexec /i /staging/wine-mono-${WINE_MONO_VERSION}-x86.msi /quiet && \
         wineserver -w" && \
     # ============================================================
-    # Step 3: Install Wine Gecko (for HTML rendering support - 64-bit only)
+    # Step 3: Install Wine Gecko (for HTML rendering support)
     # ============================================================
     echo "=== Step 3/6: Installing Wine Gecko ${WINE_GECKO_VERSION} ===" && \
     xvfb-run -a sh -c "\
         wine msiexec /i /staging/wine-gecko-${WINE_GECKO_VERSION}-x86_64.msi /quiet && \
+        wine msiexec /i /staging/wine-gecko-${WINE_GECKO_VERSION}-x86.msi /quiet && \
         wineserver -w" && \
     # ============================================================
     # Step 4: Set Windows version to win10 (via registry)

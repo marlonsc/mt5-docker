@@ -468,22 +468,32 @@ class TestServiceRecovery:
             channel.close()
 
     def test_restart_token_creation(self, container_name: str) -> None:
-        """Test that restart token can be created."""
+        """Test that restart token mechanism works (non-destructive)."""
+        # Test using a different file to avoid triggering actual restart
+        test_token = "/tmp/.mt5-restart-test-token"
         result = docker_exec(
             container_name,
-            ["touch", "/tmp/.mt5-restart-requested"],
+            ["touch", test_token],
         )
         assert result.returncode == 0
 
-        # Verify token exists
+        # Verify token can be created
         result = docker_exec(
             container_name,
-            ["test", "-f", "/tmp/.mt5-restart-requested"],
+            ["test", "-f", test_token],
         )
         assert result.returncode == 0
+
+        # Verify the real restart token path is writable
+        # (check parent dir permissions without creating actual token)
+        result = docker_exec(
+            container_name,
+            ["test", "-w", "/tmp"],
+        )
+        assert result.returncode == 0, "/tmp must be writable for restart tokens"
 
         # Clean up
-        docker_exec(container_name, ["rm", "-f", "/tmp/.mt5-restart-requested"])
+        docker_exec(container_name, ["rm", "-f", test_token])
 
     def test_health_monitor_is_running(self, container_name: str) -> None:
         """Verify health monitor process is running."""
