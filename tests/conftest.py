@@ -244,7 +244,7 @@ def start_test_container() -> None:
     compose_file = docker_dir / "compose.yaml"
     if not compose_file.exists():
         _log(f"SKIP: compose.yaml not found at {docker_dir}")
-        pytest.skip(f"compose.yaml not found at {docker_dir}")
+        pytest.fail(f"compose.yaml not found at {docker_dir}")
 
     # Build environment
     test_env = os.environ.copy()
@@ -274,7 +274,7 @@ def start_test_container() -> None:
 
     if result.returncode != 0:
         _log(f"FAILED: docker compose error: {result.stderr}")
-        pytest.skip(f"Failed to start container: {result.stderr}")
+        pytest.fail(f"Failed to start container: {result.stderr}")
 
     _log("Container started, now waiting for gRPC...")
 
@@ -293,7 +293,7 @@ def start_test_container() -> None:
             if logs.stdout
             else logs.stderr[-c.MAX_LOG_LENGTH :]
         )
-        pytest.skip(
+        pytest.fail(
             f"gRPC service not ready after {_config.startup_timeout}s.\n"
             f"Logs: {log_output}",
         )
