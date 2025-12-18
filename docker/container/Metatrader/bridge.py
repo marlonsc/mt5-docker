@@ -27,8 +27,8 @@ Usage:
 
 from __future__ import annotations
 
+# pylint: disable=no-member  # Protobuf generated code has dynamic members
 import argparse
-import json
 import logging
 import signal
 import sys
@@ -38,10 +38,12 @@ from typing import TYPE_CHECKING
 
 import grpc
 import MetaTrader5  # pyright: ignore[reportMissingImports]
+import orjson
 
 from . import mt5_pb2, mt5_pb2_grpc
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from datetime import datetime
     from types import FrameType, ModuleType
 
@@ -52,20 +54,57 @@ if TYPE_CHECKING:
 log = logging.getLogger("mt5bridge")
 
 # Global server reference for signal handler
-_server: grpc.Server | None = None
+_server: grpc.Server | None = None  # pylint: disable=invalid-name  # Module-private global
+
+# Global MT5 call timeout (configurable via --mt5-timeout)
+_mt5_call_timeout: float = 30.0  # pylint: disable=invalid-name  # Module-private global
+
+
+def _call_mt5_with_timeout(
+    func: Callable[..., object],
+    *args: object,
+    **kwargs: object,
+) -> object:
+    """Execute MT5 call with timeout protection.
+
+    Wraps potentially blocking MT5 calls to prevent indefinite hangs.
+    Uses ThreadPoolExecutor for timeout capability on synchronous calls.
+
+    Args:
+        func: MT5 function to call.
+        *args: Positional arguments for the function.
+        **kwargs: Keyword arguments for the function.
+
+    Returns:
+        Result of the MT5 function call.
+
+    Raises:
+        TimeoutError: If the call exceeds the timeout.
+        Exception: Re-raised from the MT5 function.
+
+    """
+    with futures.ThreadPoolExecutor(max_workers=1) as executor:
+        future: futures.Future[object] = executor.submit(func, *args, **kwargs)
+        try:
+            return future.result(timeout=_mt5_call_timeout)
+        except futures.TimeoutError:
+            func_name = getattr(func, "__name__", str(func))
+            msg = f"MT5 call {func_name} timed out after {_mt5_call_timeout}s"
+            log.error(msg)
+            raise TimeoutError(msg) from None
 
 
 # =============================================================================
-# JSON Value Types (for strict typing without Any)
+# JSON Value Types (standalone - no external dependencies)
 # =============================================================================
 
-# JSON-compatible value types for serialization
-JSONPrimitive = str | int | float | bool | None
-JSONValue = JSONPrimitive | list["JSONValue"] | dict[str, "JSONValue"]
+# JSON-compatible value types for serialization (PEP 695 type statements)
+type JSONPrimitive = str | int | float | bool | None
+type JSONValue = JSONPrimitive | list[JSONValue] | dict[str, JSONValue]
 
 
 def _json_serialize(data: dict[str, JSONValue]) -> str:
-    """Serialize dict to JSON string.
+    """Serialize dict to JSON string using orjson for high performance.
 
     Args:
         data: Dictionary with JSON-compatible values.
@@ -73,12 +112,15 @@ def _json_serialize(data: dict[str, JSONValue]) -> str:
     Returns:
         JSON string representation.
 
+    Note:
+        orjson is 3-10x faster than stdlib json for typical MT5 data.
+
     """
-    return json.dumps(data, default=str)
+    return orjson.dumps(data, default=str).decode()
 
 
 def _json_deserialize(json_str: str) -> dict[str, JSONValue]:
-    """Deserialize JSON string to dict.
+    """Deserialize JSON string to dict using orjson for high performance.
 
     Args:
         json_str: JSON string to parse.
@@ -86,8 +128,11 @@ def _json_deserialize(json_str: str) -> dict[str, JSONValue]:
     Returns:
         Parsed dictionary.
 
+    Note:
+        orjson is 3-10x faster than stdlib json for typical MT5 data.
+
     """
-    result: dict[str, JSONValue] = json.loads(json_str)
+    result: dict[str, JSONValue] = orjson.loads(json_str)
     return result
 
 
@@ -293,31 +338,36 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
                 reason="MT5 module not loaded",
             )
 
+        # Service is healthy if MT5 module is loaded and responding
+        # Terminal connection is separate - happens during Initialize/Login
+        log.debug("HealthCheck: MT5 module loaded and responding")
+
+        # Try to get terminal info for additional details
         terminal = self._mt5_module.terminal_info()
-        if terminal is None:
-            error = self._mt5_module.last_error()
-            log.debug("HealthCheck: terminal_info failed: %s", error)
+        if terminal is not None:
+            log.debug(
+                "HealthCheck: connected=%s trade_allowed=%s",
+                terminal.connected,
+                terminal.trade_allowed,
+            )
             return mt5_pb2.HealthStatus(
-                healthy=False,
+                healthy=True,
                 mt5_available=True,
-                connected=False,
-                trade_allowed=False,
-                build=0,
-                reason=f"Terminal not connected: {error}",
+                connected=terminal.connected,
+                trade_allowed=terminal.trade_allowed,
+                build=terminal.build,
+                reason="",
             )
 
-        log.debug(
-            "HealthCheck: connected=%s trade_allowed=%s",
-            terminal.connected,
-            terminal.trade_allowed,
-        )
+        # Terminal not connected yet (normal state before Initialize/Login)
+        log.debug("HealthCheck: Terminal not yet connected (normal state)")
         return mt5_pb2.HealthStatus(
-            healthy=terminal.connected,
+            healthy=True,
             mt5_available=True,
-            connected=terminal.connected,
-            trade_allowed=terminal.trade_allowed,
-            build=terminal.build,
-            reason="",
+            connected=False,
+            trade_allowed=False,
+            build=0,
+            reason="Terminal not initialized yet",
         )
 
     def Initialize(
@@ -464,7 +514,11 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
         request: mt5_pb2.Empty,
         context: grpc.ServicerContext,
     ) -> mt5_pb2.Constants:
-        """Get all MT5 constants for client-side usage.
+        """Get all MT5 constants dynamically from the MetaTrader5 module.
+
+        Extracts ALL integer constants from the MetaTrader5 module by
+        inspecting its attributes. This ensures we always return the
+        complete set of constants from the actual MT5 PyPI package.
 
         Args:
             request: Empty request.
@@ -479,105 +533,26 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
         mt5 = self._mt5_module
         constants: dict[str, int] = {}
 
-        constant_names = [
-            # Timeframes
-            "TIMEFRAME_M1",
-            "TIMEFRAME_M2",
-            "TIMEFRAME_M3",
-            "TIMEFRAME_M4",
-            "TIMEFRAME_M5",
-            "TIMEFRAME_M6",
-            "TIMEFRAME_M10",
-            "TIMEFRAME_M12",
-            "TIMEFRAME_M15",
-            "TIMEFRAME_M20",
-            "TIMEFRAME_M30",
-            "TIMEFRAME_H1",
-            "TIMEFRAME_H2",
-            "TIMEFRAME_H3",
-            "TIMEFRAME_H4",
-            "TIMEFRAME_H6",
-            "TIMEFRAME_H8",
-            "TIMEFRAME_H12",
-            "TIMEFRAME_D1",
-            "TIMEFRAME_W1",
-            "TIMEFRAME_MN1",
-            # Order types
-            "ORDER_TYPE_BUY",
-            "ORDER_TYPE_SELL",
-            "ORDER_TYPE_BUY_LIMIT",
-            "ORDER_TYPE_SELL_LIMIT",
-            "ORDER_TYPE_BUY_STOP",
-            "ORDER_TYPE_SELL_STOP",
-            "ORDER_TYPE_BUY_STOP_LIMIT",
-            "ORDER_TYPE_SELL_STOP_LIMIT",
-            "ORDER_TYPE_CLOSE_BY",
-            # Trade actions
-            "TRADE_ACTION_DEAL",
-            "TRADE_ACTION_PENDING",
-            "TRADE_ACTION_SLTP",
-            "TRADE_ACTION_MODIFY",
-            "TRADE_ACTION_REMOVE",
-            "TRADE_ACTION_CLOSE_BY",
-            # Order filling modes
-            "ORDER_FILLING_FOK",
-            "ORDER_FILLING_IOC",
-            "ORDER_FILLING_RETURN",
-            "ORDER_FILLING_BOC",
-            # Order time types
-            "ORDER_TIME_GTC",
-            "ORDER_TIME_DAY",
-            "ORDER_TIME_SPECIFIED",
-            "ORDER_TIME_SPECIFIED_DAY",
-            # Position types
-            "POSITION_TYPE_BUY",
-            "POSITION_TYPE_SELL",
-            # Deal types
-            "DEAL_TYPE_BUY",
-            "DEAL_TYPE_SELL",
-            "DEAL_TYPE_BALANCE",
-            "DEAL_TYPE_CREDIT",
-            "DEAL_TYPE_CHARGE",
-            "DEAL_TYPE_CORRECTION",
-            "DEAL_TYPE_BONUS",
-            "DEAL_TYPE_COMMISSION",
-            # Copy ticks flags
-            "COPY_TICKS_ALL",
-            "COPY_TICKS_INFO",
-            "COPY_TICKS_TRADE",
-            # Book types
-            "BOOK_TYPE_SELL",
-            "BOOK_TYPE_BUY",
-            "BOOK_TYPE_SELL_MARKET",
-            "BOOK_TYPE_BUY_MARKET",
-            # Trade return codes
-            "TRADE_RETCODE_REQUOTE",
-            "TRADE_RETCODE_REJECT",
-            "TRADE_RETCODE_CANCEL",
-            "TRADE_RETCODE_PLACED",
-            "TRADE_RETCODE_DONE",
-            "TRADE_RETCODE_DONE_PARTIAL",
-            "TRADE_RETCODE_ERROR",
-            "TRADE_RETCODE_TIMEOUT",
-            "TRADE_RETCODE_INVALID",
-            "TRADE_RETCODE_INVALID_VOLUME",
-            "TRADE_RETCODE_INVALID_PRICE",
-            "TRADE_RETCODE_INVALID_STOPS",
-            "TRADE_RETCODE_TRADE_DISABLED",
-            "TRADE_RETCODE_MARKET_CLOSED",
-            "TRADE_RETCODE_NO_MONEY",
-            "TRADE_RETCODE_PRICE_CHANGED",
-            "TRADE_RETCODE_PRICE_OFF",
-            "TRADE_RETCODE_INVALID_EXPIRATION",
-            "TRADE_RETCODE_ORDER_CHANGED",
-            "TRADE_RETCODE_TOO_MANY_REQUESTS",
-        ]
+        # Dynamically extract ALL integer constants from MetaTrader5 module
+        # This includes: TIMEFRAME_*, ORDER_*, TRADE_*, POSITION_*, DEAL_*,
+        # ACCOUNT_*, SYMBOL_*, BOOK_*, TICK_*, COPY_TICKS_*, DAY_OF_WEEK_*, etc.
+        for name in dir(mt5):
+            # Skip private/magic attributes
+            if name.startswith("_"):
+                continue
 
-        for name in constant_names:
-            if hasattr(mt5, name):
-                value = getattr(mt5, name)
-                if isinstance(value, int):
-                    constants[name] = value
+            # Only include UPPERCASE names (constants convention)
+            if not name.isupper():
+                continue
+
+            # Skip callable objects (functions/methods)
+            attr = getattr(mt5, name, None)
+            if callable(attr):
+                continue
+
+            # Only include integer values
+            if isinstance(attr, int):
+                constants[name] = attr
 
         log.debug("GetConstants: returned %s constants", len(constants))
         return mt5_pb2.Constants(values=constants)
@@ -683,15 +658,21 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
         log.debug("SymbolsGet: group=%s", group)
 
         if group:
-            result = self._mt5_module.symbols_get(group=group)
+            result = _call_mt5_with_timeout(
+                self._mt5_module.symbols_get,
+                group=group,
+            )
         else:
-            result = self._mt5_module.symbols_get()
+            result = _call_mt5_with_timeout(
+                self._mt5_module.symbols_get,
+            )
 
         if result is None:
             log.debug("SymbolsGet: result=None")
             return mt5_pb2.SymbolsResponse(total=0, chunks=[])
 
-        items = list(result)
+        # MT5 API returns tuple of SymbolInfo namedtuples
+        items = list(result)  # type: ignore[call-overload]
         total = len(items)
         log.debug("SymbolsGet: total=%s symbols", total)
 
@@ -700,7 +681,7 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
         for i in range(0, total, chunk_size):
             chunk_items = items[i : i + chunk_size]
             chunk_data = [self._namedtuple_to_dict(s) for s in chunk_items]
-            chunks.append(json.dumps(chunk_data, default=str))
+            chunks.append(orjson.dumps(chunk_data, default=str).decode())
 
         log.debug("SymbolsGet: returned %s chunks", len(chunks))
         return mt5_pb2.SymbolsResponse(total=total, chunks=chunks)
@@ -817,7 +798,8 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
             return self._numpy_to_proto(None)
         if not self._validate_count(request.count, "CopyRatesFrom"):
             return self._numpy_to_proto(None)
-        result = self._mt5_module.copy_rates_from(
+        result = _call_mt5_with_timeout(
+            self._mt5_module.copy_rates_from,
             request.symbol,
             request.timeframe,
             request.date_from,
@@ -825,9 +807,9 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
         )
         log.debug(
             "CopyRatesFrom: returned %s bars",
-            len(result) if result is not None else 0,
+            len(result) if result is not None else 0,  # type: ignore[arg-type]
         )
-        return self._numpy_to_proto(result)
+        return self._numpy_to_proto(result)  # type: ignore[arg-type]
 
     def CopyRatesFromPos(
         self,
@@ -855,7 +837,8 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
             return self._numpy_to_proto(None)
         if not self._validate_count(request.count, "CopyRatesFromPos"):
             return self._numpy_to_proto(None)
-        result = self._mt5_module.copy_rates_from_pos(
+        result = _call_mt5_with_timeout(
+            self._mt5_module.copy_rates_from_pos,
             request.symbol,
             request.timeframe,
             request.start_pos,
@@ -863,9 +846,9 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
         )
         log.debug(
             "CopyRatesFromPos: returned %s bars",
-            len(result) if result is not None else 0,
+            len(result) if result is not None else 0,  # type: ignore[arg-type]
         )
-        return self._numpy_to_proto(result)
+        return self._numpy_to_proto(result)  # type: ignore[arg-type]
 
     def CopyRatesRange(
         self,
@@ -897,7 +880,8 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
             "CopyRatesRange",
         ):
             return self._numpy_to_proto(None)
-        result = self._mt5_module.copy_rates_range(
+        result = _call_mt5_with_timeout(
+            self._mt5_module.copy_rates_range,
             request.symbol,
             request.timeframe,
             request.date_from,
@@ -905,9 +889,9 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
         )
         log.debug(
             "CopyRatesRange: returned %s bars",
-            len(result) if result is not None else 0,
+            len(result) if result is not None else 0,  # type: ignore[arg-type]
         )
-        return self._numpy_to_proto(result)
+        return self._numpy_to_proto(result)  # type: ignore[arg-type]
 
     # =========================================================================
     # MARKET DATA - TICKS
@@ -939,7 +923,8 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
             return self._numpy_to_proto(None)
         if not self._validate_count(request.count, "CopyTicksFrom"):
             return self._numpy_to_proto(None)
-        result = self._mt5_module.copy_ticks_from(
+        result = _call_mt5_with_timeout(
+            self._mt5_module.copy_ticks_from,
             request.symbol,
             request.date_from,
             request.count,
@@ -947,9 +932,9 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
         )
         log.debug(
             "CopyTicksFrom: returned %s ticks",
-            len(result) if result is not None else 0,
+            len(result) if result is not None else 0,  # type: ignore[arg-type]
         )
-        return self._numpy_to_proto(result)
+        return self._numpy_to_proto(result)  # type: ignore[arg-type]
 
     def CopyTicksRange(
         self,
@@ -981,7 +966,8 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
             "CopyTicksRange",
         ):
             return self._numpy_to_proto(None)
-        result = self._mt5_module.copy_ticks_range(
+        result = _call_mt5_with_timeout(
+            self._mt5_module.copy_ticks_range,
             request.symbol,
             request.date_from,
             request.date_to,
@@ -989,9 +975,9 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
         )
         log.debug(
             "CopyTicksRange: returned %s ticks",
-            len(result) if result is not None else 0,
+            len(result) if result is not None else 0,  # type: ignore[arg-type]
         )
-        return self._numpy_to_proto(result)
+        return self._numpy_to_proto(result)  # type: ignore[arg-type]
 
     # =========================================================================
     # TRADING OPERATIONS
@@ -1600,7 +1586,17 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Enable debug logging",
     )
+    parser.add_argument(
+        "--mt5-timeout",
+        type=float,
+        default=30.0,
+        help="MT5 call timeout in seconds (default: 30.0)",
+    )
     args = parser.parse_args(argv)
+
+    # Update global MT5 call timeout
+    global _mt5_call_timeout
+    _mt5_call_timeout = args.mt5_timeout
 
     _setup_logging(debug=args.debug)
 
