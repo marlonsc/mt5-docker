@@ -37,6 +37,53 @@ message Constants {
 }
 
 // =============================================================================
+// Introspection Types (for validating protocol compliance)
+// =============================================================================
+
+// Parameter information for a method
+message ParameterInfo {
+    string name = 1;
+    string type_hint = 2;           // Type annotation as string (e.g., "int", "str | None")
+    string kind = 3;                // POSITIONAL_ONLY, POSITIONAL_OR_KEYWORD, KEYWORD_ONLY, etc.
+    bool has_default = 4;           // Whether parameter has a default value
+    string default_value = 5;       // Default value as string representation
+}
+
+// Method information from real MT5 module
+message MethodInfo {
+    string name = 1;
+    repeated ParameterInfo parameters = 2;
+    string return_type = 3;         // Return type annotation as string
+    bool is_callable = 4;           // True if this is a callable function
+}
+
+// Response containing all methods from MetaTrader5 module
+message MethodsResponse {
+    repeated MethodInfo methods = 1;
+    int32 total = 2;
+}
+
+// Field information for a model/namedtuple
+message FieldInfo {
+    string name = 1;
+    string type_hint = 2;           // Type annotation if available
+    int32 index = 3;                // Field position in the namedtuple
+}
+
+// Model (namedtuple) information from real MT5 module
+message ModelInfo {
+    string name = 1;
+    repeated FieldInfo fields = 2;
+    bool is_namedtuple = 3;
+}
+
+// Response containing all models from MetaTrader5 module
+message ModelsResponse {
+    repeated ModelInfo models = 1;
+    int32 total = 2;
+}
+
+// =============================================================================
 // Data Types (JSON-serialized dict representation)
 // =============================================================================
 
@@ -196,6 +243,10 @@ service MT5Service {
     rpc Version(Empty) returns (MT5Version);
     rpc LastError(Empty) returns (ErrorInfo);
     rpc GetConstants(Empty) returns (Constants);
+
+    // Introspection (for protocol validation)
+    rpc GetMethods(Empty) returns (MethodsResponse);
+    rpc GetModels(Empty) returns (ModelsResponse);
 
     // Account/Terminal info
     rpc TerminalInfo(Empty) returns (DictData);

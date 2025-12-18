@@ -29,6 +29,7 @@ from __future__ import annotations
 
 # pylint: disable=no-member  # Protobuf generated code has dynamic members
 import argparse
+import inspect
 import logging
 import signal
 import sys
@@ -556,6 +557,170 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
 
         log.debug("GetConstants: returned %s constants", len(constants))
         return mt5_pb2.Constants(values=constants)
+
+    def GetMethods(
+        self,
+        request: mt5_pb2.Empty,
+        context: grpc.ServicerContext,
+    ) -> mt5_pb2.MethodsResponse:
+        """Get all callable methods from the MetaTrader5 module.
+
+        Introspects the real MetaTrader5 PyPI module to extract method signatures,
+        parameter info, and return types. Used by tests to validate protocol
+        compliance against the actual MT5 API.
+
+        Args:
+            request: Empty request.
+            context: gRPC servicer context.
+
+        Returns:
+            MethodsResponse with all method information.
+
+        """
+        self._ensure_mt5_loaded()
+        log.debug("GetMethods: called")
+        mt5 = self._mt5_module
+        methods: list[mt5_pb2.MethodInfo] = []
+
+        for name in dir(mt5):
+            # Skip private/magic attributes
+            if name.startswith("_"):
+                continue
+
+            attr = getattr(mt5, name, None)
+
+            # Only include callable functions (not constants, not classes)
+            if not callable(attr):
+                continue
+
+            # Skip classes (we handle them in GetModels)
+            if inspect.isclass(attr):
+                continue
+
+            try:
+                sig = inspect.signature(attr)
+                params: list[mt5_pb2.ParameterInfo] = []
+
+                for param_name, param in sig.parameters.items():
+                    # Get type hint as string
+                    type_hint = ""
+                    if param.annotation != inspect.Parameter.empty:
+                        type_hint = str(param.annotation)
+
+                    # Get parameter kind
+                    kind = param.kind.name  # POSITIONAL_ONLY, KEYWORD_ONLY, etc.
+
+                    # Get default value
+                    has_default = param.default != inspect.Parameter.empty
+                    default_value = ""
+                    if has_default:
+                        default_value = repr(param.default)
+
+                    params.append(
+                        mt5_pb2.ParameterInfo(
+                            name=param_name,
+                            type_hint=type_hint,
+                            kind=kind,
+                            has_default=has_default,
+                            default_value=default_value,
+                        )
+                    )
+
+                # Get return type
+                return_type = ""
+                if sig.return_annotation != inspect.Signature.empty:
+                    return_type = str(sig.return_annotation)
+
+                methods.append(
+                    mt5_pb2.MethodInfo(
+                        name=name,
+                        parameters=params,
+                        return_type=return_type,
+                        is_callable=True,
+                    )
+                )
+            except (ValueError, TypeError):
+                # Some built-in methods may not have inspectable signatures
+                methods.append(
+                    mt5_pb2.MethodInfo(
+                        name=name,
+                        parameters=[],
+                        return_type="",
+                        is_callable=True,
+                    )
+                )
+
+        log.debug("GetMethods: returned %s methods", len(methods))
+        return mt5_pb2.MethodsResponse(methods=methods, total=len(methods))
+
+    def GetModels(
+        self,
+        request: mt5_pb2.Empty,
+        context: grpc.ServicerContext,
+    ) -> mt5_pb2.ModelsResponse:
+        """Get all model (namedtuple) types from the MetaTrader5 module.
+
+        Introspects the real MetaTrader5 PyPI module to extract model structures.
+        MT5 returns namedtuples for things like AccountInfo, SymbolInfo, etc.
+        This method discovers them by looking for classes with _fields attribute.
+
+        Args:
+            request: Empty request.
+            context: gRPC servicer context.
+
+        Returns:
+            ModelsResponse with all model information.
+
+        """
+        self._ensure_mt5_loaded()
+        log.debug("GetModels: called")
+        mt5 = self._mt5_module
+        models: list[mt5_pb2.ModelInfo] = []
+
+        for name in dir(mt5):
+            # Skip private/magic attributes
+            if name.startswith("_"):
+                continue
+
+            attr = getattr(mt5, name, None)
+
+            # Look for namedtuple-like classes (have _fields attribute)
+            if not inspect.isclass(attr):
+                continue
+
+            # Check if it's a namedtuple (has _fields)
+            if not hasattr(attr, "_fields"):
+                continue
+
+            fields: list[mt5_pb2.FieldInfo] = []
+            field_names = getattr(attr, "_fields", ())
+
+            # Get field annotations if available
+            annotations = getattr(attr, "__annotations__", {})
+
+            for idx, field_name in enumerate(field_names):
+                type_hint = ""
+                if field_name in annotations:
+                    type_hint = str(annotations[field_name])
+
+                fields.append(
+                    mt5_pb2.FieldInfo(
+                        name=field_name,
+                        type_hint=type_hint,
+                        index=idx,
+                    )
+                )
+
+            models.append(
+                mt5_pb2.ModelInfo(
+                    name=name,
+                    fields=fields,
+                    is_namedtuple=True,
+                )
+            )
+
+        log.debug("GetModels: returned %s models", len(models))
+        return mt5_pb2.ModelsResponse(models=models, total=len(models))
 
     # =========================================================================
     # ACCOUNT/TERMINAL INFO
