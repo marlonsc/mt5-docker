@@ -88,11 +88,15 @@ def get_test_container_config() -> DockerContainerConfig:
     """Get test container configuration from environment."""
     return DockerContainerConfig(
         container_name=os.environ.get("MT5_CONTAINER_NAME", "mt5docker-test"),
-        grpc_port=int(os.environ.get("MT5_GRPC_PORT", "48812")),
-        vnc_port=int(os.environ.get("MT5_VNC_PORT", "43000")),
-        health_port=int(os.environ.get("MT5_HEALTH_PORT", "48002")),
-        startup_timeout=int(os.environ.get("MT5_STARTUP_TIMEOUT", "420")),
-        grpc_timeout=int(os.environ.get("MT5_GRPC_TIMEOUT", "60")),
+        grpc_port=int(os.environ.get("MT5_GRPC_PORT", c.MT5.GRPC_PORT)),
+        vnc_port=int(os.environ.get("MT5_VNC_PORT", c.MT5.VNC_PORT)),
+        health_port=int(
+            os.environ.get("MT5_HEALTH_PORT", c.MT5.HEALTH_PORT)
+        ),
+        startup_timeout=int(
+            os.environ.get("MT5_STARTUP_TIMEOUT", c.MT5.STARTUP_TIMEOUT)
+        ),
+        grpc_timeout=int(os.environ.get("MT5_GRPC_TIMEOUT", c.MT5.TIMEOUT)),
         login=os.environ.get("MT5_LOGIN"),
         password=os.environ.get("MT5_PASSWORD"),
         server=os.environ.get("MT5_SERVER", "MetaQuotes-Demo"),

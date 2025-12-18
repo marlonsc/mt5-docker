@@ -158,9 +158,16 @@ class TestConstants:
     class MT5:
         """MT5 Docker and connection constants."""
 
+        # Container configuration
+        TEST_CONTAINER: Final[str] = "mt5docker-test"
+        DEFAULT_SERVER: Final[str] = "MetaQuotes-Demo"
+
+        # Network configuration
         GRPC_PORT: Final[int] = int(os.getenv("MT5_GRPC_PORT", "48812"))
         VNC_PORT: Final[int] = int(os.getenv("MT5_VNC_PORT", "43000"))
         HEALTH_PORT: Final[int] = int(os.getenv("MT5_HEALTH_PORT", "48002"))
+
+        # Timeouts
         STARTUP_TIMEOUT: Final[int] = int(os.getenv("MT5_STARTUP_TIMEOUT", "420"))
         TIMEOUT: Final[int] = 60
 
