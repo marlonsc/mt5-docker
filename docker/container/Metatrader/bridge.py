@@ -558,6 +558,147 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
         log.debug("GetConstants: returned %s constants", len(constants))
         return mt5_pb2.Constants(values=constants)
 
+    @staticmethod
+    def _get_tuple_field_order(cls: type) -> list[str] | None:
+        """Get field names in correct positional order from tuple subclass.
+
+        Uses Python's built-in introspection - NO hardcoding.
+        Tries multiple methods in order of reliability:
+        1. __match_args__ (Python 3.10+ structseq types)
+        2. _fields (standard namedtuples)
+        3. Test instance mapping (universal for member_descriptor types)
+
+        Args:
+            cls: The tuple subclass to introspect.
+
+        Returns:
+            List of field names in positional order, or None if fails.
+
+        """
+        # Python 3.10+ structseq types have __match_args__ in positional order
+        if hasattr(cls, "__match_args__"):
+            return list(cls.__match_args__)
+
+        # Standard namedtuples have _fields
+        if hasattr(cls, "_fields"):
+            return list(cls._fields)
+
+        # For types without either, create test instance and map indices
+        member_fields = [
+            name
+            for name in dir(cls)
+            if not name.startswith("_")
+            and type(getattr(cls, name, None)).__name__ == "member_descriptor"
+        ]
+
+        if not member_fields:
+            return None
+
+        # Create instance with sentinel values to determine positional order
+        try:
+            n = len(member_fields)
+            instance = cls.__new__(cls, tuple(range(n)))
+
+            # Map each field to its positional index
+            field_to_index: dict[str, int] = {}
+            for field_name in member_fields:
+                value = getattr(instance, field_name)
+                if isinstance(value, int) and 0 <= value < n:
+                    field_to_index[field_name] = value
+
+            # Sort by index to get positional order
+            if len(field_to_index) == n:
+                return [
+                    f for f, _ in sorted(field_to_index.items(), key=lambda x: x[1])
+                ]
+        except (TypeError, ValueError, AttributeError):
+            pass
+
+        return None
+
+    @staticmethod
+    def _parse_docstring_signature(
+        docstring: str | None,
+    ) -> list[tuple[str, bool, str]]:
+        """Parse MT5 docstring to extract parameter info.
+
+        MT5 docstrings have format like:
+        - login(login,[server="SERVER"],[password="PASSWORD"])
+        - copy_rates_from(symbol, timeframe, date_from, count)
+
+        Args:
+            docstring: Function docstring.
+
+        Returns:
+            List of (param_name, has_default, default_value) tuples.
+
+        """
+        if not docstring:
+            return []
+
+        # Get first line which contains signature
+        first_line = docstring.strip().split("\n")[0]
+
+        # Extract parameters from parentheses
+        import re
+
+        match = re.search(r"\(([^)]*)\)", first_line)
+        if not match:
+            return []
+
+        params_str = match.group(1)
+        if not params_str.strip():
+            return []
+
+        params: list[tuple[str, bool, str]] = []
+        # Split by comma, handling nested brackets
+        current = ""
+        bracket_depth = 0
+        for char in params_str:
+            if char == "[":
+                bracket_depth += 1
+                current += char
+            elif char == "]":
+                bracket_depth -= 1
+                current += char
+            elif char == "," and bracket_depth == 0:
+                if current.strip():
+                    params.append(
+                        MT5GRPCServicer._parse_single_param(current.strip()),
+                    )
+                current = ""
+            else:
+                current += char
+
+        if current.strip():
+            params.append(MT5GRPCServicer._parse_single_param(current.strip()))
+
+        return params
+
+    @staticmethod
+    def _parse_single_param(param_str: str) -> tuple[str, bool, str]:
+        """Parse a single parameter from MT5 docstring.
+
+        Formats:
+        - symbol (required)
+        - [server="SERVER"] (optional with default)
+        - [enable] (optional without explicit default)
+
+        Returns:
+            (param_name, has_default, default_value)
+
+        """
+        # Check if optional (wrapped in [])
+        is_optional = param_str.startswith("[") and param_str.endswith("]")
+        if is_optional:
+            param_str = param_str[1:-1]
+
+        # Check for default value
+        if "=" in param_str:
+            name, default = param_str.split("=", 1)
+            return (name.strip(), True, default.strip().strip('"'))
+        return (param_str.strip(), is_optional, "")
+
     def GetMethods(
         self,
         request: mt5_pb2.Empty,
@@ -565,9 +706,9 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
     ) -> mt5_pb2.MethodsResponse:
         """Get all callable methods from the MetaTrader5 module.
 
-        Introspects the real MetaTrader5 PyPI module to extract method signatures,
-        parameter info, and return types. Used by tests to validate protocol
-        compliance against the actual MT5 API.
+        Introspects the real MetaTrader5 PyPI module to extract method signatures
+        from docstrings. MT5 built-in functions don't expose signatures via
+        inspect, but they do have docstrings with parameter info.
 
         Args:
             request: Empty request.
@@ -597,58 +738,31 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
             if inspect.isclass(attr):
                 continue
 
-            try:
-                sig = inspect.signature(attr)
-                params: list[mt5_pb2.ParameterInfo] = []
+            # Parse parameters from docstring (MT5 built-ins have useful docstrings)
+            docstring = getattr(attr, "__doc__", None)
+            parsed_params = self._parse_docstring_signature(docstring)
 
-                for param_name, param in sig.parameters.items():
-                    # Get type hint as string
-                    type_hint = ""
-                    if param.annotation != inspect.Parameter.empty:
-                        type_hint = str(param.annotation)
-
-                    # Get parameter kind
-                    kind = param.kind.name  # POSITIONAL_ONLY, KEYWORD_ONLY, etc.
-
-                    # Get default value
-                    has_default = param.default != inspect.Parameter.empty
-                    default_value = ""
-                    if has_default:
-                        default_value = repr(param.default)
-
-                    params.append(
-                        mt5_pb2.ParameterInfo(
-                            name=param_name,
-                            type_hint=type_hint,
-                            kind=kind,
-                            has_default=has_default,
-                            default_value=default_value,
-                        )
-                    )
-
-                # Get return type
-                return_type = ""
-                if sig.return_annotation != inspect.Signature.empty:
-                    return_type = str(sig.return_annotation)
-
-                methods.append(
-                    mt5_pb2.MethodInfo(
-                        name=name,
-                        parameters=params,
-                        return_type=return_type,
-                        is_callable=True,
+            params: list[mt5_pb2.ParameterInfo] = []
+            for param_name, has_default, default_value in parsed_params:
+                kind = "KEYWORD_ONLY" if has_default else "POSITIONAL_OR_KEYWORD"
+                params.append(
+                    mt5_pb2.ParameterInfo(
+                        name=param_name,
+                        type_hint="",  # MT5 doesn't provide type hints
+                        kind=kind,
+                        has_default=has_default,
+                        default_value=default_value,
                     )
                 )
-            except (ValueError, TypeError):
-                # Some built-in methods may not have inspectable signatures
-                methods.append(
-                    mt5_pb2.MethodInfo(
-                        name=name,
-                        parameters=[],
-                        return_type="",
-                        is_callable=True,
-                    )
+
+            methods.append(
+                mt5_pb2.MethodInfo(
+                    name=name,
+                    parameters=params,
+                    return_type="",  # MT5 doesn't provide return types
+                    is_callable=True,
                 )
+            )
 
         log.debug("GetMethods: returned %s methods", len(methods))
         return mt5_pb2.MethodsResponse(methods=methods, total=len(methods))
@@ -658,11 +772,11 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
         request: mt5_pb2.Empty,
         context: grpc.ServicerContext,
     ) -> mt5_pb2.ModelsResponse:
-        """Get all model (namedtuple) types from the MetaTrader5 module.
+        """Get all model (tuple subclass) types from the MetaTrader5 module.
 
         Introspects the real MetaTrader5 PyPI module to extract model structures.
-        MT5 returns namedtuples for things like AccountInfo, SymbolInfo, etc.
-        This method discovers them by looking for classes with _fields attribute.
+        MT5 models are tuple subclasses with member_descriptor attributes
+        (not standard namedtuples with _fields).
 
         Args:
             request: Empty request.
@@ -684,40 +798,48 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
 
             attr = getattr(mt5, name, None)
 
-            # Look for namedtuple-like classes (have _fields attribute)
+            # Must be a class
             if not inspect.isclass(attr):
                 continue
 
-            # Check if it's a namedtuple (has _fields)
-            if not hasattr(attr, "_fields"):
+            # MT5 models are tuple subclasses (not using standard _fields)
+            if not issubclass(attr, tuple):
+                continue
+
+            # Skip the tuple base class itself
+            if attr is tuple:
+                continue
+
+            # Get fields in correct positional order (dynamic introspection)
+            field_order = self._get_tuple_field_order(attr)
+
+            if field_order is None:
+                # Log warning but skip this type if introspection fails
+                log.warning(
+                    "GetModels: could not determine field order for %s",
+                    name,
+                )
                 continue
 
             fields: list[mt5_pb2.FieldInfo] = []
-            field_names = getattr(attr, "_fields", ())
-
-            # Get field annotations if available
-            annotations = getattr(attr, "__annotations__", {})
-
-            for idx, field_name in enumerate(field_names):
-                type_hint = ""
-                if field_name in annotations:
-                    type_hint = str(annotations[field_name])
-
+            for idx, field_name in enumerate(field_order):
                 fields.append(
                     mt5_pb2.FieldInfo(
                         name=field_name,
-                        type_hint=type_hint,
+                        type_hint="",  # MT5 doesn't provide type hints
                         index=idx,
                     )
                 )
 
-            models.append(
-                mt5_pb2.ModelInfo(
-                    name=name,
-                    fields=fields,
-                    is_namedtuple=True,
+            # Only add if we found fields (actual model, not utility class)
+            if fields:
+                models.append(
+                    mt5_pb2.ModelInfo(
+                        name=name,
+                        fields=fields,
+                        is_namedtuple=True,  # Conceptually similar
+                    )
                 )
-            )
 
         log.debug("GetModels: returned %s models", len(models))
         return mt5_pb2.ModelsResponse(models=models, total=len(models))
@@ -1234,7 +1356,16 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
         self._ensure_mt5_loaded()
         log.debug("OrderCheck: request=%s", request.json_request)
         order_dict = _json_deserialize(request.json_request)
-        result = self._mt5_module.order_check(order_dict)
+        try:
+            result = self._mt5_module.order_check(order_dict)
+        except Exception as e:
+            log.warning("OrderCheck exception: %s", e)
+            # Return error result instead of raising
+            error_data: dict[str, JSONValue] = {
+                "retcode": 10006,  # TRADE_RETCODE_REJECT
+                "comment": str(e),
+            }
+            return mt5_pb2.DictData(json_data=_json_serialize(error_data))
         if result is None:
             return mt5_pb2.DictData(json_data="")
         data = self._namedtuple_to_dict(result, nested_fields=["request"])

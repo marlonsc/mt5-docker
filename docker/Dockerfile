@@ -137,7 +137,7 @@ RUN --mount=from=downloader,source=/staging,target=/staging \
     export WINEARCH=win64 && \
     export WINEPREFIX=/wine-build && \
     export HOME=/tmp && \
-    export WINEDLLOVERRIDES="winemenubuilder.exe=d;mscoree=d;mshtml=d" && \
+    export WINEDLLOVERRIDES="winemenubuilder.exe=d;mscoree=d" && \
     mkdir -p /wine-build && \
     # ============================================================
     # Step 1: Initialize Wine prefix with DLL overrides
@@ -146,7 +146,6 @@ RUN --mount=from=downloader,source=/staging,target=/staging \
     xvfb-run -a sh -c "\
         wine reg add 'HKCU\\Software\\Wine\\DllOverrides' /v winemenubuilder.exe /t REG_SZ /d '' /f && \
         wine reg add 'HKCU\\Software\\Wine\\DllOverrides' /v mscoree /t REG_SZ /d '' /f && \
-        wine reg add 'HKCU\\Software\\Wine\\DllOverrides' /v mshtml /t REG_SZ /d '' /f && \
         wineserver -w" && \
     test -d /wine-build/drive_c || { echo "FAIL: Wine prefix not created"; exit 1; } && \
     # ============================================================
@@ -248,7 +247,7 @@ LABEL mt5.wine.version="10.0"
 ENV TITLE=Metatrader5
 ENV WINEPREFIX="/config/.wine"
 ENV WINEDEBUG=-all
-ENV WINEDLLOVERRIDES="winemenubuilder.exe,mscoree,mshtml="
+ENV WINEDLLOVERRIDES="winemenubuilder.exe,mscoree="
 ENV STAGING_DIR="/opt/mt5-staging"
 ENV WINE_PREFIX_TEMPLATE="/opt/wine-prefix-template"
 

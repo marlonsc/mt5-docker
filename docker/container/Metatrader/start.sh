@@ -31,7 +31,7 @@ export MT5_STARTUP_INI="$MT5_CONFIG_DIR/startup.ini"
 
 # Wine configuration
 export wine_executable="${wine_executable:-wine}"
-export WINEDLLOVERRIDES="${WINEDLLOVERRIDES:-winemenubuilder.exe,mscoree,mshtml=}"
+export WINEDLLOVERRIDES="${WINEDLLOVERRIDES:-winemenubuilder.exe,mscoree=}"
 
 # Wine Python path
 export WINE_PYTHON_PATH="$WINEPREFIX/drive_c/Python/python.exe"
