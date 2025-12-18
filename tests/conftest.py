@@ -5,7 +5,7 @@ the ISOLATED test container (mt5docker-test on port 48812).
 
 The container is completely isolated from:
 - Production (mt5, port 8001)
-- neptor tests (neptor-mt5-test, port 18812)
+- tests.(neptor-mt5-test, port 18812)
 - mt5linux tests (mt5linux-test, port 28812)
 
 Configuration is loaded from environment variables via .env file.
