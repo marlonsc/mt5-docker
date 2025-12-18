@@ -128,9 +128,9 @@ class TestConstants:
 
         # Main container startup scripts (at root, not /app)
         CONTAINER_MAIN_SCRIPTS: Final[tuple[str, ...]] = (
-            "/metatrader/health_monitor.sh",
-            "/metatrader/setup.sh",
-            "/metatrader/start.sh",
+            "/Metatrader/health_monitor.sh",
+            "/Metatrader/setup.sh",
+            "/Metatrader/start.sh",
         )
 
     # =========================================================================

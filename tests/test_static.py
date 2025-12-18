@@ -158,7 +158,7 @@ class TestVersionConsistency:
     def test_start_sh_has_version_fallbacks(self) -> None:
         """Verify start.sh has version fallback values."""
         script_path = (
-            c.get_project_root() / c.Directory.CONTAINER / "metatrader/start.sh"
+            c.get_project_root() / c.Directory.CONTAINER / "Metatrader/start.sh"
         )
         content = script_path.read_text()
         # Should have version fallback values
@@ -409,7 +409,7 @@ class TestStartupScriptContent:
     def test_start_sh_exports_config(self) -> None:
         """Verify start.sh exports all configuration."""
         script_path = (
-            c.get_project_root() / c.Directory.CONTAINER / "metatrader/start.sh"
+            c.get_project_root() / c.Directory.CONTAINER / "Metatrader/start.sh"
         )
         content = script_path.read_text()
 
@@ -420,14 +420,14 @@ class TestStartupScriptContent:
     def test_start_sh_runs_setup(self) -> None:
         """Verify start.sh runs setup.sh."""
         content = (
-            c.get_project_root() / c.Directory.CONTAINER / "metatrader/start.sh"
+            c.get_project_root() / c.Directory.CONTAINER / "Metatrader/start.sh"
         ).read_text()
         assert "setup.sh" in content, "start.sh must run setup.sh"
 
     def test_setup_sh_has_all_functions(self) -> None:
         """Verify setup.sh has all required setup functions."""
         content = (
-            c.get_project_root() / c.Directory.CONTAINER / "metatrader/setup.sh"
+            c.get_project_root() / c.Directory.CONTAINER / "Metatrader/setup.sh"
         ).read_text()
 
         required_functions = [
@@ -445,7 +445,7 @@ class TestStartupScriptContent:
     def test_setup_sh_uses_winetricks_unattended(self) -> None:
         """Verify setup.sh configures Wine properly (no winetricks needed)."""
         content = (
-            c.get_project_root() / c.Directory.CONTAINER / "metatrader/setup.sh"
+            c.get_project_root() / c.Directory.CONTAINER / "Metatrader/setup.sh"
         ).read_text()
         # Win10 is set via registry, not winetricks (simpler approach)
         assert "win10" in content, "Must configure Windows version"
@@ -453,7 +453,7 @@ class TestStartupScriptContent:
     def test_setup_sh_handles_mt5_installation(self) -> None:
         """Verify setup.sh handles MT5 installation."""
         content = (
-            c.get_project_root() / c.Directory.CONTAINER / "metatrader/setup.sh"
+            c.get_project_root() / c.Directory.CONTAINER / "Metatrader/setup.sh"
         ).read_text()
         assert "mt5setup" in content.lower(), "Must handle MT5 setup"
         assert "MetaTrader5" in content, "Must install MetaTrader5 pip"
@@ -463,7 +463,7 @@ class TestStartupScriptContent:
         script_path = (
             c.get_project_root()
             / c.Directory.CONTAINER
-            / "metatrader/health_monitor.sh"
+            / "Metatrader/health_monitor.sh"
         )
         content = script_path.read_text()
 
@@ -480,7 +480,7 @@ class TestStartupScriptContent:
         script_path = (
             c.get_project_root()
             / c.Directory.CONTAINER
-            / "metatrader/health_monitor.sh"
+            / "Metatrader/health_monitor.sh"
         )
         content = script_path.read_text()
         assert "FAILURE_THRESHOLD" in content, "Should have configurable threshold"
@@ -636,14 +636,14 @@ class TestDirectoryStructure:
     def test_bridge_py_exists(self) -> None:
         """Verify bridge.py (gRPC server) exists."""
         bridge_path = (
-            c.get_project_root() / c.Directory.CONTAINER / "metatrader/bridge.py"
+            c.get_project_root() / c.Directory.CONTAINER / "Metatrader/bridge.py"
         )
         assert bridge_path.exists(), "bridge.py must exist for gRPC server"
 
     def test_bridge_py_is_standalone(self) -> None:
         """Verify bridge.py uses gRPC and has standalone proto files."""
         bridge_path = (
-            c.get_project_root() / c.Directory.CONTAINER / "metatrader/bridge.py"
+            c.get_project_root() / c.Directory.CONTAINER / "Metatrader/bridge.py"
         )
         content = bridge_path.read_text()
         # Should import grpc for the gRPC server
