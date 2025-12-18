@@ -3,15 +3,14 @@ requires = ["poetry-core>=1.0.0"]
 build-backend = "poetry.core.masonry.api"
 
 [tool.mypy]
-exclude = [
-    "*.pyi",
-    "docker/container/Metatrader/mt5_pb2.py",
-    "docker/container/Metatrader/mt5_pb2_grpc.py",
-    "typings/",
-]
+exclude = ["typings/"]
 mypy_path = "typings"
 python_version = "3.13"
 strict = true
+
+[[tool.mypy.overrides]]
+module = ["MetaTrader5"]
+ignore_missing_imports = true
 
 
 [tool.poetry]
@@ -25,11 +24,12 @@ version = "2.2.1"
 
 [tool.poetry.dependencies]
 grpcio = "^1.60.0"
-mt5linux = { git = "https://github.com/marlonsc/mt5linux.git", branch = "main" }
+mt5linux = { git = "https://github.com/marlonsc/mt5linux.git", branch = "master" }
 python = ">=3.13,<3.14"
-python-dotenv = "^1.0.0"                                                         # For loading .env files
+python-dotenv = "^1.0.0"
 
 [tool.poetry.group.dev.dependencies]
+grpc-stubs = ">=1.53.0.6,<2.0.0.0"
 hypothesis = "^6.148.7"
 mypy = "^1.0.0"
 pyright = "^1.1.0"
@@ -39,29 +39,17 @@ pytest-timeout = "^2.0.0"
 ruff = "0.11.13"
 
 [tool.pyrefly]
-exclude = [
-    "*.pyi",
-    "mt5linux/mt5_pb2.py",
-    "mt5linux/mt5_pb2_grpc.py",
-    "typings/",
-]
+project-excludes = ["typings", "typings/**"]
+replace-imports-with-any = ["mt5linux.mt5_pb2", "mt5linux.mt5_pb2_grpc"]
+ignore-missing-imports = ["MetaTrader5"]
+python-version = "3.13"
 
 [tool.pyright]
-exclude = [
-    "*.pyi",
-    "docker/container/Metatrader/mt5_pb2.py",
-    "docker/container/Metatrader/mt5_pb2_grpc.py",
-    "typings/",
-]
+exclude = ["**/mt5_pb2.py", "**/mt5_pb2_grpc.py", "typings/"]
 pythonPlatform = "Linux"
 pythonVersion = "3.13"
 stubPath = "typings"
-
-# Execution environment
-executionEnvironments = [{ root = ".", extraPaths = ["."] }]
-
 typeCheckingMode = "strict"
-typeStubSearchPaths = ["typings"]
 
 [tool.pytest.ini_options]
 addopts = "-v --tb=short -s"
@@ -74,31 +62,25 @@ testpaths = ["tests"]
 timeout = 600
 
 [tool.ruff]
-
 line-length = 88
 target-version = "py313"
 
 [tool.ruff.lint]
-ignore = [
-    "COM812", # missing-trailing-comma (conflicts with formatter)
-    "ISC001", # single-line-implicit-string-concatenation (conflicts with formatter)
-    "D203",   # incorrect-blank-line-before-class (incompatible with D211)
-    "D213",   # multi-line-summary-second-line (incompatible with D212)
-]
 exclude = [
     "*.pyi",
-    "mt5linux/mt5_pb2.py",
-    "mt5linux/mt5_pb2_grpc.py",
+    "docker/container/Metatrader/mt5_pb2.py",
+    "docker/container/Metatrader/mt5_pb2_grpc.py",
     "typings/",
 ]
+ignore = ["COM812", "ISC001", "D203", "D213", "N802"]
 select = ["ALL"]
-
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = [
     "S101",   # assert ok in tests
     "S603",   # subprocess calls ok in tests (Docker interaction)
     "S607",   # partial executable path ok in tests (docker CLI)
+    "SLF001",
     "TRY300", # try/except style ok in tests
 ]
 "docker/container/Metatrader/bridge.py" = [
@@ -114,5 +96,3 @@ select = ["ALL"]
     "PT018",   # composite assertion - complex validation in single assertion
     "PLR2004", # magic value comparison - specific length validation in tests
 ]
-[dependency-groups]
-dev = []
