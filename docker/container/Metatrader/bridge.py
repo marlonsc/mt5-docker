@@ -31,6 +31,7 @@ from __future__ import annotations
 import argparse
 import inspect
 import logging
+import operator
 import signal
 import sys
 import threading
@@ -91,7 +92,7 @@ def _call_mt5_with_timeout(
         except futures.TimeoutError:
             func_name = getattr(func, "__name__", str(func))
             msg = f"MT5 call {func_name} timed out after {_mt5_call_timeout}s"
-            log.error(msg)
+            log.exception(msg)
             raise TimeoutError(msg) from None
 
 
@@ -609,7 +610,10 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
             # Sort by index to get positional order
             if len(field_to_index) == n:
                 return [
-                    f for f, _ in sorted(field_to_index.items(), key=lambda x: x[1])
+                    f
+                    for f, _ in sorted(
+                        field_to_index.items(), key=operator.itemgetter(1)
+                    )
                 ]
         except (TypeError, ValueError, AttributeError):
             pass
