@@ -30,7 +30,7 @@ python-dotenv = "^1.0.0"
 
 [tool.poetry.group.dev.dependencies]
 grpc-stubs = ">=1.53.0.6,<2.0.0.0"
-hypothesis = "^6.148.7"
+hypothesis = "^6.150.2"
 mypy = "^1.0.0"
 pyright = "^1.1.0"
 pytest = "^8.0.0"
