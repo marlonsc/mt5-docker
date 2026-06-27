@@ -209,6 +209,31 @@ The process is automatic and you should end up with MetaTrader5 running in your 
          - TZ=UTC                # Timezone for logs and MT5
    ```
 
+   ### Zero-touch demo account (experimental)
+
+   To have the container provision a MetaQuotes **demo** account by itself — no
+   credentials, no human — leave `MT5_LOGIN` unset and enable the wizard:
+
+   ```yaml
+       environment:
+         - MT5_AUTO_CREATE_DEMO=1   # headless "Open an Account" wizard (requires no MT5_LOGIN)
+   ```
+
+   On first boot, after the Wine prefix is built, the container drives the
+   terminal's *File → Open an Account* wizard via `xdotool` and, on success,
+   writes the discovered login to `/config/auto_demo.json` (login / server /
+   email — **never the password**: the gRPC bridge attaches via
+   `mt5.initialize()` with no credentials and reads the login back from
+   `account_info()`).
+
+   **Honest caveat:** this is GUI automation of MT5's wizard, whose menus and
+   account dialog render unreliably under headless Wine. It is **best-effort** —
+   on failure it saves `/config/auto_demo_failure.xwd` and the gRPC bridge still
+   starts. If no account appears, create a demo **once** manually via the VNC web
+   UI (`http://localhost:3000` → *File → Open an Account*); the Wine prefix and
+   the account persist on the `/config` volume, so it is a one-time step and the
+   bridge then attaches automatically on every restart.
+
    .NET Support
 
    Windows `.NET Framework` inside Wine:
@@ -392,7 +417,7 @@ print(local_array)  # [1 2 3]
 
 ### Startup Scripts
 
-The container startup is handled by two consolidated scripts in `docker/container/Metatrader/`:
+The container startup is handled by two consolidated scripts in `docker/container/metatrader/`:
 
 | Script | Purpose |
 |--------|---------|

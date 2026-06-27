@@ -3,7 +3,11 @@ requires = ["poetry-core>=1.0.0"]
 build-backend = "poetry.core.masonry.api"
 
 [tool.mypy]
-exclude = ["typings/"]
+exclude = [
+    "typings/",
+    "docker/container/metatrader/mt5_pb2\\.py$",
+    "docker/container/metatrader/mt5_pb2_grpc\\.py$",
+]
 mypy_path = "typings"
 python_version = "3.13"
 strict = true
@@ -11,6 +15,33 @@ strict = true
 [[tool.mypy.overrides]]
 module = ["MetaTrader5"]
 ignore_missing_imports = true
+
+# Generated protobuf / gRPC stubs are not hand-written and are already excluded
+# from ruff. follow_imports=skip makes importers (bridge.py, tests) see them as
+# Any so their dynamically generated attributes (Empty, InitRequest, ...) and
+# untyped service functions don't raise attr-defined / no-untyped-call.
+[[tool.mypy.overrides]]
+module = [
+    "mt5_pb2",
+    "mt5_pb2_grpc",
+    "*.mt5_pb2",
+    "*.mt5_pb2_grpc",
+    "mt5linux.mt5_pb2",
+    "mt5linux.mt5_pb2_grpc",
+]
+ignore_errors = true
+ignore_missing_imports = true
+follow_imports = "skip"
+
+# The gRPC bridge servicer must subclass the generated (now-Any) servicer base.
+[[tool.mypy.overrides]]
+module = ["bridge", "*.bridge"]
+disallow_subclassing_any = false
+
+# Test fixtures call the generated gRPC stubs, which return Any.
+[[tool.mypy.overrides]]
+module = ["conftest", "*.conftest"]
+warn_return_any = false
 
 
 [tool.poetry]
@@ -68,8 +99,8 @@ target-version = "py313"
 [tool.ruff.lint]
 exclude = [
     "*.pyi",
-    "docker/container/Metatrader/mt5_pb2.py",
-    "docker/container/Metatrader/mt5_pb2_grpc.py",
+    "docker/container/metatrader/mt5_pb2.py",
+    "docker/container/metatrader/mt5_pb2_grpc.py",
     "typings/",
 ]
 ignore = ["COM812", "ISC001", "D203", "D213", "N802"]
@@ -83,7 +114,7 @@ select = ["ALL"]
     "SLF001",
     "TRY300", # try/except style ok in tests
 ]
-"docker/container/Metatrader/bridge.py" = [
+"docker/container/metatrader/bridge.py" = [
     "ARG002",  # unused arguments are required by gRPC framework (request, context)
     "N802",    # function names must be PascalCase for gRPC service methods
     "PLW0603", # global statement needed for server lifecycle management

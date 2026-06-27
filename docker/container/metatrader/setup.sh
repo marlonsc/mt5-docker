@@ -81,16 +81,106 @@ init_wine_prefix() {
         return 0
     fi
 
-    if [ ! -d "$WINE_PREFIX_TEMPLATE/drive_c" ]; then
-        log ERROR "[setup] FATAL: Wine prefix template not found: $WINE_PREFIX_TEMPLATE"
+    # First boot: build the Wine prefix (Mono + Gecko + Python + gRPC packages)
+    # HERE, in this single isolated container. A former build-time `wine-builder`
+    # BuildKit stage did this, but its Xvfb/wineserver/msiexec sequence raced
+    # against BuildKit's concurrent stage scheduling and failed Gecko msiexec
+    # nondeterministically (exit 91 / "X connection broken"). The identical steps
+    # run reliably in a single container (== this first boot), and the result
+    # persists to the /config volume so restarts are idempotent.
+    log INFO "[setup] Building Wine prefix at first boot (one-time, ~3-5 min)..."
+
+    local staging="${STAGING_DIR:-/opt/mt5-staging}"
+    local mono_msi gecko64_msi gecko32_msi py_exe
+    mono_msi=$(ls "$staging"/wine-mono-*-x86.msi 2>/dev/null | head -1) || true
+    gecko64_msi=$(ls "$staging"/wine-gecko-*-x86_64.msi 2>/dev/null | head -1) || true
+    gecko32_msi=$(ls "$staging"/wine-gecko-*-x86.msi 2>/dev/null | head -1) || true
+    py_exe="$staging/python-installer.exe"
+    local f
+    for f in "$mono_msi" "$gecko64_msi" "$gecko32_msi" "$py_exe"; do
+        if [ -z "$f" ] || [ ! -f "$f" ]; then
+            log ERROR "[setup] FATAL: Wine prefix installer missing under $staging (resolved: '$f')"
+            return 1
+        fi
+    done
+
+    # Dedicated headless X for the install: matches the proven build environment
+    # and is independent of the KasmVNC desktop X. Poll readiness (xdpyinfo from
+    # x11-utils) instead of a blind sleep.
+    local wb_display=":99"
+    local rc=0
+    Xvfb "$wb_display" -screen 0 1280x1024x24 -nolisten tcp &
+    local xvfb_pid=$!
+    local waited=0
+    while [ $waited -lt 15 ] && ! DISPLAY="$wb_display" xdpyinfo >/dev/null 2>&1; do
+        sleep 1
+        waited=$((waited + 1))
+    done
+    if ! DISPLAY="$wb_display" xdpyinfo >/dev/null 2>&1; then
+        log ERROR "[setup] FATAL: Xvfb did not become ready on $wb_display"
+        kill "$xvfb_pid" 2>/dev/null || true
         return 1
     fi
 
-    log INFO "[setup] Initializing Wine prefix from template..."
-    mkdir -p "$(dirname "$WINEPREFIX")"
-    cp -a "$WINE_PREFIX_TEMPLATE" "$WINEPREFIX"
-    chown -R abc:abc "$WINEPREFIX"
-    log INFO "[setup] Wine prefix initialized: $WINEPREFIX"
+    # Isolated env block so build-only overrides never leak to later steps.
+    (
+        set -e
+        export DISPLAY="$wb_display"
+        export WINEARCH=win64
+        export WINEPREFIX
+        export WINEDEBUG=-all
+        export WINEDLLOVERRIDES="winemenubuilder.exe=d;mscoree=d"
+        mkdir -p "$WINEPREFIX"
+
+        log INFO "[setup] [prefix 1/6] Initializing Wine prefix..."
+        wine reg add 'HKCU\Software\Wine\DllOverrides' /v winemenubuilder.exe /t REG_SZ /d '' /f
+        wine reg add 'HKCU\Software\Wine\DllOverrides' /v mscoree /t REG_SZ /d '' /f
+        wineserver -w
+        test -d "$WINEPREFIX/drive_c"
+
+        log INFO "[setup] [prefix 2/6] Installing Wine Mono..."
+        wine msiexec /i "$mono_msi" /quiet
+        wineserver -w
+
+        log INFO "[setup] [prefix 3/6] Installing Wine Gecko (x86_64 + x86)..."
+        wine msiexec /i "$gecko64_msi" /quiet
+        wine msiexec /i "$gecko32_msi" /quiet
+        wineserver -w
+
+        log INFO "[setup] [prefix 4/6] Setting Windows version to win10..."
+        wine reg add 'HKEY_CURRENT_USER\Software\Wine' /v Version /t REG_SZ /d 'win10' /f
+        wineserver -w
+
+        log INFO "[setup] [prefix 5/6] Installing Python (Wine side)..."
+        wine "$py_exe" /quiet TargetDir='C:\Python' Include_doc=0 InstallAllUsers=1 PrependPath=1 Include_pip=1
+        wineserver -w
+        test -f "$WINE_PYTHON_PATH"
+        wine "$WINE_PYTHON_PATH" --version
+        wineserver -w
+
+        log INFO "[setup] [prefix 6/6] Installing gRPC bridge packages..."
+        wine "$WINE_PYTHON_PATH" -m pip install --upgrade --no-cache-dir pip
+        wine "$WINE_PYTHON_PATH" -m pip install --no-cache-dir --only-binary :all: \
+            "grpcio>=${GRPCIO_VERSION:-1.76.0}" \
+            "protobuf>=4.21.0" \
+            "numpy==${NUMPY_VERSION:-1.26.4}" \
+            "orjson>=3.9.0"
+        wineserver -w
+        wineserver -k 2>/dev/null || true
+    ) || rc=$?
+
+    kill "$xvfb_pid" 2>/dev/null || true
+
+    if [ $rc -ne 0 ]; then
+        # Remove the half-built prefix so the idempotency check above does not
+        # skip a clean rebuild on the next attempt (no hidden partial state).
+        rm -rf "$WINEPREFIX" 2>/dev/null || true
+        log ERROR "[setup] FATAL: Wine prefix build failed (rc=$rc)"
+        return 1
+    fi
+
+    touch "$WINEPREFIX/.build-complete"
+    log INFO "[setup] Wine prefix built and ready: $WINEPREFIX"
 }
 
 # =============================================================================
@@ -141,7 +231,7 @@ install_mt5_pip() {
     fi
 
     "$wine_executable" "$WINE_PYTHON_PATH" -m pip install ${pip_args} \
-        MetaTrader5 2>&1 || {
+        "MetaTrader5==${MT5_PYPI_VERSION:-5.0.5735}" 2>&1 || {
         log ERROR "[setup] MetaTrader5 installation failed"
         return 1
     }
@@ -342,7 +432,14 @@ log INFO "[setup] Starting MT5 Docker setup..."
 
 # Non-critical steps (no retry needed)
 unpack_config
-init_wine_prefix
+
+# First-boot Wine prefix build (critical). Retried: init_wine_prefix removes any
+# half-built prefix on failure, so a retry rebuilds cleanly (no hidden state).
+if ! retry_with_backoff 2 init_wine_prefix; then
+    log ERROR "[setup] FATAL: Could not build Wine prefix after retries"
+    exit 1
+fi
+
 configure_wine_settings
 
 # Critical steps with retry

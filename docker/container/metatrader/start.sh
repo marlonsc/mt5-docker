@@ -19,7 +19,6 @@ START_TS=$(date +%s)
 export STAGING_DIR="${STAGING_DIR:-/opt/mt5-staging}"
 export CONFIG_DIR="${CONFIG_DIR:-/config}"
 export CACHE_DIR="${CACHE_DIR:-/config/.cache}"
-export WINE_PREFIX_TEMPLATE="${WINE_PREFIX_TEMPLATE:-/opt/wine-prefix-template}"
 
 # Wine directories
 export WINEPREFIX="${WINEPREFIX:-$CONFIG_DIR/.wine}"
@@ -49,6 +48,7 @@ export PYTHON_VERSION="${PYTHON_VERSION:-3.12.8}"
 export WINE_MONO_VERSION="${WINE_MONO_VERSION:-9.4.0}"
 export GRPCIO_VERSION="${GRPCIO_VERSION:-1.76.0}"
 export NUMPY_VERSION="${NUMPY_VERSION:-1.26.4}"
+export MT5_PYPI_VERSION="${MT5_PYPI_VERSION:-5.0.5735}"
 
 # Startup markers (used by s6-overlay svc-mt5server)
 export STARTUP_MARKER="${STARTUP_MARKER:-/tmp/.mt5-startup-complete}"
@@ -64,6 +64,11 @@ export mt5setup_url="https://download.mql5.com/cdn/web/metaquotes.software.corp/
 export MT5_LOGIN="${MT5_LOGIN:-}"
 export MT5_PASSWORD="${MT5_PASSWORD:-}"
 export MT5_SERVER="${MT5_SERVER:-}"
+
+# Headless demo-account auto-provisioning (zero-touch). When enabled and no
+# MT5_LOGIN is set, svc-mt5server drives the terminal's "Open an Account" wizard
+# once to create a MetaQuotes demo account, then the bridge attaches to it.
+export MT5_AUTO_CREATE_DEMO="${MT5_AUTO_CREATE_DEMO:-0}"
 
 # =============================================================================
 # LOGGING

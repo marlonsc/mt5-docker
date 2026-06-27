@@ -95,12 +95,12 @@ class TestConstants:
 
         DOCKER: Final = "docker"
         CONTAINER: Final = "docker/container"  # Full path from project root
-        METATRADER: Final = "Metatrader"
+        METATRADER: Final = "metatrader"
         TESTS: Final = "tests"
         SCRIPTS: Final = "scripts"
         CONFIG: Final = "config"
-        S6_OVERLAY: Final = "docker/container/Metatrader/etc/s6-overlay"
-        S6_RC: Final = "docker/container/Metatrader/etc/s6-overlay/s6-rc.d"
+        S6_OVERLAY: Final = "docker/container/metatrader/etc/s6-overlay"
+        S6_RC: Final = "docker/container/metatrader/etc/s6-overlay/s6-rc.d"
 
     class File:
         """File names and patterns."""
@@ -113,16 +113,16 @@ class TestConstants:
         ENV_FILE: Final = ".env"
         PYPROJECT: Final = "pyproject.toml"
         DOCKERIGNORE: Final = ".dockerignore"
-        S6_SERVICE_DIR: Final = "docker/container/Metatrader/etc/s6-overlay/s6-rc.d"
+        S6_SERVICE_DIR: Final = "docker/container/metatrader/etc/s6-overlay/s6-rc.d"
 
     class Scripts:
         """Shell scripts in the project."""
 
         # All shell scripts relative to project root
         ALL_SCRIPTS: Final[tuple[str, ...]] = (
-            "docker/container/Metatrader/health_monitor.sh",
-            "docker/container/Metatrader/setup.sh",
-            "docker/container/Metatrader/start.sh",
+            "docker/container/metatrader/health_monitor.sh",
+            "docker/container/metatrader/setup.sh",
+            "docker/container/metatrader/start.sh",
             "scripts/setup-dependencies.sh",
         )
 
@@ -273,7 +273,7 @@ class TestConstants:
 
         NAME: Final = "mt5docker-test"
         CONTAINER_DIR: Final = "/app"
-        METATRADER_DIR: Final = "Metatrader"
+        METATRADER_DIR: Final = "metatrader"
         NETWORK_SUFFIX: Final = "-network"
         VOLUME_SUFFIX: Final = "-data"
         MAX_RESTARTS: Final[int] = 3
@@ -322,8 +322,8 @@ class TestConstants:
         ROOT_DIR: Final = ""  # Empty - used with Directory.CONTAINER to form full path
         TESTS_DIR: Final = "tests"
         CONFIG_DIR: Final = "config"
-        S6_OVERLAY_BASE_PATH: Final = "docker/container/Metatrader/etc/s6-overlay"
-        S6_RC_BASE_PATH: Final = "docker/container/Metatrader/etc/s6-overlay/s6-rc.d"
+        S6_OVERLAY_BASE_PATH: Final = "docker/container/metatrader/etc/s6-overlay"
+        S6_RC_BASE_PATH: Final = "docker/container/metatrader/etc/s6-overlay/s6-rc.d"
         # Linux system Python version in pyproject.toml
         LINUX_PYTHON_VERSION_PREFIX: Final = "3.13"
 
@@ -797,6 +797,3 @@ TestConstants.Collections.COMPRESSION_TYPES = frozenset(
 TestConstants.Collections.ACKS_MODES = frozenset(
     acks.value for acks in TestConstants.Kafka.AcksMode
 )
-
-# Add VersionPrefix alias after class is defined
-TestConstants.VersionPrefix = TestConstants.VersionCheck.Prefix  # type: ignore[attr-defined]

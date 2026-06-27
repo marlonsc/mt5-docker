@@ -36,16 +36,16 @@ import signal
 import sys
 import threading
 from concurrent import futures
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import grpc
-import MetaTrader5  # pyright: ignore[reportMissingImports]
+import MetaTrader5
 import orjson
 
 from . import mt5_pb2, mt5_pb2_grpc
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Iterable
     from datetime import datetime
     from types import FrameType, ModuleType
 
@@ -237,6 +237,11 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
             dtype=str(arr.dtype),
             shape=list(arr.shape),
         )
+
+    @staticmethod
+    def _as_numpy_array(result: object) -> NDArray[np.void] | None:
+        """Cast MT5 copy_* results to their numpy array contract."""
+        return cast("NDArray[np.void] | None", result)
 
     def _validate_symbol(self, symbol: str, func_name: str) -> bool:
         """Validate symbol is not empty.
@@ -560,7 +565,7 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
         return mt5_pb2.Constants(values=constants)
 
     @staticmethod
-    def _get_tuple_field_order(cls: type) -> list[str] | None:
+    def _get_tuple_field_order(tuple_type: type) -> list[str] | None:
         """Get field names in correct positional order from tuple subclass.
 
         Uses Python's built-in introspection - NO hardcoding.
@@ -570,26 +575,26 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
         3. Test instance mapping (universal for member_descriptor types)
 
         Args:
-            cls: The tuple subclass to introspect.
+            tuple_type: The tuple subclass to introspect.
 
         Returns:
             List of field names in positional order, or None if fails.
 
         """
         # Python 3.10+ structseq types have __match_args__ in positional order
-        if hasattr(cls, "__match_args__"):
-            return list(cls.__match_args__)
+        if hasattr(tuple_type, "__match_args__"):
+            return list(tuple_type.__match_args__)
 
         # Standard namedtuples have _fields
-        if hasattr(cls, "_fields"):
-            return list(cls._fields)
+        if hasattr(tuple_type, "_fields"):
+            return list(tuple_type._fields)
 
         # For types without either, create test instance and map indices
         member_fields = [
             name
-            for name in dir(cls)
+            for name in dir(tuple_type)
             if not name.startswith("_")
-            and type(getattr(cls, name, None)).__name__ == "member_descriptor"
+            and type(getattr(tuple_type, name, None)).__name__ == "member_descriptor"
         ]
 
         if not member_fields:
@@ -598,7 +603,7 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
         # Create instance with sentinel values to determine positional order
         try:
             n = len(member_fields)
-            instance = cls.__new__(cls, tuple(range(n)))
+            instance = tuple_type.__new__(tuple_type, tuple(range(n)))
 
             # Map each field to its positional index
             field_to_index: dict[str, int] = {}
@@ -963,7 +968,7 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
             return mt5_pb2.SymbolsResponse(total=0, chunks=[])
 
         # MT5 API returns tuple of SymbolInfo namedtuples
-        items = list(result)  # type: ignore[call-overload]
+        items = list(cast("Iterable[object]", result))
         total = len(items)
         log.debug("SymbolsGet: total=%s symbols", total)
 
@@ -1096,11 +1101,12 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
             request.date_from,
             request.count,
         )
+        rates = self._as_numpy_array(result)
         log.debug(
             "CopyRatesFrom: returned %s bars",
-            len(result) if result is not None else 0,  # type: ignore[arg-type]
+            len(rates) if rates is not None else 0,
         )
-        return self._numpy_to_proto(result)  # type: ignore[arg-type]
+        return self._numpy_to_proto(rates)
 
     def CopyRatesFromPos(
         self,
@@ -1135,11 +1141,12 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
             request.start_pos,
             request.count,
         )
+        rates = self._as_numpy_array(result)
         log.debug(
             "CopyRatesFromPos: returned %s bars",
-            len(result) if result is not None else 0,  # type: ignore[arg-type]
+            len(rates) if rates is not None else 0,
         )
-        return self._numpy_to_proto(result)  # type: ignore[arg-type]
+        return self._numpy_to_proto(rates)
 
     def CopyRatesRange(
         self,
@@ -1178,11 +1185,12 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
             request.date_from,
             request.date_to,
         )
+        rates = self._as_numpy_array(result)
         log.debug(
             "CopyRatesRange: returned %s bars",
-            len(result) if result is not None else 0,  # type: ignore[arg-type]
+            len(rates) if rates is not None else 0,
         )
-        return self._numpy_to_proto(result)  # type: ignore[arg-type]
+        return self._numpy_to_proto(rates)
 
     # =========================================================================
     # MARKET DATA - TICKS
@@ -1221,11 +1229,12 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
             request.count,
             request.flags,
         )
+        ticks = self._as_numpy_array(result)
         log.debug(
             "CopyTicksFrom: returned %s ticks",
-            len(result) if result is not None else 0,  # type: ignore[arg-type]
+            len(ticks) if ticks is not None else 0,
         )
-        return self._numpy_to_proto(result)  # type: ignore[arg-type]
+        return self._numpy_to_proto(ticks)
 
     def CopyTicksRange(
         self,
@@ -1264,11 +1273,12 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
             request.date_to,
             request.flags,
         )
+        ticks = self._as_numpy_array(result)
         log.debug(
             "CopyTicksRange: returned %s ticks",
-            len(result) if result is not None else 0,  # type: ignore[arg-type]
+            len(ticks) if ticks is not None else 0,
         )
-        return self._numpy_to_proto(result)  # type: ignore[arg-type]
+        return self._numpy_to_proto(ticks)
 
     # =========================================================================
     # TRADING OPERATIONS
@@ -1362,12 +1372,12 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
         order_dict = _json_deserialize(request.json_request)
         try:
             result = self._mt5_module.order_check(order_dict)
-        except Exception as e:
-            log.warning("OrderCheck exception: %s", e)
+        except (RuntimeError, TypeError, ValueError, AttributeError) as exc:
+            log.warning("OrderCheck exception: %s", exc)
             # Return error result instead of raising
             error_data: dict[str, JSONValue] = {
                 "retcode": 10006,  # TRADE_RETCODE_REJECT
-                "comment": str(e),
+                "comment": str(exc),
             }
             return mt5_pb2.DictData(json_data=_json_serialize(error_data))
         if result is None:

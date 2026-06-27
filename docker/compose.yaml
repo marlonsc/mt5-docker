@@ -11,7 +11,8 @@ services:
         WINE_MONO_VERSION: "10.4.0"
         WINE_GECKO_VERSION: "2.47.4"
         NUMPY_VERSION: "1.26.4"
-        # MT5 pip package installed at runtime (always latest)
+        # MT5 pip package pinned in versions.env; baked into .versions manifest
+        MT5_PYPI_VERSION: "5.0.5735"
         BUILD_DATE: "${BUILD_DATE:-}"
         VERSION: "${VERSION:-local}"
     image: marlonsc/mt5-docker:debian
@@ -43,6 +44,8 @@ services:
       # Debug and update settings
       - MT5_DEBUG=${MT5_DEBUG:-1}     # Enable debug logging in gRPC bridge (1=on, 0=off)
       - MT5_UPDATE=${MT5_UPDATE:-1}   # Update components on startup (1=on, 0=off)
+      # Zero-touch: auto-create a MetaQuotes demo account when no MT5_LOGIN is set
+      - MT5_AUTO_CREATE_DEMO=${MT5_AUTO_CREATE_DEMO:-0}
     restart: unless-stopped
     # Resource limits for production
     deploy:

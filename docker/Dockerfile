@@ -56,9 +56,17 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         "https://dl.winehq.org/wine-builds/debian/dists/bookworm/winehq-bookworm.sources" && \
     dpkg --add-architecture i386 && \
     apt-get update && \
-    # Wine 10.0 with full i386 support (required for wine64 loader to work)
+    # Wine 10.0 with full i386 support (required for wine64 loader to work).
+    # Pin ALL wine-stable sub-packages, not just the winehq-stable meta: since
+    # WineHQ shipped 11.0.0.0 stable, a meta-only pin lets apt drift the amd64
+    # sub-package to 11.0 ("but 11.0.0.0~bookworm-1 is to be installed") and the
+    # version set becomes unsatisfiable. Pinning all four keeps 10.0 (which the
+    # MT5 anti-debug check requires) resolvable.
     apt-get install -y --install-recommends \
-        winehq-stable=10.0.0.0~bookworm-1
+        winehq-stable=10.0.0.0~bookworm-1 \
+        wine-stable=10.0.0.0~bookworm-1 \
+        wine-stable-amd64=10.0.0.0~bookworm-1 \
+        wine-stable-i386=10.0.0.0~bookworm-1
 
 # Update font cache
 RUN fc-cache -fv
@@ -73,6 +81,8 @@ ARG GRPCIO_VERSION
 ARG NUMPY_VERSION
 ARG WINE_MONO_VERSION
 ARG WINE_GECKO_VERSION
+# MetaTrader5 connector pin; baked into the .versions manifest for runtime setup.sh
+ARG MT5_PYPI_VERSION=5.0.5735
 
 WORKDIR /staging
 
@@ -114,103 +124,24 @@ RUN --mount=type=cache,target=/downloads,id=mt5-downloads-debian,sharing=locked 
     echo "WINE_GECKO_VERSION=${WINE_GECKO_VERSION}" >> /staging/.versions && \
     echo "GRPCIO_VERSION=${GRPCIO_VERSION}" >> /staging/.versions && \
     echo "NUMPY_VERSION=${NUMPY_VERSION}" >> /staging/.versions && \
+    echo "MT5_PYPI_VERSION=${MT5_PYPI_VERSION}" >> /staging/.versions && \
     echo "BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> /staging/.versions && \
     echo "BASE_IMAGE=debianbookworm" >> /staging/.versions && \
     ls -la /staging/
 
 # ============================================================
-# Stage 3: WINE-BUILDER - Build Wine prefix with Python + packages
+# Stage 3: RUNTIME - Final image
 # ============================================================
-FROM wine-base AS wine-builder
-
-ARG PYTHON_VERSION
-ARG GRPCIO_VERSION
-ARG NUMPY_VERSION
-ARG WINE_MONO_VERSION
-ARG WINE_GECKO_VERSION
-
-# Build complete Wine prefix (Python + packages, NOT MT5)
-RUN --mount=from=downloader,source=/staging,target=/staging \
-    set -eux && \
-    umask 0 && \
-    export WINEDEBUG=-all && \
-    export WINEARCH=win64 && \
-    export WINEPREFIX=/wine-build && \
-    export HOME=/tmp && \
-    export WINEDLLOVERRIDES="winemenubuilder.exe=d;mscoree=d" && \
-    mkdir -p /wine-build && \
-    # ============================================================
-    # Step 1: Initialize Wine prefix with DLL overrides
-    # ============================================================
-    echo "=== Step 1/6: Initializing Wine prefix ===" && \
-    xvfb-run -a sh -c "\
-        wine reg add 'HKCU\\Software\\Wine\\DllOverrides' /v winemenubuilder.exe /t REG_SZ /d '' /f && \
-        wine reg add 'HKCU\\Software\\Wine\\DllOverrides' /v mscoree /t REG_SZ /d '' /f && \
-        wineserver -w" && \
-    test -d /wine-build/drive_c || { echo "FAIL: Wine prefix not created"; exit 1; } && \
-    # ============================================================
-    # Step 2: Install Wine Mono (for .NET support)
-    # ============================================================
-    echo "=== Step 2/6: Installing Wine Mono ${WINE_MONO_VERSION} ===" && \
-    xvfb-run -a sh -c "\
-        wine msiexec /i /staging/wine-mono-${WINE_MONO_VERSION}-x86.msi /quiet && \
-        wineserver -w" && \
-    # ============================================================
-    # Step 3: Install Wine Gecko (for HTML rendering support)
-    # ============================================================
-    echo "=== Step 3/6: Installing Wine Gecko ${WINE_GECKO_VERSION} ===" && \
-    xvfb-run -a sh -c "\
-        wine msiexec /i /staging/wine-gecko-${WINE_GECKO_VERSION}-x86_64.msi /quiet && \
-        wine msiexec /i /staging/wine-gecko-${WINE_GECKO_VERSION}-x86.msi /quiet && \
-        wineserver -w" && \
-    # ============================================================
-    # Step 4: Set Windows version to win10 (via registry)
-    # ============================================================
-    echo "=== Step 4/6: Setting Windows version to win10 ===" && \
-    xvfb-run -a sh -c "\
-        wine reg add 'HKEY_CURRENT_USER\\Software\\Wine' /v Version /t REG_SZ /d 'win10' /f && \
-        wineserver -w" && \
-    # ============================================================
-    # Step 5: Install Python for Windows
-    # ============================================================
-    echo "=== Step 5/6: Installing Python ===" && \
-    xvfb-run -a sh -c "\
-        wine /staging/python-installer.exe /quiet TargetDir=C:\\\\Python Include_doc=0 InstallAllUsers=1 PrependPath=1 Include_pip=1 && \
-        wineserver -w" && \
-    # Verify Python
-    PYTHON_EXE="/wine-build/drive_c/Python/python.exe" && \
-    test -f "$PYTHON_EXE" || { \
-        echo "FAIL: Python not found at $PYTHON_EXE"; \
-        find /wine-build/drive_c -name "python.exe" -type f 2>/dev/null; \
-        exit 1; \
-    } && \
-    echo "Python found at: $PYTHON_EXE" && \
-    xvfb-run -a sh -c "wine '$PYTHON_EXE' --version; wineserver -w" || { echo "FAIL: Python cannot execute"; exit 1; } && \
-    # ============================================================
-    # Step 6: Install Python packages (grpcio + numpy + protobuf)
-    # Use --only-binary to avoid compilation (use prebuilt wheels)
-    # ============================================================
-    echo "=== Step 6/6: Installing Python packages (grpcio + numpy + protobuf) ===" && \
-    xvfb-run -a sh -c "\
-        wine '$PYTHON_EXE' -m pip install --upgrade --no-cache-dir pip && \
-        wine '$PYTHON_EXE' -m pip install --no-cache-dir --only-binary :all: \
-            'grpcio>=${GRPCIO_VERSION}' \
-            'protobuf>=4.21.0' \
-            'numpy==${NUMPY_VERSION}' \
-            'orjson>=3.9.0' && \
-        wineserver -w" && \
-    # Cleanup
-    echo "=== Cleanup ===" && \
-    rm -rf /tmp/.wine-* /tmp/.cache /tmp/.X* && \
-    rm -rf /wine-build/drive_c/users/*/Temp/* 2>/dev/null || true && \
-    rm -rf /wine-build/drive_c/windows/temp/* 2>/dev/null || true && \
-    touch /wine-build/.build-complete && \
-    echo "=== BUILD COMPLETE ===" && \
-    du -sh /wine-build
-
-# ============================================================
-# Stage 4: RUNTIME - Final image
-# ============================================================
+# NOTE: The Wine prefix (Mono + Gecko + Python + gRPC packages) is built at
+# RUNTIME on first boot by setup.sh:init_wine_prefix, NOT at image-build time.
+# A former `wine-builder` BuildKit stage did this at build time, but the Wine
+# prefix build (Xvfb + wineserver + msiexec) is timing-sensitive and raced
+# against BuildKit's concurrent stage scheduling (the runtime apt layer ran
+# interleaved with it), causing nondeterministic Gecko msiexec failures
+# (exit 91 / "X connection broken"). The identical steps succeed every time in
+# a single isolated container (`docker run`), which is exactly what first-boot
+# is. Building at runtime also persists the prefix to the /config volume
+# (idempotent across restarts) and keeps the image build cheap and deterministic.
 FROM wine-base AS runtime
 
 # Version ARGs for labels
@@ -249,23 +180,31 @@ ENV WINEPREFIX="/config/.wine"
 ENV WINEDEBUG=-all
 ENV WINEDLLOVERRIDES="winemenubuilder.exe,mscoree="
 ENV STAGING_DIR="/opt/mt5-staging"
-ENV WINE_PREFIX_TEMPLATE="/opt/wine-prefix-template"
 
-# Copy version manifest
-COPY --from=downloader /staging/.versions /opt/mt5-staging/.versions
+# GUI automation deps (Debian main) for headless demo-account creation.
+# Installed in the runtime layer (not wine-base) so the heavy cached Wine layer
+# is reused on rebuild and we never re-resolve the pinned winehq packages.
+# x11-utils provides xdpyinfo (Xvfb readiness poll in init_wine_prefix).
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        xdotool \
+        wmctrl \
+        x11-utils && \
+    rm -rf /var/lib/apt/lists/*
 
-# Copy pre-built Wine prefix as TEMPLATE
-COPY --from=wine-builder /wine-build /opt/wine-prefix-template
+# Copy version manifest + Wine prefix installer payload (Python/Mono/Gecko msi).
+# setup.sh:init_wine_prefix consumes these at first boot to build the prefix.
+COPY --from=downloader /staging /opt/mt5-staging
 
 # Copy scripts
-COPY container/Metatrader /Metatrader
+COPY container/metatrader /Metatrader
 RUN chmod +x /Metatrader/start.sh && \
     chmod +x /Metatrader/setup.sh && \
     chmod +x /Metatrader/health_monitor.sh && \
     chown -R abc:abc /Metatrader
 
 # Copy s6 service definitions
-COPY container/Metatrader/etc/s6-overlay /etc/s6-overlay
+COPY container/metatrader/etc/s6-overlay /etc/s6-overlay
 RUN chmod +x /etc/s6-overlay/s6-rc.d/svc-mt5server/run && \
     chmod +x /etc/s6-overlay/s6-rc.d/svc-mt5server/finish
 

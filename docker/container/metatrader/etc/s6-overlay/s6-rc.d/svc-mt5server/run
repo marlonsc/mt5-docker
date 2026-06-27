@@ -85,7 +85,13 @@ start_mt5_terminal() {
         log "Using config file for auto-login"
     fi
 
-    run_as_abc ${wine_executable} "$mt5file" $MT5_ARGS &
+    # Launch inside a Wine virtual desktop (`explorer /desktop=`). Without it,
+    # each MT5 child window (menus, the "Open an Account" dialog) is a separate
+    # override-redirect X window that does NOT composite under Xvfb+openbox and
+    # renders BLACK -- which breaks the headless demo wizard. In /desktop= mode
+    # Wine paints all child windows into one managed surface so menus/dialogs
+    # render and can be driven by xdotool.
+    run_as_abc ${wine_executable} explorer /desktop=mt5,1280x1024 "$mt5file" $MT5_ARGS &
 
     # Wait for startup (max 30s)
     local waited=0
@@ -141,6 +147,32 @@ start_bridge() {
     fi
 }
 
+auto_create_demo_account() {
+    # Zero-touch demo provisioning. Runs ONLY when explicitly enabled and no
+    # manual MT5_LOGIN was supplied. The Python wizard is idempotent (a no-op if
+    # the terminal is already logged in), so this is safe on every (re)start.
+    if [ "${MT5_AUTO_CREATE_DEMO:-0}" != "1" ]; then
+        return 0
+    fi
+    if [ -n "${MT5_LOGIN:-}" ]; then
+        log "MT5_LOGIN provided; skipping demo auto-creation"
+        return 0
+    fi
+
+    local script="/Metatrader/open_demo_account.py"
+    if [ ! -f "$script" ]; then
+        log "WARN: $script not found; skipping demo auto-creation"
+        return 0
+    fi
+
+    log "Auto-creating MetaQuotes demo account (headless, no human needed)..."
+    if run_as_abc python3 "$script"; then
+        log "Demo account provisioning OK"
+    else
+        log "WARN: demo auto-creation failed; create one manually via VNC (port 3000)"
+    fi
+}
+
 check_restart_token() {
     [ -f "$RESTART_TOKEN" ]
 }
@@ -185,7 +217,10 @@ log "DISPLAY=$DISPLAY"
 # =============================================================================
 # WAIT FOR STARTUP TOKEN
 # =============================================================================
-MAX_WAIT=600
+# First boot builds the Wine prefix (Mono+Gecko+Python+pip, ~3-5 min) before MT5
+# install, so allow generous margin (incl. one prefix-build retry). Subsequent
+# boots skip the prefix build (idempotent) and complete in well under a minute.
+MAX_WAIT=1200
 WAITED=0
 log "Waiting for startup token..."
 while [ $WAITED -lt $MAX_WAIT ]; do
@@ -225,6 +260,17 @@ log "Components OK"
 clear_restart_token
 start_mt5_terminal
 start_bridge
+
+# Provision a demo account headlessly (zero-touch) once the terminal is up.
+auto_create_demo_account
+
+# The bridge attached (no-creds) BEFORE the wizard logged in, so re-attach it now
+# to bind AccountInfo() to the freshly provisioned demo account.
+if [ "${MT5_AUTO_CREATE_DEMO:-0}" = "1" ] && [ -z "${MT5_LOGIN:-}" ]; then
+    log "Re-attaching gRPC bridge to the logged-in account..."
+    kill_bridge
+    start_bridge
+fi
 
 # =============================================================================
 # MAIN LOOP: Monitor restart token and process health
