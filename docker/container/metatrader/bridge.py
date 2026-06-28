@@ -37,6 +37,7 @@ import signal
 import subprocess
 import sys
 import threading
+import time
 from concurrent import futures
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
@@ -161,6 +162,10 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
 
     _mt5_module: ModuleType = MetaTrader5
     _mt5_lock: threading.RLock = threading.RLock()
+    # Only one demo-creation wizard may run at a time (it drives the shared GUI);
+    # a non-blocking acquire lets CreateDemoAccount REJECT concurrent calls instead
+    # of queueing 300s subprocesses (DoS amplification).
+    _wizard_lock: threading.Lock = threading.Lock()
 
     def __init__(self) -> None:
         """Initialize the MT5 gRPC servicer and connect to MT5 terminal."""
@@ -966,34 +971,53 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
         script = Path("/Metatrader/open_demo_account.py")
         if not script.exists():
             context.abort(grpc.StatusCode.UNIMPLEMENTED, f"wizard not found: {script}")
-        env = dict(os.environ)
-        overrides = {
-            "MT5_DEMO_SERVER": request.server,
-            "MT5_DEMO_EMAIL": request.email,
-            "MT5_DEMO_PHONE": request.phone,
-            "MT5_DEMO_FIRST": request.first_name,
-            "MT5_DEMO_LAST": request.last_name,
-            "MT5_DEMO_DOB_YEAR": request.dob_year,
-        }
-        env.update({key: value for key, value in overrides.items() if value})
-        # Force a fresh account: move aside the idempotency guard if present.
-        guard = Path(os.environ.get("CONFIG_DIR", "/config")) / "auto_demo.json"
-        if guard.exists():
-            guard.replace(guard.with_name("auto_demo.prev.json"))
-        proc = subprocess.run(  # noqa: S603  # fixed argv, no shell
-            ["python3", str(script)],  # noqa: S607
-            check=False,
-            capture_output=True,
-            text=True,
-            env=env,
-            timeout=300,
-        )
-        if proc.returncode != 0:
+        # Reject (do NOT queue) concurrent wizard runs: a second run would drive the
+        # same GUI and pile up 300s subprocesses (unauthenticated DoS amplification).
+        if not self._wizard_lock.acquire(blocking=False):
             context.abort(
-                grpc.StatusCode.INTERNAL,
-                f"demo wizard failed (rc={proc.returncode}): {proc.stderr[-400:]}",
+                grpc.StatusCode.RESOURCE_EXHAUSTED,
+                "a demo creation is already in progress",
             )
-        return self.GetProvisionedAccount(mt5_pb2.Empty(), context)
+        try:
+            env = dict(os.environ)
+            overrides = {
+                "MT5_DEMO_SERVER": request.server,
+                "MT5_DEMO_EMAIL": request.email,
+                "MT5_DEMO_PHONE": request.phone,
+                "MT5_DEMO_FIRST": request.first_name,
+                "MT5_DEMO_LAST": request.last_name,
+                "MT5_DEMO_DOB_YEAR": request.dob_year,
+            }
+            env.update({key: value for key, value in overrides.items() if value})
+            # Force a fresh account: move the existing record aside to a TIMESTAMPED
+            # path so a prior backup is never clobbered (no data loss).
+            guard = Path(os.environ.get("CONFIG_DIR", "/config")) / "auto_demo.json"
+            if guard.exists():
+                stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+                guard.replace(guard.with_name(f"auto_demo.{stamp}.json"))
+            proc = subprocess.run(  # noqa: S603  # fixed argv, no shell
+                ["python3", str(script)],  # noqa: S607
+                check=False,
+                capture_output=True,
+                text=True,
+                env=env,
+                timeout=300,
+            )
+            if proc.returncode != 0:
+                # Log full stderr server-side; return a GENERIC error to the caller
+                # (never reflect raw subprocess output to RPC clients).
+                log.error(
+                    "CreateDemoAccount: wizard failed rc=%s: %s",
+                    proc.returncode,
+                    proc.stderr[-2000:],
+                )
+                context.abort(
+                    grpc.StatusCode.INTERNAL,
+                    f"demo wizard failed (rc={proc.returncode})",
+                )
+            return self.GetProvisionedAccount(mt5_pb2.Empty(), context)
+        finally:
+            self._wizard_lock.release()
 
     # =========================================================================
     # SYMBOL OPERATIONS
