@@ -519,6 +519,46 @@ class TestStartupScriptContent:
             "init_wine_prefix must run under retry_with_backoff"
         )
 
+    def test_setup_sh_protobuf_pin_matches_gencode(self) -> None:
+        """Verify the Wine protobuf pin is >= the gencode baked into mt5_pb2.py.
+
+        Regression guard: the bridge crashes on import (and never binds 8001 ->
+        the client hangs ~90s) when the protobuf RUNTIME is older than the gencode
+        in the generated stubs. setup.sh once pinned `protobuf<6.0` while the stubs
+        were regenerated to 6.31.1 gencode -> VersionError crash loop. The Wine pin
+        and versions.env PROTOBUF_VERSION must track the stub gencode in lockstep.
+        """
+        metatrader = c.get_project_root() / c.Directory.CONTAINER / "metatrader"
+        setup_sh = (metatrader / "setup.sh").read_text()
+        # The dead pin that caused the crash loop must never come back.
+        assert "protobuf>=4.21.0,<6.0" not in setup_sh, (
+            "setup.sh must NOT cap protobuf <6.0 (older than the 6.x gencode)"
+        )
+        assert "protobuf>=${PROTOBUF_VERSION" in setup_sh, (
+            "setup.sh must pin protobuf floor from PROTOBUF_VERSION"
+        )
+        assert ",<7.0" in setup_sh, "setup.sh must cap protobuf <7.0"
+        # Build-time fail-loud guard: import the stubs right after copy_bridge.
+        assert "from mt5linux import mt5_pb2, mt5_pb2_grpc" in setup_sh, (
+            "copy_bridge must import the stubs to fail loud on a gencode mismatch"
+        )
+        # versions.env PROTOBUF_VERSION must be >= the gencode in mt5_pb2.py.
+        versions = (
+            c.get_project_root() / c.Directory.DOCKER / c.File.VERSIONS_ENV
+        ).read_text()
+        pin_match = re.search(
+            r"^PROTOBUF_VERSION=(\d+)\.(\d+)\.(\d+)", versions, re.MULTILINE
+        )
+        assert pin_match, "versions.env must define PROTOBUF_VERSION=major.minor.patch"
+        pin = tuple(int(g) for g in pin_match.groups())
+        pb2 = (metatrader / "mt5_pb2.py").read_text()
+        gen_match = re.search(r"Domain\.PUBLIC,\s*(\d+),\s*(\d+),\s*(\d+)", pb2)
+        assert gen_match, "mt5_pb2.py must carry the protobuf gencode tuple"
+        gencode = tuple(int(g) for g in gen_match.groups())
+        assert pin >= gencode, (
+            f"PROTOBUF_VERSION {pin} must be >= mt5_pb2.py gencode {gencode}"
+        )
+
     def test_open_demo_account_script_present(self) -> None:
         """Verify the zero-touch demo wizard exists with a main() entrypoint."""
         script = (

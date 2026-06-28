@@ -168,9 +168,14 @@ init_wine_prefix() {
 
         log INFO "[setup] [prefix 6/6] Installing gRPC bridge packages..."
         wine "$WINE_PYTHON_PATH" -m pip install --upgrade --no-cache-dir pip
+        # protobuf floor MUST match the gencode version baked into mt5_pb2.py
+        # (ValidateProtobufRuntimeVersion(... 6, 31, 1 ...)). A runtime OLDER than
+        # the gencode raises protobuf.runtime_version.VersionError at import and the
+        # bridge crashes on startup (never binds the port -> client hangs). Keep this
+        # floor == PROTOBUF_VERSION in versions.env whenever the stubs are regenerated.
         wine "$WINE_PYTHON_PATH" -m pip install --no-cache-dir --only-binary :all: \
             "grpcio>=${GRPCIO_VERSION:-1.76.0},<2.0" \
-            "protobuf>=4.21.0,<6.0" \
+            "protobuf>=${PROTOBUF_VERSION:-6.31.1},<7.0" \
             "numpy==${NUMPY_VERSION:-1.26.4}" \
             "orjson>=3.9.0"
         wineserver -w
@@ -250,8 +255,10 @@ install_mt5_pip() {
 import MetaTrader5
 import grpc
 import numpy
+import google.protobuf
 print(f'MetaTrader5 {MetaTrader5.__version__}')
 print(f'grpcio {grpc.__version__}')
+print(f'protobuf {google.protobuf.__version__}')
 print(f'numpy {numpy.__version__}')
 " 2>/dev/null || {
         log ERROR "[setup] Package verification failed"
@@ -429,6 +436,16 @@ from .bridge import main
 if __name__ == "__main__":
     main()
 EOF
+
+    # Fail loud at build time if the protobuf RUNTIME is older than the gencode
+    # baked into mt5_pb2.py. This is the exact import the bridge does on startup;
+    # catching it here turns a silent crash-loop (bridge never binds 8001 -> client
+    # hangs ~90s) into a build-time FATAL with a clear message.
+    if ! "$wine_executable" "$WINE_PYTHON_PATH" -c "from mt5linux import mt5_pb2, mt5_pb2_grpc" 2>&1; then
+        log ERROR "[setup] FATAL: bridge stubs fail to import -- protobuf runtime/gencode mismatch?"
+        log ERROR "[setup]        check 'protobuf>=PROTOBUF_VERSION' in setup.sh matches mt5_pb2.py gencode"
+        return 1
+    fi
 
     log INFO "[setup] gRPC bridge files copied to: $TARGET_DIR"
 }
