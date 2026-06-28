@@ -4,9 +4,9 @@
 import grpc
 import warnings
 
-if __package__:
+try:
     from . import mt5_pb2 as mt5__pb2
-else:
+except ImportError:  # standalone (Wine bridge) layout where mt5_pb2 is top-level
     import mt5_pb2 as mt5__pb2
 
 GRPC_GENERATED_VERSION = "1.76.0"
@@ -14,7 +14,7 @@ GRPC_VERSION = grpc.__version__
 _version_not_supported = False
 
 try:
-    from grpc._utilities import first_version_is_lower  # pyright: ignore[reportMissingImports]
+    from grpc._utilities import first_version_is_lower
 
     _version_not_supported = first_version_is_lower(
         GRPC_VERSION, GRPC_GENERATED_VERSION
@@ -109,6 +109,18 @@ class MT5ServiceStub(object):
             "/mt5.MT5Service/AccountInfo",
             request_serializer=mt5__pb2.Empty.SerializeToString,
             response_deserializer=mt5__pb2.DictData.FromString,
+            _registered_method=True,
+        )
+        self.GetProvisionedAccount = channel.unary_unary(
+            "/mt5.MT5Service/GetProvisionedAccount",
+            request_serializer=mt5__pb2.Empty.SerializeToString,
+            response_deserializer=mt5__pb2.ProvisionedAccount.FromString,
+            _registered_method=True,
+        )
+        self.CreateDemoAccount = channel.unary_unary(
+            "/mt5.MT5Service/CreateDemoAccount",
+            request_serializer=mt5__pb2.CreateDemoRequest.SerializeToString,
+            response_deserializer=mt5__pb2.ProvisionedAccount.FromString,
             _registered_method=True,
         )
         self.SymbolsTotal = channel.unary_unary(
@@ -336,6 +348,18 @@ class MT5ServiceServicer(object):
         context.set_details("Method not implemented!")
         raise NotImplementedError("Method not implemented!")
 
+    def GetProvisionedAccount(self, request, context):
+        """Account provisioning (container management)"""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
+
+    def CreateDemoAccount(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
+
     def SymbolsTotal(self, request, context):
         """Symbol operations"""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
@@ -543,6 +567,16 @@ def add_MT5ServiceServicer_to_server(servicer, server):
             servicer.AccountInfo,
             request_deserializer=mt5__pb2.Empty.FromString,
             response_serializer=mt5__pb2.DictData.SerializeToString,
+        ),
+        "GetProvisionedAccount": grpc.unary_unary_rpc_method_handler(
+            servicer.GetProvisionedAccount,
+            request_deserializer=mt5__pb2.Empty.FromString,
+            response_serializer=mt5__pb2.ProvisionedAccount.SerializeToString,
+        ),
+        "CreateDemoAccount": grpc.unary_unary_rpc_method_handler(
+            servicer.CreateDemoAccount,
+            request_deserializer=mt5__pb2.CreateDemoRequest.FromString,
+            response_serializer=mt5__pb2.ProvisionedAccount.SerializeToString,
         ),
         "SymbolsTotal": grpc.unary_unary_rpc_method_handler(
             servicer.SymbolsTotal,
@@ -1004,6 +1038,66 @@ class MT5Service(object):
             "/mt5.MT5Service/AccountInfo",
             mt5__pb2.Empty.SerializeToString,
             mt5__pb2.DictData.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True,
+        )
+
+    @staticmethod
+    def GetProvisionedAccount(
+        request,
+        target,
+        options=(),
+        channel_credentials=None,
+        call_credentials=None,
+        insecure=False,
+        compression=None,
+        wait_for_ready=None,
+        timeout=None,
+        metadata=None,
+    ):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            "/mt5.MT5Service/GetProvisionedAccount",
+            mt5__pb2.Empty.SerializeToString,
+            mt5__pb2.ProvisionedAccount.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True,
+        )
+
+    @staticmethod
+    def CreateDemoAccount(
+        request,
+        target,
+        options=(),
+        channel_credentials=None,
+        call_credentials=None,
+        insecure=False,
+        compression=None,
+        wait_for_ready=None,
+        timeout=None,
+        metadata=None,
+    ):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            "/mt5.MT5Service/CreateDemoAccount",
+            mt5__pb2.CreateDemoRequest.SerializeToString,
+            mt5__pb2.ProvisionedAccount.FromString,
             options,
             channel_credentials,
             insecure,

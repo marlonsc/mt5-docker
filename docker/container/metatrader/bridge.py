@@ -32,10 +32,13 @@ import argparse
 import inspect
 import logging
 import operator
+import os
 import signal
+import subprocess
 import sys
 import threading
 from concurrent import futures
+from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 import grpc
@@ -906,6 +909,91 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
         data = self._namedtuple_to_dict(result)
         log.debug("AccountInfo: login=%s", data.get("login"))
         return mt5_pb2.DictData(json_data=_json_serialize(data))
+
+    def GetProvisionedAccount(
+        self,
+        request: mt5_pb2.Empty,
+        context: grpc.ServicerContext,
+    ) -> mt5_pb2.ProvisionedAccount:
+        """Recover the account this container provisioned (from auto_demo.json).
+
+        Reads /config/auto_demo.json (written by the demo wizard) so a client can
+        recover an auto-created account's identity even when the terminal is not
+        connected. The live `connected` flag is best-effort + timeout-protected so
+        this never blocks; use HealthCheck/AccountInfo for full live state.
+        """
+        config_dir = os.environ.get("CONFIG_DIR", "/config")
+        path = Path(config_dir) / "auto_demo.json"
+        data: dict[str, object] = {}
+        if path.exists():
+            try:
+                parsed = orjson.loads(path.read_bytes())
+            except (OSError, orjson.JSONDecodeError) as exc:
+                log.warning("GetProvisionedAccount: cannot read %s: %s", path, exc)
+            else:
+                if isinstance(parsed, dict):
+                    data = cast("dict[str, object]", parsed)
+        connected = False
+        try:
+            terminal = _call_mt5_with_timeout(self._mt5_module.terminal_info)
+            connected = bool(getattr(terminal, "connected", False))
+        except (TimeoutError, OSError, RuntimeError) as exc:
+            log.debug("GetProvisionedAccount: live connected check failed: %s", exc)
+        login = data.get("login")
+        return mt5_pb2.ProvisionedAccount(
+            login=login if isinstance(login, int) else 0,
+            server=str(data.get("server") or ""),
+            email=str(data.get("email") or ""),
+            created_at=str(data.get("created_at") or ""),
+            login_confirmed=bool(data.get("login_confirmed", False)),
+            credentials_persisted=bool(data.get("credentials_persisted", False)),
+            connected=connected,
+            source=str(data.get("source") or ""),
+        )
+
+    def CreateDemoAccount(
+        self,
+        request: mt5_pb2.CreateDemoRequest,
+        context: grpc.ServicerContext,
+    ) -> mt5_pb2.ProvisionedAccount:
+        """Create a fresh demo account at runtime by running the wizard.
+
+        Maps the request to the wizard's MT5_DEMO_* env and runs
+        open_demo_account.py headlessly, then returns the provisioned account. This
+        drives the MT5 GUI wizard (build-specific, best-effort); the zero-touch
+        env-at-launch path remains the primary creation mechanism.
+        """
+        script = Path("/Metatrader/open_demo_account.py")
+        if not script.exists():
+            context.abort(grpc.StatusCode.UNIMPLEMENTED, f"wizard not found: {script}")
+        env = dict(os.environ)
+        overrides = {
+            "MT5_DEMO_SERVER": request.server,
+            "MT5_DEMO_EMAIL": request.email,
+            "MT5_DEMO_PHONE": request.phone,
+            "MT5_DEMO_FIRST": request.first_name,
+            "MT5_DEMO_LAST": request.last_name,
+            "MT5_DEMO_DOB_YEAR": request.dob_year,
+        }
+        env.update({key: value for key, value in overrides.items() if value})
+        # Force a fresh account: move aside the idempotency guard if present.
+        guard = Path(os.environ.get("CONFIG_DIR", "/config")) / "auto_demo.json"
+        if guard.exists():
+            guard.replace(guard.with_name("auto_demo.prev.json"))
+        proc = subprocess.run(  # noqa: S603  # fixed argv, no shell
+            ["python3", str(script)],  # noqa: S607
+            check=False,
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=300,
+        )
+        if proc.returncode != 0:
+            context.abort(
+                grpc.StatusCode.INTERNAL,
+                f"demo wizard failed (rc={proc.returncode}): {proc.stderr[-400:]}",
+            )
+        return self.GetProvisionedAccount(mt5_pb2.Empty(), context)
 
     # =========================================================================
     # SYMBOL OPERATIONS

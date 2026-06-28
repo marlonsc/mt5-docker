@@ -231,6 +231,35 @@ message ProfitRequest {
 }
 
 // =============================================================================
+// Account provisioning (mt5docker container management)
+// =============================================================================
+
+// The account this container is configured for / has provisioned. Filled from
+// /config/auto_demo.json + startup.ini; the live `connected` flag comes from the
+// terminal. Account fields are best-effort (login=0 when never provisioned).
+message ProvisionedAccount {
+    int64 login = 1;
+    string server = 2;
+    string email = 3;
+    string created_at = 4;
+    bool login_confirmed = 5;
+    bool credentials_persisted = 6;
+    bool connected = 7;
+    string source = 8;
+}
+
+// Parameters for creating a fresh demo account at runtime (the wizard otherwise
+// reads these from MT5_DEMO_* env at boot). Empty fields fall back to defaults.
+message CreateDemoRequest {
+    string server = 1;
+    string email = 2;
+    string phone = 3;
+    string first_name = 4;
+    string last_name = 5;
+    string dob_year = 6;
+}
+
+// =============================================================================
 // MT5 Service Definition
 // =============================================================================
 
@@ -251,6 +280,10 @@ service MT5Service {
     // Account/Terminal info
     rpc TerminalInfo(Empty) returns (DictData);
     rpc AccountInfo(Empty) returns (DictData);
+
+    // Account provisioning (container management)
+    rpc GetProvisionedAccount(Empty) returns (ProvisionedAccount);
+    rpc CreateDemoAccount(CreateDemoRequest) returns (ProvisionedAccount);
 
     // Symbol operations
     rpc SymbolsTotal(Empty) returns (IntResponse);
