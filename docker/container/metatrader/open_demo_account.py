@@ -54,6 +54,7 @@ STEP_DELAY = float(os.environ.get("MT5_DEMO_STEP_DELAY", "1.5"))
 MENU_DOWN_TO_OPEN_ACCOUNT = int(os.environ.get("MT5_DEMO_MENU_DOWN", "10"))
 DOB_YEAR = os.environ.get("MT5_DEMO_DOB_YEAR", "1990")
 PHONE = os.environ.get("MT5_DEMO_PHONE", "11988887777")
+COMPANY_ROW_XY = (300, 271)
 FIRST_NAME_XY = (366, 229)
 LAST_NAME_XY = (366, 257)
 DOB_YEAR_XY = (392, 287)
@@ -210,8 +211,12 @@ def run_wizard(wid: str, email: str) -> None:
     for _ in range(MENU_DOWN_TO_OPEN_ACCOUNT):
         _key("Down")
     _key("Return")
-    time.sleep(STEP_DELAY * 2)
-    # Page 1: company list ("MetaQuotes Ltd." preselected) -> Next (Alt+N).
+    time.sleep(STEP_DELAY * 3)
+    # Page 1: explicitly select the MetaQuotes Ltd. row. It is NOT always
+    # pre-selected -- a fresh dialog can open with the company list unfocused,
+    # leaving Next disabled, which misaligns the entire downstream walk (the
+    # form keystrokes then land in the company search box). Click, then advance.
+    _click(COMPANY_ROW_XY)
     _key("alt+n")
     time.sleep(STEP_DELAY * 2)
     # Page 2: "Open a demo account" radio is preselected -> Next.
@@ -259,7 +264,16 @@ def write_result(login: str | None, email: str) -> None:
         "source": "auto_create_demo_account",
         "login_confirmed": login is not None,
     }
-    RESULT_FILE.write_text(json.dumps(payload, indent=2))
+    # Fail loud: if the idempotency file cannot be written (config volume not
+    # writable / full disk), that is a real fault, not something to swallow.
+    # Re-raise with an actionable message (chain preserved) so the run exits
+    # non-zero and the operator fixes the volume -- never pretend success.
+    try:
+        RESULT_FILE.write_text(json.dumps(payload, indent=2))
+    except OSError as exc:
+        msg = f"cannot persist {RESULT_FILE}: {exc} -- is the /config volume writable?"
+        log(f"FATAL: {msg}")
+        raise OSError(msg) from exc
     log(f"wrote {RESULT_FILE} (login={login}, server={SERVER})")
 
 

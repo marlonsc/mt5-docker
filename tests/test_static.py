@@ -142,6 +142,35 @@ class TestVersionConsistency:
                     f"{var}: Dockerfile={actual}, c.File.VERSIONS_ENV={expected}"
                 )
 
+    def test_compose_build_args_match_versions_env(self) -> None:
+        """Verify compose.yaml build args match versions.env (build-time SSOT).
+
+        compose's build.args OVERRIDE the Dockerfile ARG defaults, so if they
+        drift from versions.env, `docker compose build` bakes stale pins even
+        though the Dockerfile test passes. PYTHON_VERSION is major.minor in
+        compose vs major.minor.patch in versions.env, so it is checked elsewhere.
+        """
+        versions = self._load_versions_env()
+        compose = (
+            c.get_project_root() / c.Directory.DOCKER / c.File.DOCKER_COMPOSE
+        ).read_text()
+
+        for var in (
+            "GRPCIO_VERSION",
+            "NUMPY_VERSION",
+            "WINE_MONO_VERSION",
+            "WINE_GECKO_VERSION",
+            "MT5_PYPI_VERSION",
+        ):
+            expected = versions.get(var)
+            if expected is None:
+                continue
+            match = re.search(rf'{var}:\s*"?([^"\s]+)"?', compose)
+            assert match, f"compose.yaml missing build arg {var}"
+            assert match.group(1) == expected, (
+                f"{var}: compose={match.group(1)}, versions.env={expected}"
+            )
+
     def test_pyproject_has_python_version(self) -> None:
         """Verify pyproject.toml specifies Python 3.13 for Linux system.
 
@@ -210,6 +239,20 @@ class TestDockerfile:
         required_stages = ["base", "wine-base", "downloader", "runtime"]
         for stage in required_stages:
             assert f"AS {stage}" in content, f"Missing stage: {stage}"
+
+    def test_dockerfile_has_no_wine_builder_stage(self) -> None:
+        """Verify the racy build-time wine-builder stage was removed.
+
+        The Wine prefix is now built at runtime first-boot; reintroducing a
+        `wine-builder` BuildKit stage would bring back the nondeterministic
+        concurrent-build Gecko failures.
+        """
+        content = (
+            c.get_project_root() / c.Directory.DOCKER / c.File.DOCKERFILE
+        ).read_text()
+        assert "AS wine-builder" not in content, (
+            "wine-builder stage must stay removed (prefix builds at runtime)"
+        )
 
     def test_dockerfile_has_required_args(self) -> None:
         """Verify Dockerfile has all required ARGs."""
@@ -358,6 +401,15 @@ class TestDockerCompose:
         assert "${MT5_GRPC_PORT:-" in content, "gRPC port should use env var"
         assert "${MT5_CONTAINER_NAME:-" in content, "Container name should use env var"
 
+    def test_compose_exposes_auto_create_demo(self) -> None:
+        """Verify compose wires the zero-touch demo toggle (default off)."""
+        content = (
+            c.get_project_root() / c.Directory.DOCKER / c.File.DOCKER_COMPOSE
+        ).read_text()
+        assert "MT5_AUTO_CREATE_DEMO=${MT5_AUTO_CREATE_DEMO:-0}" in content, (
+            "compose must expose MT5_AUTO_CREATE_DEMO defaulting to 0"
+        )
+
 
 # =============================================================================
 # SHELL SCRIPT TESTS
@@ -442,13 +494,44 @@ class TestStartupScriptContent:
         for func in required_functions:
             assert func in content, f"setup.sh must have {func} function"
 
-    def test_setup_sh_uses_winetricks_unattended(self) -> None:
-        """Verify setup.sh configures Wine properly (no winetricks needed)."""
+    def test_setup_sh_configures_win10_registry(self) -> None:
+        """Verify setup.sh sets win10 via registry, without winetricks."""
         content = (
             c.get_project_root() / c.Directory.CONTAINER / "metatrader/setup.sh"
         ).read_text()
-        # Win10 is set via registry, not winetricks (simpler approach)
         assert "win10" in content, "Must configure Windows version"
+        assert "wine reg add" in content, "Win10 must be set via the registry"
+
+    def test_setup_sh_init_wine_prefix_idempotency_and_retry(self) -> None:
+        """Verify init_wine_prefix keys idempotency on .build-complete and is retried.
+
+        Guarding on drive_c (created early) instead of the .build-complete marker
+        (written only on success) would leave a broken prefix after a mid-build
+        kill. init_wine_prefix must also run under retry_with_backoff.
+        """
+        content = (
+            c.get_project_root() / c.Directory.CONTAINER / "metatrader/setup.sh"
+        ).read_text()
+        assert "$WINEPREFIX/.build-complete" in content, (
+            "init_wine_prefix must use the .build-complete idempotency marker"
+        )
+        assert "retry_with_backoff 2 init_wine_prefix" in content, (
+            "init_wine_prefix must run under retry_with_backoff"
+        )
+
+    def test_open_demo_account_script_present(self) -> None:
+        """Verify the zero-touch demo wizard exists with a main() entrypoint."""
+        script = (
+            c.get_project_root()
+            / c.Directory.CONTAINER
+            / "metatrader/open_demo_account.py"
+        )
+        assert script.exists(), "open_demo_account.py must exist"
+        content = script.read_text()
+        assert "def main() -> int:" in content, "wizard must have a typed main()"
+        assert "auto_demo.json" in content, (
+            "wizard must persist the auto_demo.json idempotency marker"
+        )
 
     def test_setup_sh_handles_mt5_installation(self) -> None:
         """Verify setup.sh handles MT5 installation."""
@@ -517,6 +600,26 @@ class TestS6Services:
         s6_base = c.get_project_root() / c.S6_RC_BASE_PATH
         finish_script = s6_base / "svc-mt5server/finish"
         assert finish_script.exists(), "Service should have finish script"
+
+    def test_s6_run_launches_terminal_in_virtual_desktop(self) -> None:
+        """Verify the terminal launches in Wine virtual-desktop mode.
+
+        Without `explorer /desktop=`, MT5 menus/dialogs render black under
+        headless Xvfb and the demo wizard cannot drive them.
+        """
+        run_script = c.get_project_root() / c.S6_RC_BASE_PATH / "svc-mt5server/run"
+        content = run_script.read_text()
+        assert "explorer /desktop=" in content, (
+            "terminal must launch via 'wine explorer /desktop=' for headless rendering"
+        )
+
+    def test_s6_run_provisions_demo_and_reattaches_bridge(self) -> None:
+        """Verify the zero-touch demo provisioning + bridge re-attach wiring."""
+        run_script = c.get_project_root() / c.S6_RC_BASE_PATH / "svc-mt5server/run"
+        content = run_script.read_text()
+        assert "auto_create_demo_account" in content, "must invoke the demo wizard"
+        assert "provision_demo" in content, "must wrap provisioning + re-attach"
+        assert "Re-attaching" in content, "must re-attach the bridge after login"
 
     def test_s6_service_has_inline_config(self) -> None:
         """Verify s6 service has inline configuration (no external deps)."""

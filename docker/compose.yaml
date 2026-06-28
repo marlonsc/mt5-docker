@@ -81,7 +81,10 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 360s
+      # First boot builds the Wine prefix + installs MT5 (svc waits up to MAX_WAIT
+      # =1200s, incl. one retry). Keep start_period above that so a legitimately
+      # slow first boot is not flagged unhealthy.
+      start_period: 900s
     networks:
       - mt5-network
 

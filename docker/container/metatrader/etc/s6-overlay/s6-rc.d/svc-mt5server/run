@@ -186,6 +186,20 @@ clear_restart_token() {
     fi
 }
 
+provision_demo() {
+    # Zero-touch demo provisioning + bridge re-attach. Idempotent: the wizard
+    # script is a no-op when auto_demo.json already exists or the terminal is
+    # already logged in, so this is safe to call on startup AND after a
+    # full_restart -- which covers an MT5 crash mid-wizard (before the result file
+    # was written) that would otherwise leave the demo never created.
+    auto_create_demo_account
+    if [ "${MT5_AUTO_CREATE_DEMO:-0}" = "1" ] && [ -z "${MT5_LOGIN:-}" ]; then
+        log "Re-attaching gRPC bridge to the logged-in account..."
+        kill_bridge
+        start_bridge
+    fi
+}
+
 full_restart() {
     log "Performing full restart..."
     kill_bridge
@@ -194,6 +208,7 @@ full_restart() {
     sleep 2
     start_mt5_terminal
     start_bridge
+    provision_demo
     log "Full restart complete"
 }
 
@@ -261,16 +276,9 @@ clear_restart_token
 start_mt5_terminal
 start_bridge
 
-# Provision a demo account headlessly (zero-touch) once the terminal is up.
-auto_create_demo_account
-
-# The bridge attached (no-creds) BEFORE the wizard logged in, so re-attach it now
-# to bind AccountInfo() to the freshly provisioned demo account.
-if [ "${MT5_AUTO_CREATE_DEMO:-0}" = "1" ] && [ -z "${MT5_LOGIN:-}" ]; then
-    log "Re-attaching gRPC bridge to the logged-in account..."
-    kill_bridge
-    start_bridge
-fi
+# Provision a demo account headlessly (zero-touch) once the terminal is up, then
+# re-attach the bridge to the freshly logged-in account.
+provision_demo
 
 # =============================================================================
 # MAIN LOOP: Monitor restart token and process health

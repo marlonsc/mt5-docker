@@ -76,9 +76,17 @@ unpack_config() {
 # 2. WINE PREFIX INIT (from 10_prefix_init.sh)
 # =============================================================================
 init_wine_prefix() {
-    if [ -d "$WINEPREFIX/drive_c" ]; then
-        log INFO "[setup] Wine prefix already exists: $WINEPREFIX"
+    # Idempotency keys on the .build-complete marker (written only at the very end
+    # of a successful build), NOT on drive_c: drive_c is created early, so a
+    # container killed mid-build (OOM/SIGKILL, before the failure cleanup runs)
+    # would otherwise leave a broken prefix that the old guard never rebuilt.
+    if [ -f "$WINEPREFIX/.build-complete" ]; then
+        log INFO "[setup] Wine prefix already built: $WINEPREFIX"
         return 0
+    fi
+    if [ -d "$WINEPREFIX" ]; then
+        log WARN "[setup] Incomplete Wine prefix found (no .build-complete); rebuilding from scratch"
+        rm -rf "$WINEPREFIX"
     fi
 
     # First boot: build the Wine prefix (Mono + Gecko + Python + gRPC packages)
@@ -161,8 +169,8 @@ init_wine_prefix() {
         log INFO "[setup] [prefix 6/6] Installing gRPC bridge packages..."
         wine "$WINE_PYTHON_PATH" -m pip install --upgrade --no-cache-dir pip
         wine "$WINE_PYTHON_PATH" -m pip install --no-cache-dir --only-binary :all: \
-            "grpcio>=${GRPCIO_VERSION:-1.76.0}" \
-            "protobuf>=4.21.0" \
+            "grpcio>=${GRPCIO_VERSION:-1.76.0},<2.0" \
+            "protobuf>=4.21.0,<6.0" \
             "numpy==${NUMPY_VERSION:-1.26.4}" \
             "orjson>=3.9.0"
         wineserver -w
