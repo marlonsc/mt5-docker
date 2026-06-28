@@ -185,10 +185,14 @@ ENV STAGING_DIR="/opt/mt5-staging"
 # Installed in the runtime layer (not wine-base) so the heavy cached Wine layer
 # is reused on rebuild and we never re-resolve the pinned winehq packages.
 # x11-utils provides xdpyinfo (Xvfb readiness poll in init_wine_prefix).
+# xclip reads the X clipboard so the wizard can capture the demo account's
+# MetaQuotes-generated password (copied from the final wizard page) EXACTLY --
+# no OCR misreads -- and persist it to startup.ini for restart-survival.
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         xdotool \
         wmctrl \
+        xclip \
         x11-utils && \
     rm -rf /var/lib/apt/lists/*
 

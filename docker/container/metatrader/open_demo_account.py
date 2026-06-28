@@ -56,6 +56,16 @@ FAILURE_SHOT = CONFIG_DIR / "auto_demo_failure.xwd"
 # new account's login (the X window title does NOT carry it in /desktop= mode).
 WINEPREFIX = Path(os.environ.get("WINEPREFIX", str(CONFIG_DIR / ".wine")))
 MT5_LOG_DIR = WINEPREFIX / "drive_c/Program Files/MetaTrader 5/logs"
+# The terminal auto-login config: the terminal RE-READS this on every boot, so
+# writing Login+Password here makes the demo SURVIVE restart (relogin). Must
+# match the layout generate_mt5_config writes in setup.sh.
+STARTUP_INI = WINEPREFIX / "drive_c/MT5Config/startup.ini"
+# Persist the captured demo credentials for restart-survival (default on).
+PERSIST_CREDS = os.environ.get("MT5_DEMO_PERSIST_CREDS", "1") == "1"
+# A real MT5 master password is a short single-line token; anything outside this
+# length range is a wrong-field / whole-page copy and must be rejected.
+PW_MIN_LEN = 6
+PW_MAX_LEN = 32
 
 SERVER = os.environ.get("MT5_DEMO_SERVER", "MetaQuotes-Demo")
 FIRST_NAME = os.environ.get("MT5_DEMO_FIRST", "Auto")
@@ -81,6 +91,11 @@ PHONE_XY = (500, 357)
 AGREE_XY = (299, 545)
 NEXT_XY = (714, 636)
 FINISH_XY = (714, 636)
+# Final (result) page: the master-password field, copied to capture the
+# MetaQuotes-generated password EXACTLY (xclip, no OCR). CALIBRATE against the
+# actual result page via a screenshot; override with MT5_DEMO_PASSWORD_XY="x,y".
+_PW_XY = os.environ.get("MT5_DEMO_PASSWORD_XY", "452,300").split(",")
+PASSWORD_FIELD_XY = (int(_PW_XY[0]), int(_PW_XY[1]))
 
 # A logged-in MT5 window title carries the account number (>= 6 digits).
 LOGIN_TITLE_RE = re.compile(r"\b(\d{6,})\b")
@@ -260,14 +275,86 @@ def _click(xy: tuple[int, int]) -> None:
     time.sleep(STEP_DELAY)
 
 
-def run_wizard(wid: str, email: str) -> None:
-    """Drive File -> Open an Account -> MetaQuotes demo, end to end.
+def _clipboard() -> str | None:
+    """Read the X clipboard via xclip; None if empty/unavailable."""
+    res = _run(["xclip", "-selection", "clipboard", "-o"], capture=True)
+    text = res.stdout.strip()
+    return text or None
+
+
+def capture_password_from_final_page() -> str | None:
+    """Copy the master-password field from the wizard's result page (no OCR).
+
+    The MetaQuotes result page shows the new login + master/investor passwords in
+    copyable fields. We click the master-password field, select all, copy, and
+    read the X clipboard via xclip -- an EXACT capture (no OCR misreads). Returns
+    the password, or None if nothing was copied (field empty / xclip missing).
+    """
+    if os.environ.get("MT5_DEMO_DEBUG_SHOT"):
+        # Calibration aid: snapshot the result page so PASSWORD_FIELD_XY can be
+        # tuned against the actual MT5 build/layout.
+        _run(["xwd", "-root", "-silent", "-out", str(CONFIG_DIR / "final_page.xwd")])
+    _click(PASSWORD_FIELD_XY)
+    _xdotool("key", "ctrl+a")
+    _xdotool("key", "ctrl+c")
+    time.sleep(STEP_DELAY)
+    pw = _clipboard()
+    if os.environ.get("MT5_DEMO_DEBUG_SHOT"):
+        log(f"DEBUG: clipboard after copy = {pw!r}")
+    if pw is None:
+        return None
+    # Sanity-check: a real MT5 password is a short single-line token. A whole-page
+    # or wrong-field copy would be long/multi-line -- reject it so we NEVER persist
+    # garbage that silently breaks the next relogin (fail visibly, not silently).
+    if "\n" in pw or " " in pw or not (PW_MIN_LEN <= len(pw) <= PW_MAX_LEN):
+        log(f"clipboard does not look like a password (len={len(pw)}); ignoring it")
+        return None
+    return pw
+
+
+def persist_credentials(login: str, password: str) -> None:
+    """Persist Login+Password+Server to startup.ini for restart-survival.
+
+    The terminal RE-READS startup.ini on every boot, so writing the credentials
+    here makes the auto-created demo survive a restart. Fail loud on I/O error
+    (the /config volume must be writable); never pretend success. Mirrors the
+    [Common]/[Experts] layout generate_mt5_config writes.
+    """
+    ini = (
+        "[Common]\n"
+        f"Login={login}\n"
+        f"Password={password}\n"
+        f"Server={SERVER}\n"
+        "KeepPrivate=1\n"
+        "NewsEnable=1\n"
+        "\n"
+        "[Experts]\n"
+        "AllowLiveTrading=1\n"
+        "AllowDllImport=1\n"
+        "Enabled=1\n"
+        "Account=0\n"
+        "Profile=0\n"
+    )
+    try:
+        STARTUP_INI.parent.mkdir(parents=True, exist_ok=True)
+        STARTUP_INI.write_text(ini)
+    except OSError as exc:
+        msg = f"cannot persist credentials to {STARTUP_INI}: {exc}"
+        log(f"FATAL: {msg}")
+        raise OSError(msg) from exc
+    log(f"persisted credentials to {STARTUP_INI} (login={login}; survives restart)")
+
+
+def run_wizard(wid: str, email: str) -> str | None:
+    """Drive File -> Open an Account -> MetaQuotes demo; return the password.
 
     Proven against MT5 build 5836 in Wine virtual-desktop (/desktop=) mode on a
     1024x768 display. Menu navigation is by Down-count because the three
     "Open ..." File entries share an ambiguous accelerator; the form is filled by
     clicking each field at its calibrated coordinate because the Tab order skips
-    the date-picker and the phone country combo.
+    the date-picker and the phone country combo. Returns the MetaQuotes-generated
+    master password captured from the result page (None if capture is disabled or
+    the field yielded nothing) so the caller can persist it for restart-survival.
     """
     _activate(wid)
     # File menu -> walk down to "Open an Account" -> enter it.
@@ -305,20 +392,26 @@ def run_wizard(wid: str, email: str) -> None:
     _type(PHONE)
     # Tick the terms checkbox (Next stays disabled until it is checked).
     _click(AGREE_XY)
-    # Create the account (contacts MetaQuotes), then confirm on the result page.
+    # Create the account (contacts MetaQuotes). The result page then shows the
+    # login + master/investor passwords. Capture the master password BEFORE
+    # Finish dismisses the page -- this is the ONLY place it is ever shown.
     _key("alt+n")
     time.sleep(STEP_DELAY * 6)
+    password = capture_password_from_final_page() if PERSIST_CREDS else None
     _click(FINISH_XY)
     time.sleep(STEP_DELAY * 3)
+    return password
 
 
-def write_result(login: str | None, email: str) -> None:
+def write_result(login: str | None, email: str, *, persisted: bool = False) -> None:
     """Persist the provisioned account (login/server/email, no password) as JSON.
 
     Written even when the login could not be read back (login=None in /desktop=
     mode): its presence is the idempotency guard that stops the wizard from
     creating a NEW account on every boot (which would hit MetaQuotes rate limits).
-    The real login is confirmed at runtime by the gRPC bridge via AccountInfo().
+    ``credentials_persisted`` records whether Login+Password were written to
+    startup.ini (i.e. whether the demo survives a restart). The password itself
+    is NEVER stored here.
     """
     payload = {
         "login": login,
@@ -327,6 +420,7 @@ def write_result(login: str | None, email: str) -> None:
         "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "source": "auto_create_demo_account",
         "login_confirmed": login is not None,
+        "credentials_persisted": persisted,
     }
     # Fail loud: if the idempotency file cannot be written (config volume not
     # writable / full disk), that is a real fault, not something to swallow.
@@ -381,7 +475,7 @@ def main() -> int:
     email = gen_email()
     log(f"driving Open-an-Account wizard (email={email})")
     try:
-        run_wizard(wid, email)
+        password = run_wizard(wid, email)
     except (subprocess.SubprocessError, OSError) as exc:
         log(f"ERROR: wizard automation failed: {exc}")
         screenshot()
@@ -401,11 +495,24 @@ def main() -> int:
         )
         screenshot()
         # Record the attempt so we do NOT create another account next boot.
-        write_result(None, email)
+        write_result(None, email, persisted=False)
         return 0
 
-    write_result(login, email)
-    log(f"demo account ready: login={login} server={SERVER}")
+    # Persist Login+Password so the demo SURVIVES a restart (terminal re-reads
+    # startup.ini each boot). If the password was not captured, say so loudly:
+    # the account still works THIS session, but it will be lost on restart.
+    persisted = False
+    if PERSIST_CREDS and password:
+        persist_credentials(login, password)
+        persisted = True
+    elif PERSIST_CREDS:
+        log(
+            "WARN: master password not captured from the result page -- the demo "
+            "will NOT survive a restart. Calibrate MT5_DEMO_PASSWORD_XY against a "
+            "result-page screenshot. The account is created and usable now.",
+        )
+    write_result(login, email, persisted=persisted)
+    log(f"demo ready: login={login} server={SERVER} survives_restart={persisted}")
     return 0
 
 
