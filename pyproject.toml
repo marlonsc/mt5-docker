@@ -54,7 +54,7 @@ readme = "README.md"
 version = "2.2.1"
 
 [tool.poetry.dependencies]
-grpcio = "^1.60.0"
+grpcio = "^1.78.0"
 mt5linux = { git = "https://github.com/marlonsc/mt5linux.git", branch = "master" }
 python = ">=3.13,<3.14"
 python-dotenv = "^1.0.0"
