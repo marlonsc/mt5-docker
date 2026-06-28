@@ -9,10 +9,23 @@ Design (attach-only -- no OCR, no password capture):
     account. The gRPC bridge then attaches via ``mt5.initialize()`` (no creds)
     and ``AccountInfo()`` returns the login -- so the password is never needed
     here.
-  * The account login is read from the terminal WINDOW TITLE (MT5 puts the
-    account number in the title once logged in), not via OCR.
-  * Idempotent: if the terminal is already logged in (title carries a login) or
-    ``auto_demo.json`` already records one, this is a no-op.
+  * The account login is read from the terminal LOG (``new demo account 'NNNN'
+    opened`` / ``'NNNN': authorized``) -- authoritative in /desktop= mode where
+    the X window title does NOT carry the login -- with the title as a fast
+    fallback. No OCR.
+  * Idempotent: if the terminal is already logged in or ``auto_demo.json``
+    already records a login, this is a no-op.
+
+RESTART-SURVIVAL (login persists across container/terminal restart): the MT5
+terminal re-reads ``startup.ini`` and re-attempts login on EVERY boot, so a
+restart survives the login IFF ``startup.ini`` carries a valid Login+Password.
+Three paths: (a) supply ``MT5_LOGIN/PASSWORD/SERVER`` -> generate_mt5_config
+writes them -> survives restart today; (b) zero-touch auto-demo -> the
+MetaQuotes-GENERATED password cannot be persisted, so the login is ephemeral on
+restart (the bridge protobuf fix removed the crash-loop, so restarts are rare);
+(c) follow-up -> after creation, set a KNOWN master password via the GUI, then
+persist Login+password to startup.ini. This script only CAPTURES the login
+(observability); it does not yet implement (c).
 
 FRAGILITY: this is GUI automation against a moving target. The keystroke
 sequence and the waits may need tuning across MT5 builds/locales. On failure a
@@ -38,6 +51,11 @@ DISPLAY = os.environ.get("DISPLAY", ":0")
 CONFIG_DIR = Path(os.environ.get("CONFIG_DIR", "/config"))
 RESULT_FILE = CONFIG_DIR / "auto_demo.json"
 FAILURE_SHOT = CONFIG_DIR / "auto_demo_failure.xwd"
+
+# MT5 writes a per-day terminal log here; it is the AUTHORITATIVE source of the
+# new account's login (the X window title does NOT carry it in /desktop= mode).
+WINEPREFIX = Path(os.environ.get("WINEPREFIX", str(CONFIG_DIR / ".wine")))
+MT5_LOG_DIR = WINEPREFIX / "drive_c/Program Files/MetaTrader 5/logs"
 
 SERVER = os.environ.get("MT5_DEMO_SERVER", "MetaQuotes-Demo")
 FIRST_NAME = os.environ.get("MT5_DEMO_FIRST", "Auto")
@@ -66,6 +84,12 @@ FINISH_XY = (714, 636)
 
 # A logged-in MT5 window title carries the account number (>= 6 digits).
 LOGIN_TITLE_RE = re.compile(r"\b(\d{6,})\b")
+
+# MT5 terminal-log markers for the demo account login (authoritative in
+# /desktop= mode). "new demo account 'NNNN' opened" is written once at creation;
+# "'NNNN': authorized" is written on every successful (re)login.
+LOG_NEW_ACCOUNT_RE = re.compile(r"new demo account '(\d+)' opened")
+LOG_AUTHORIZED_RE = re.compile(r"'(\d+)': authorized on")
 
 
 def log(msg: str) -> None:
@@ -144,6 +168,46 @@ def current_login() -> str | None:
         return None
     match = LOGIN_TITLE_RE.search(window_title(wid))
     return match.group(1) if match else None
+
+
+def login_from_terminal_log() -> str | None:
+    """Read the demo login from the MT5 terminal log (authoritative source).
+
+    In Wine ``/desktop=`` mode the account number is NOT exposed on the X window
+    title, so the title scrape returns nothing. The terminal log, however, always
+    records ``... new demo account 'NNNN' opened ...`` at creation and
+    ``... 'NNNN': authorized ...`` on each login. We scan the most recent log and
+    return the LAST login seen (handles a relogin after creation). Returns None if
+    the log is absent/unreadable -- never invents a value.
+    """
+    try:
+        logs = sorted(MT5_LOG_DIR.glob("*.log"))
+    except OSError as exc:
+        log(f"could not list terminal logs at {MT5_LOG_DIR}: {exc}")
+        return None
+    if not logs:
+        return None
+    try:
+        raw = logs[-1].read_bytes()
+    except OSError as exc:
+        log(f"could not read terminal log {logs[-1]}: {exc}")
+        return None
+    # MT5 terminal logs are UTF-16-LE (BOM). Decode STRICTLY -- no utf-8 fallback:
+    # a decode failure means the log format actually changed, which must surface
+    # loudly (the operator fixes the parser) rather than be masked by a degraded
+    # read that silently returns the wrong/no login.
+    try:
+        text = raw.decode("utf-16")
+    except UnicodeDecodeError as exc:
+        msg = f"MT5 terminal log {logs[-1]} is not UTF-16 as expected: {exc}"
+        log(f"FATAL: {msg}")
+        raise RuntimeError(msg) from exc
+    login: str | None = None
+    for line in text.splitlines():
+        match = LOG_NEW_ACCOUNT_RE.search(line) or LOG_AUTHORIZED_RE.search(line)
+        if match:
+            login = match.group(1)
+    return login
 
 
 def gen_email() -> str:
@@ -323,17 +387,17 @@ def main() -> int:
         screenshot()
         return 1
 
-    login = _wait_for_login(LOGIN_WAIT)
+    # Prefer the X title (instant when present); in /desktop= mode it is empty, so
+    # fall back to the terminal log, which authoritatively records the new login.
+    login = _wait_for_login(LOGIN_WAIT) or login_from_terminal_log()
     if login is None:
-        # In Wine /desktop= mode (needed so the wizard renders) the login lives in
-        # the in-desktop MT5 title bar, not the X window name, so it often can't
-        # be read here. Don't invent a login: the wizard has driven account
-        # creation and the gRPC bridge confirms the real account via
-        # AccountInfo() at runtime. Keep a screenshot for audit.
+        # Neither the title nor the log carried a login. Don't invent one: the
+        # wizard drove account creation and the gRPC bridge confirms the real
+        # account via AccountInfo() at runtime. Keep a screenshot for audit.
         log(
-            "wizard completed but login not readable from the desktop title "
-            "(expected in /desktop= mode); the gRPC bridge will report the "
-            "account via AccountInfo()",
+            "wizard completed but login not readable from the desktop title or "
+            "terminal log; the gRPC bridge will report the account via "
+            "AccountInfo()",
         )
         screenshot()
         # Record the attempt so we do NOT create another account next boot.

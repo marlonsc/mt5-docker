@@ -13,12 +13,17 @@ Categories:
 
 from __future__ import annotations
 
+import importlib.util
 import re
 import subprocess
+from typing import TYPE_CHECKING
 
 import pytest
 
 from tests.conftest import c
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 # =============================================================================
 # VERSION CONFIGURATION TESTS
@@ -572,6 +577,35 @@ class TestStartupScriptContent:
         assert "auto_demo.json" in content, (
             "wizard must persist the auto_demo.json idempotency marker"
         )
+
+    def test_wizard_login_from_terminal_log_parses_utf16(self, tmp_path: Path) -> None:
+        """login_from_terminal_log() reads the login from the UTF-16 MT5 log.
+
+        Regression: in Wine /desktop= mode the X window title is empty, so the
+        login MUST come from the terminal log -- which MT5 writes as UTF-16-LE. A
+        plain utf-8 read returns None (the original login=null gap). The wizard
+        must decode UTF-16 and return the LAST login seen.
+        """
+        script = (
+            c.get_project_root()
+            / c.Directory.CONTAINER
+            / "metatrader/open_demo_account.py"
+        )
+        spec = importlib.util.spec_from_file_location("open_demo_account", script)
+        assert spec is not None
+        assert spec.loader is not None
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+
+        logdir = tmp_path / "drive_c/Program Files/MetaTrader 5/logs"
+        logdir.mkdir(parents=True)
+        lines = (
+            "x\t0\t00:00:01\tNetwork\tnew demo account '12345678' opened on X\r\n"
+            "x\t0\t00:00:02\tNetwork\t'12345678': authorized on X\r\n"
+        )
+        (logdir / "20260628.log").write_bytes(lines.encode("utf-16"))
+        mod.MT5_LOG_DIR = logdir
+        assert mod.login_from_terminal_log() == "12345678"
 
     def test_setup_sh_handles_mt5_installation(self) -> None:
         """Verify setup.sh handles MT5 installation."""
