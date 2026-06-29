@@ -8,8 +8,9 @@ The container is completely isolated from:
 - tests.(neptor-mt5-test, port 18812)
 - mt5linux tests (mt5linux-test, port 28812)
 
-Configuration is loaded from environment variables via .env file.
-See .env.example for setup instructions.
+Test container configuration uses MT5DOCKER_TEST_* variables so root workspace
+MT5_* runtime settings cannot leak into this isolated container. See
+.env.example for setup instructions.
 
 Test Categories:
 - Config tests: Run without container (just verify configuration values)
@@ -82,22 +83,30 @@ class DockerContainerConfig:
     login: str | None
     password: str | None
     server: str
+    auto_create_demo: bool
 
 
 def get_test_container_config() -> DockerContainerConfig:
     """Get test container configuration from environment."""
+    auto_create_demo = os.environ.get("MT5_AUTO_CREATE_DEMO", "1") == "1"
     return DockerContainerConfig(
-        container_name=os.environ.get("MT5_CONTAINER_NAME", "mt5docker-test"),
-        grpc_port=int(os.environ.get("MT5_GRPC_PORT", c.MT5.GRPC_PORT)),
-        vnc_port=int(os.environ.get("MT5_VNC_PORT", c.MT5.VNC_PORT)),
-        health_port=int(os.environ.get("MT5_HEALTH_PORT", c.MT5.HEALTH_PORT)),
+        container_name=os.environ.get(
+            "MT5DOCKER_TEST_CONTAINER_NAME",
+            "mt5docker-test",
+        ),
+        grpc_port=int(os.environ.get("MT5DOCKER_TEST_GRPC_PORT", c.MT5.GRPC_PORT)),
+        vnc_port=int(os.environ.get("MT5DOCKER_TEST_VNC_PORT", c.MT5.VNC_PORT)),
+        health_port=int(
+            os.environ.get("MT5DOCKER_TEST_HEALTH_PORT", c.MT5.HEALTH_PORT)
+        ),
         startup_timeout=int(
-            os.environ.get("MT5_STARTUP_TIMEOUT", c.MT5.STARTUP_TIMEOUT)
+            os.environ.get("MT5DOCKER_TEST_STARTUP_TIMEOUT", c.MT5.STARTUP_TIMEOUT)
         ),
         grpc_timeout=int(os.environ.get("MT5_GRPC_TIMEOUT", c.MT5.TIMEOUT)),
         login=os.environ.get("MT5_LOGIN"),
         password=os.environ.get("MT5_PASSWORD"),
         server=os.environ.get("MT5_SERVER", "MetaQuotes-Demo"),
+        auto_create_demo=auto_create_demo,
     )
 
 
@@ -110,6 +119,11 @@ _logger = logging.getLogger(__name__)
 def has_mt5_credentials() -> bool:
     """Check if MT5 credentials are configured."""
     return bool(_config.login and _config.password)
+
+
+def can_start_mt5_container() -> bool:
+    """Check if tests have a supported MT5 startup path."""
+    return _config.auto_create_demo or has_mt5_credentials()
 
 
 # =============================================================================
@@ -235,8 +249,8 @@ def start_test_container() -> None:
 
     # Check credentials
     _log("PHASE 2: Check credentials", phase=True)
-    if not has_mt5_credentials():
-        _log("SKIP: No MT5 credentials configured")
+    if not can_start_mt5_container():
+        _log("SKIP: No MT5 credentials or zero-touch demo configured")
         pytest.skip(c.SKIP_NO_CREDENTIALS)
 
     # Check compose file
@@ -256,8 +270,14 @@ def start_test_container() -> None:
             "MT5_HEALTH_PORT": str(_config.health_port),
             "MT5_VOLUME_NAME": f"{_config.container_name}-data",
             "MT5_NETWORK_NAME": f"{_config.container_name}-network",
+            "MT5_AUTO_CREATE_DEMO": "1" if _config.auto_create_demo else "0",
         },
     )
+    if _config.auto_create_demo:
+        test_env["MT5_ENV_FILE"] = "../config/.env.example"
+        test_env["MT5_LOGIN"] = ""
+        test_env["MT5_PASSWORD"] = ""
+        test_env["MT5_SERVER"] = _config.server
 
     # Start container
     _log("PHASE 3: Start container with docker-compose", phase=True)

@@ -353,6 +353,10 @@ install_mt5_terminal() {
 
 generate_mt5_config() {
     if [ -z "${MT5_LOGIN:-}" ] || [ -z "${MT5_PASSWORD:-}" ] || [ -z "${MT5_SERVER:-}" ]; then
+        if [ -f "$MT5_STARTUP_INI" ]; then
+            log WARN "[setup] Removing stale MT5 config because no credentials were provided"
+            rm -f "$MT5_STARTUP_INI"
+        fi
         log INFO "[setup] No MT5 credentials provided, skipping config"
         return 0
     fi

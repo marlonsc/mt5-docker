@@ -25,8 +25,10 @@ services:
       - "${MT5_GRPC_PORT:-8001}:8001"     # gRPC server for mt5linux
       - "${MT5_HEALTH_PORT:-8002}:8002"   # Health check endpoint
     env_file:
-      - path: ../.env
+      - path: ../config/.env.example
         required: true
+      - path: ${MT5_ENV_FILE:-../.env}
+        required: false
     labels:
       org.opencontainers.image.title: "MetaTrader5 Docker Debian (Wine 10.0)"
       org.opencontainers.image.vendor: "marlonsc"
@@ -37,7 +39,7 @@ services:
       - TZ=UTC                    # Container timezone
       # Staging configuration
       - STAGING_DIR=/opt/mt5-staging
-      # MT5 Auto-login credentials loaded via env_file (../.env)
+      # MT5 auto-login credentials are loaded via env_file.
       # Health monitoring and auto-recovery
       - HEALTH_CHECK_INTERVAL=${HEALTH_CHECK_INTERVAL:-30}
       - AUTO_RECOVERY_ENABLED=${AUTO_RECOVERY_ENABLED:-1}

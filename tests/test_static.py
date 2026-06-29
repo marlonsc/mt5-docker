@@ -13,10 +13,12 @@ Categories:
 
 from __future__ import annotations
 
+import ast
 import importlib.util
+import json
 import re
 import subprocess
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol, cast
 
 import pytest
 
@@ -24,6 +26,23 @@ from tests.conftest import c
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+
+class OpenDemoAccountModule(Protocol):
+    """Typed contract for dynamically loaded open_demo_account.py."""
+
+    MT5_LOG_DIR: Path
+    RESULT_FILE: Path
+
+    def login_from_terminal_log(self) -> str | None:
+        """Read the last MT5 login from terminal logs."""
+
+    def authorized_login_from_terminal_log(self) -> str | None:
+        """Read the last authorized MT5 login from terminal logs."""
+
+    def confirmed_result_login(self) -> str | None:
+        """Read the idempotency marker only when it is currently authorized."""
+
 
 # =============================================================================
 # VERSION CONFIGURATION TESTS
@@ -344,12 +363,15 @@ class TestDockerCompose:
         )
 
     def test_compose_has_env_file_required(self) -> None:
-        """Verify compose requires .env file."""
+        """Verify compose has a versioned env template and optional local secrets."""
         content = (
             c.get_project_root() / c.Directory.DOCKER / c.File.DOCKER_COMPOSE
         ).read_text()
         assert "env_file:" in content
-        assert "required: true" in content, ".env should be required"
+        assert "path: ../config/.env.example" in content
+        assert "required: true" in content, ".env.example should be required"
+        assert "path: ${MT5_ENV_FILE:-../.env}" in content
+        assert "required: false" in content, "local .env should be optional"
 
     def test_compose_has_healthcheck(self) -> None:
         """Verify compose defines healthcheck."""
@@ -414,6 +436,20 @@ class TestDockerCompose:
         assert "MT5_AUTO_CREATE_DEMO=${MT5_AUTO_CREATE_DEMO:-0}" in content, (
             "compose must expose MT5_AUTO_CREATE_DEMO defaulting to 0"
         )
+
+    def test_runtime_env_does_not_control_isolated_test_ports(self) -> None:
+        """Root MT5 runtime ports must not leak into the test container."""
+        constants = (
+            c.get_project_root() / c.Directory.TESTS / "constants.py"
+        ).read_text()
+        conftest = (
+            c.get_project_root() / c.Directory.TESTS / "conftest.py"
+        ).read_text()
+
+        assert 'os.getenv("MT5_GRPC_PORT"' not in constants
+        assert 'os.environ.get("MT5_GRPC_PORT"' not in conftest
+        assert "MT5DOCKER_TEST_GRPC_PORT" in constants
+        assert "MT5DOCKER_TEST_GRPC_PORT" in conftest
 
 
 # =============================================================================
@@ -578,6 +614,15 @@ class TestStartupScriptContent:
             "wizard must persist the auto_demo.json idempotency marker"
         )
 
+    def test_open_demo_account_script_is_python311_compatible(self) -> None:
+        """Verify the wizard syntax matches Debian runtime Python 3.11."""
+        script = (
+            c.get_project_root()
+            / c.Directory.CONTAINER
+            / "metatrader/open_demo_account.py"
+        )
+        ast.parse(script.read_text(), feature_version=(3, 11))
+
     def test_wizard_login_from_terminal_log_parses_utf16(self, tmp_path: Path) -> None:
         """login_from_terminal_log() reads the login from the UTF-16 MT5 log.
 
@@ -596,6 +641,7 @@ class TestStartupScriptContent:
         assert spec.loader is not None
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
+        open_demo_account = cast("OpenDemoAccountModule", mod)
 
         logdir = tmp_path / "drive_c/Program Files/MetaTrader 5/logs"
         logdir.mkdir(parents=True)
@@ -604,8 +650,48 @@ class TestStartupScriptContent:
             "x\t0\t00:00:02\tNetwork\t'12345678': authorized on X\r\n"
         )
         (logdir / "20260628.log").write_bytes(lines.encode("utf-16"))
-        mod.MT5_LOG_DIR = logdir
-        assert mod.login_from_terminal_log() == "12345678"
+        open_demo_account.MT5_LOG_DIR = logdir
+        assert open_demo_account.login_from_terminal_log() == "12345678"
+        assert open_demo_account.authorized_login_from_terminal_log() == "12345678"
+
+    def test_wizard_auto_demo_marker_must_be_authorized(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """auto_demo.json cannot mask a stale or failed MT5 authorization."""
+        script = (
+            c.get_project_root()
+            / c.Directory.CONTAINER
+            / "metatrader/open_demo_account.py"
+        )
+        spec = importlib.util.spec_from_file_location("open_demo_account", script)
+        assert spec is not None
+        assert spec.loader is not None
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        open_demo_account = cast("OpenDemoAccountModule", mod)
+
+        def no_current_login() -> str | None:
+            return None
+
+        logdir = tmp_path / "drive_c/Program Files/MetaTrader 5/logs"
+        logdir.mkdir(parents=True)
+        open_demo_account.MT5_LOG_DIR = logdir
+        open_demo_account.RESULT_FILE = tmp_path / "auto_demo.json"
+        monkeypatch.setattr(open_demo_account, "current_login", no_current_login)
+
+        marker = {"login": "12345678", "login_confirmed": False}
+        open_demo_account.RESULT_FILE.write_text(json.dumps(marker))
+        assert open_demo_account.confirmed_result_login() is None
+
+        marker["login_confirmed"] = True
+        open_demo_account.RESULT_FILE.write_text(json.dumps(marker))
+        assert open_demo_account.confirmed_result_login() is None
+
+        lines = "x\t0\t00:00:02\tNetwork\t'12345678': authorized on X\r\n"
+        (logdir / "20260628.log").write_bytes(lines.encode("utf-16"))
+        assert open_demo_account.confirmed_result_login() == "12345678"
 
     def test_setup_sh_handles_mt5_installation(self) -> None:
         """Verify setup.sh handles MT5 installation."""
@@ -614,6 +700,17 @@ class TestStartupScriptContent:
         ).read_text()
         assert "mt5setup" in content.lower(), "Must handle MT5 setup"
         assert "MetaTrader5" in content, "Must install MetaTrader5 pip"
+
+    def test_setup_sh_removes_stale_startup_ini_without_credentials(self) -> None:
+        """Verify zero-touch demo cannot reuse stale manual login config."""
+        content = (
+            c.get_project_root() / c.Directory.CONTAINER / "metatrader/setup.sh"
+        ).read_text()
+        assert (
+            "Removing stale MT5 config because no credentials were provided" in content
+        )
+        assert 'rm -f "$MT5_STARTUP_INI"' in content
+        assert "No MT5 credentials provided, skipping config" in content
 
     def test_health_monitor_uses_restart_token(self) -> None:
         """Verify health_monitor.sh uses restart token (not direct restart)."""

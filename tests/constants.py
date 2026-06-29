@@ -163,12 +163,14 @@ class TestConstants:
         DEFAULT_SERVER: Final[str] = "MetaQuotes-Demo"
 
         # Network configuration
-        GRPC_PORT: Final[int] = int(os.getenv("MT5_GRPC_PORT", "48812"))
-        VNC_PORT: Final[int] = int(os.getenv("MT5_VNC_PORT", "43000"))
-        HEALTH_PORT: Final[int] = int(os.getenv("MT5_HEALTH_PORT", "48002"))
+        GRPC_PORT: Final[int] = int(os.getenv("MT5DOCKER_TEST_GRPC_PORT", "48812"))
+        VNC_PORT: Final[int] = int(os.getenv("MT5DOCKER_TEST_VNC_PORT", "43000"))
+        HEALTH_PORT: Final[int] = int(os.getenv("MT5DOCKER_TEST_HEALTH_PORT", "48002"))
 
         # Timeouts
-        STARTUP_TIMEOUT: Final[int] = int(os.getenv("MT5_STARTUP_TIMEOUT", "420"))
+        STARTUP_TIMEOUT: Final[int] = int(
+            os.getenv("MT5DOCKER_TEST_STARTUP_TIMEOUT", "420")
+        )
         TIMEOUT: Final[int] = 60
 
     class Connection:
@@ -367,7 +369,8 @@ class TestConstants:
 
         SKIP_NO_CREDENTIALS: Final = (
             "MT5 credentials not configured in .env file. "
-            "Set MT5_LOGIN, MT5_PASSWORD, and MT5_SERVER to run container tests."
+            "Set MT5_LOGIN, MT5_PASSWORD, and MT5_SERVER, or enable "
+            "MT5_AUTO_CREATE_DEMO=1 to run container tests."
         )
         SKIP_NO_COMPOSE_FILE: Final = "docker-compose.yaml not found"
         SKIP_NO_CONTAINER: Final = "Container not running - skipping container tests"

@@ -14,7 +14,7 @@ Design (attach-only -- no OCR, no password capture):
     the X window title does NOT carry the login -- with the title as a fast
     fallback. No OCR.
   * Idempotent: if the terminal is already logged in or ``auto_demo.json``
-    already records a login, this is a no-op.
+    matches a currently authorized login, this is a no-op.
 
 RESTART-SURVIVAL (login persists across container/terminal restart): the MT5
 terminal re-reads ``startup.ini`` and re-attempts login on EVERY boot, so a
@@ -45,6 +45,10 @@ import sys
 import time
 import uuid
 from pathlib import Path
+from typing import cast
+
+JsonScalar = str | int | float | bool | None
+JsonValue = JsonScalar | list["JsonValue"] | dict[str, "JsonValue"]
 
 # Configuration. Every value below can be overridden via an environment variable.
 DISPLAY = os.environ.get("DISPLAY", ":0")
@@ -185,16 +189,8 @@ def current_login() -> str | None:
     return match.group(1) if match else None
 
 
-def login_from_terminal_log() -> str | None:
-    """Read the demo login from the MT5 terminal log (authoritative source).
-
-    In Wine ``/desktop=`` mode the account number is NOT exposed on the X window
-    title, so the title scrape returns nothing. The terminal log, however, always
-    records ``... new demo account 'NNNN' opened ...`` at creation and
-    ``... 'NNNN': authorized ...`` on each login. We scan the most recent log and
-    return the LAST login seen (handles a relogin after creation). Returns None if
-    the log is absent/unreadable -- never invents a value.
-    """
+def _latest_terminal_log_text() -> str | None:
+    """Return the latest MT5 terminal log text, decoded as UTF-16."""
     try:
         logs = sorted(MT5_LOG_DIR.glob("*.log"))
     except OSError as exc:
@@ -217,9 +213,38 @@ def login_from_terminal_log() -> str | None:
         msg = f"MT5 terminal log {logs[-1]} is not UTF-16 as expected: {exc}"
         log(f"FATAL: {msg}")
         raise RuntimeError(msg) from exc
+    return text
+
+
+def login_from_terminal_log() -> str | None:
+    """Read the demo login from the MT5 terminal log (authoritative source).
+
+    In Wine ``/desktop=`` mode the account number is NOT exposed on the X window
+    title, so the title scrape returns nothing. The terminal log, however, always
+    records ``... new demo account 'NNNN' opened ...`` at creation and
+    ``... 'NNNN': authorized ...`` on each login. We scan the most recent log and
+    return the LAST login seen (handles a relogin after creation). Returns None if
+    the log is absent/unreadable -- never invents a value.
+    """
+    text = _latest_terminal_log_text()
+    if text is None:
+        return None
     login: str | None = None
     for line in text.splitlines():
         match = LOG_NEW_ACCOUNT_RE.search(line) or LOG_AUTHORIZED_RE.search(line)
+        if match:
+            login = match.group(1)
+    return login
+
+
+def authorized_login_from_terminal_log() -> str | None:
+    """Read the last account that the terminal actively authorized."""
+    text = _latest_terminal_log_text()
+    if text is None:
+        return None
+    login: str | None = None
+    for line in text.splitlines():
+        match = LOG_AUTHORIZED_RE.search(line)
         if match:
             login = match.group(1)
     return login
@@ -407,8 +432,9 @@ def write_result(login: str | None, email: str, *, persisted: bool = False) -> N
     """Persist the provisioned account (login/server/email, no password) as JSON.
 
     Written even when the login could not be read back (login=None in /desktop=
-    mode): its presence is the idempotency guard that stops the wizard from
-    creating a NEW account on every boot (which would hit MetaQuotes rate limits).
+    mode): that records the attempt, but it is NOT enough to skip future
+    provisioning. A future boot skips only when this file carries a confirmed
+    login and the terminal currently authorizes that same account.
     ``credentials_persisted`` records whether Login+Password were written to
     startup.ini (i.e. whether the demo survives a restart). The password itself
     is NEVER stored here.
@@ -435,6 +461,52 @@ def write_result(login: str | None, email: str, *, persisted: bool = False) -> N
     log(f"wrote {RESULT_FILE} (login={login}, server={SERVER})")
 
 
+def _result_file_login() -> str | None:
+    """Read a confirmed login from auto_demo.json, or None when it is stale."""
+    try:
+        raw_payload = cast("JsonValue", json.loads(RESULT_FILE.read_text()))
+    except json.JSONDecodeError as exc:
+        msg = f"{RESULT_FILE} is not valid JSON: {exc}"
+        log(f"FATAL: {msg}")
+        raise RuntimeError(msg) from exc
+    except OSError as exc:
+        msg = f"cannot read {RESULT_FILE}: {exc}"
+        log(f"FATAL: {msg}")
+        raise OSError(msg) from exc
+    if not isinstance(raw_payload, dict):
+        log(f"{RESULT_FILE} is not an object; provisioning will run again")
+        return None
+
+    login = raw_payload.get("login")
+    login_confirmed = raw_payload.get("login_confirmed")
+    if isinstance(login, str) and login and login_confirmed is True:
+        return login
+
+    log(f"{RESULT_FILE} does not contain a confirmed login")
+    return None
+
+
+def confirmed_result_login() -> str | None:
+    """Return the marker login only when the current terminal confirms it."""
+    marker_login = _result_file_login()
+    if marker_login is None:
+        return None
+
+    active_login = current_login()
+    if active_login == marker_login:
+        return marker_login
+
+    authorized_login = authorized_login_from_terminal_log()
+    if authorized_login == marker_login:
+        return marker_login
+
+    log(
+        f"{RESULT_FILE} login={marker_login} is not authorized by the current "
+        "terminal session; provisioning will run again",
+    )
+    return None
+
+
 def _wait_for_login(timeout: int) -> str | None:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -456,8 +528,13 @@ def main() -> int:
             write_result(existing, os.environ.get("MT5_DEMO_EMAIL", ""))
         return 0
     if RESULT_FILE.exists():
-        log(f"{RESULT_FILE} already present; assuming account provisioned")
-        return 0
+        confirmed_login = confirmed_result_login()
+        if confirmed_login is not None:
+            log(
+                f"{RESULT_FILE} already matches authorized login={confirmed_login}; "
+                "nothing to do",
+            )
+            return 0
 
     wid = wait_for_terminal(WINDOW_WAIT)
     if wid is None:
