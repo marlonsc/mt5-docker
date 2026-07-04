@@ -184,7 +184,8 @@ The process is automatic and you should end up with MetaTrader5 running in your 
    nano docker-compose.yaml
    ```
 
-   Use this content, optionally adding your MT5 credentials for auto-login.
+   Use this content for auto-login, or copy `config/.env.example` to `.env` to
+   use the zero-touch demo terminal path.
 
    ```yaml
    version: '3'
@@ -209,10 +210,11 @@ The process is automatic and you should end up with MetaTrader5 running in your 
          - TZ=UTC                # Timezone for logs and MT5
    ```
 
-   ### Zero-touch demo account (experimental)
+   ### Zero-touch demo account
 
-   To have the container provision a MetaQuotes **demo** account by itself — no
-   credentials, no human — leave `MT5_LOGIN` unset and enable the wizard:
+   The example env file already enables demo provisioning. To provision a
+   MetaQuotes **demo** account by itself — no credentials, no human — keep
+   `MT5_LOGIN` unset and ensure `MT5_AUTO_CREATE_DEMO=1`:
 
    ```yaml
        environment:

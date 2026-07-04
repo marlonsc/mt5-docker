@@ -33,6 +33,7 @@ import inspect
 import logging
 import operator
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -657,8 +658,6 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
         first_line = docstring.strip().split("\n")[0]
 
         # Extract parameters from parentheses
-        import re
-
         match = re.search(r"\(([^)]*)\)", first_line)
         if not match:
             return []
@@ -996,7 +995,7 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
                 stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
                 guard.replace(guard.with_name(f"auto_demo.{stamp}.json"))
             proc = subprocess.run(  # noqa: S603  # fixed argv, no shell
-                ["python3", str(script)],  # noqa: S607
+                [sys.executable, str(script)],
                 check=False,
                 capture_output=True,
                 text=True,

@@ -623,6 +623,17 @@ class TestStartupScriptContent:
         )
         ast.parse(script.read_text(), feature_version=(3, 11))
 
+    def test_bridge_uses_current_python_for_demo_wizard(self) -> None:
+        """Verify CreateDemoAccount runs the wizard with the bridge interpreter."""
+        bridge = c.get_project_root() / c.Directory.CONTAINER / "metatrader/bridge.py"
+        content = bridge.read_text()
+        assert "[sys.executable, str(script)]" in content, (
+            "CreateDemoAccount must use the active bridge interpreter"
+        )
+        assert '["python3", str(script)]' not in content, (
+            "CreateDemoAccount must not depend on an OS-level python3 binary"
+        )
+
     def test_wizard_login_from_terminal_log_parses_utf16(self, tmp_path: Path) -> None:
         """login_from_terminal_log() reads the login from the UTF-16 MT5 log.
 
@@ -864,6 +875,15 @@ class TestConfigFiles:
         required_vars = ["MT5_LOGIN", "MT5_PASSWORD", "MT5_SERVER"]
         for var in required_vars:
             assert var in content, f".env.example missing: {var}"
+
+    def test_env_example_enables_demo_provisioning(self) -> None:
+        """Verify the example environment enables demo provisioning."""
+        env_example = c.get_project_root() / c.CONFIG_DIR / c.File.ENV_EXAMPLE
+        content = env_example.read_text()
+
+        assert "MT5_AUTO_CREATE_DEMO=1" in content, (
+            ".env.example should enable the reproducible demo terminal path"
+        )
 
     def test_dockerignore_exists(self) -> None:
         """Verify .dockerignore exists."""
