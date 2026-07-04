@@ -34,6 +34,7 @@ import logging
 import operator
 import os
 import re
+import shlex
 import signal
 import subprocess
 import sys
@@ -65,6 +66,146 @@ _server: grpc.Server | None = None  # pylint: disable=invalid-name  # Module-pri
 
 # Global MT5 call timeout (configurable via --mt5-timeout)
 _mt5_call_timeout: float = 30.0  # pylint: disable=invalid-name  # Module-private global
+
+
+def _read_text_tail(path: Path, *, limit: int = 2000) -> str:
+    """Read the tail of a text file, returning an empty string when absent."""
+    try:
+        text = path.read_text(errors="replace")
+    except OSError:
+        return ""
+    return text[-limit:]
+
+
+def _remove_wizard_run_files(paths: tuple[Path, ...]) -> str:
+    """Remove launcher stdout/stderr/rc files and report cleanup failures."""
+    errors: list[str] = []
+    for path in paths:
+        try:
+            path.unlink(missing_ok=True)
+        except OSError as exc:
+            errors.append(f"{path.name}: {exc}")
+    return "; ".join(errors)
+
+
+def _sanitize_wizard_output(text: str) -> str:
+    """Remove account identifiers and secrets from wizard output before logging."""
+    sanitized = re.sub(
+        r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+",
+        "<EMAIL>",
+        text,
+    )
+    sanitized = re.sub(
+        r"(?i)(password\s*[=:]\s*)[^\s,;]+",
+        r"\1<REDACTED>",
+        sanitized,
+    )
+    sanitized = re.sub(
+        r"(?i)(login[=:\s]+)\d{6,}",
+        r"\1<ACCOUNT>",
+        sanitized,
+    )
+    return re.sub(r"\b\d{6,}\b", "<ACCOUNT>", sanitized)
+
+
+def _provisioned_login_value(data: dict[str, object]) -> int:
+    """Parse the auto_demo.json login without logging account identifiers."""
+    login = data.get("login")
+    if isinstance(login, int) and login > 0:
+        return login
+    if isinstance(login, str) and login.isdecimal():
+        return int(login)
+    return 0
+
+
+def _linux_path(path: Path) -> str:
+    """Render a Wine/Python path as a Linux path for ``start /unix`` commands."""
+    return str(path).replace("\\", "/")
+
+
+def _run_linux_wizard_from_wine(
+    script: Path,
+    env: dict[str, str],
+    *,
+    timeout: int,
+) -> tuple[int, str, str]:
+    """Run the Linux X11 wizard from the Wine bridge via ``start /unix``.
+
+    The gRPC bridge runs under Windows Python inside Wine so it cannot execute
+    Linux tools such as xdotool directly. Wine's ``start /unix`` is the canonical
+    process boundary for launching the Linux-side wizard; the shell writes a real
+    rc file that this Wine process waits for and reads back.
+    """
+    stamp = f"{int(time.time())}-{os.getpid()}-{threading.get_ident()}"
+    run_dir = Path(os.environ.get("CONFIG_DIR", "/config")) / ".cache/wizard-runs"
+    run_dir.mkdir(parents=True, exist_ok=True)
+    stdout_path = run_dir / f"create_demo_account.{stamp}.stdout"
+    stderr_path = run_dir / f"create_demo_account.{stamp}.stderr"
+    rc_path = run_dir / f"create_demo_account.{stamp}.rc"
+    run_files = (stdout_path, stderr_path, rc_path)
+    cleanup_error = _remove_wizard_run_files(run_files)
+    if cleanup_error:
+        return 126, "", f"cannot clear stale wizard launcher files: {cleanup_error}"
+
+    assignments = " ".join(
+        f"{key}={shlex.quote(value)}" for key, value in sorted(env.items())
+    )
+    command = (
+        f"{assignments} /usr/bin/python3 {shlex.quote(_linux_path(script))} "
+        f">{shlex.quote(_linux_path(stdout_path))} "
+        f"2>{shlex.quote(_linux_path(stderr_path))}; "
+        f"rc=$?; printf '%s' \"$rc\" > {shlex.quote(_linux_path(rc_path))}"
+    )
+    try:
+        subprocess.run(  # noqa: S603  # fixed bridge command; args are shell-quoted
+            [
+                "C:\\windows\\system32\\cmd.exe",
+                "/c",
+                "start",
+                "/wait",
+                "/unix",
+                "/bin/sh",
+                "-c",
+                command,
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=timeout + 30,
+        )
+    except subprocess.TimeoutExpired:
+        stdout = _read_text_tail(stdout_path)
+        stderr = _read_text_tail(stderr_path)
+        message = "Linux wizard launcher timed out"
+        if stderr:
+            message = f"{message}: {stderr}"
+        cleanup_error = _remove_wizard_run_files(run_files)
+        if cleanup_error:
+            message = f"{message}; cleanup failed: {cleanup_error}"
+        return 124, stdout, message
+
+    deadline = time.monotonic() + timeout
+    while not rc_path.exists() and time.monotonic() < deadline:
+        time.sleep(1)
+    if not rc_path.exists():
+        stdout = _read_text_tail(stdout_path)
+        cleanup_error = _remove_wizard_run_files(run_files)
+        message = "Linux wizard did not write an exit-code file"
+        if cleanup_error:
+            message = f"{message}; cleanup failed: {cleanup_error}"
+        return 124, stdout, message
+
+    rc_text = rc_path.read_text(errors="replace").strip()
+    try:
+        rc = int(rc_text)
+    except ValueError:
+        rc = 125
+    stdout = _read_text_tail(stdout_path)
+    stderr = _read_text_tail(stderr_path)
+    cleanup_error = _remove_wizard_run_files(run_files)
+    if cleanup_error:
+        return 126, stdout, f"{stderr}; cleanup failed: {cleanup_error}"
+    return rc, stdout, stderr
 
 
 def _call_mt5_with_timeout(
@@ -403,10 +544,11 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
         """
         self._ensure_mt5_loaded()
         log.debug(
-            "Initialize: path=%s login=%s server=%s timeout=%s portable=%s",
+            "Initialize: path=%s login_present=%s "
+            "server_present=%s timeout=%s portable=%s",
             request.path if request.HasField("_path") else None,
-            request.login if request.HasField("_login") else None,
-            request.server if request.HasField("_server") else None,
+            request.HasField("_login"),
+            request.HasField("_server") and bool(request.server),
             request.timeout if request.HasField("_timeout") else None,
             request.portable,
         )
@@ -445,9 +587,9 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
 
         """
         log.debug(
-            "Login: login=%s server=%s timeout=%s",
-            request.login,
-            request.server,
+            "Login: login_present=%s server_present=%s timeout=%s",
+            bool(request.login),
+            bool(request.server),
             request.timeout,
         )
         result = self._mt5_module.login(
@@ -911,7 +1053,7 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
             log.debug("AccountInfo: result=None")
             return mt5_pb2.DictData(json_data="")
         data = self._namedtuple_to_dict(result)
-        log.debug("AccountInfo: login=%s", data.get("login"))
+        log.debug("AccountInfo: account info available")
         return mt5_pb2.DictData(json_data=_json_serialize(data))
 
     def GetProvisionedAccount(
@@ -943,9 +1085,9 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
             connected = bool(getattr(terminal, "connected", False))
         except (TimeoutError, OSError, RuntimeError) as exc:
             log.debug("GetProvisionedAccount: live connected check failed: %s", exc)
-        login = data.get("login")
+        login_value = _provisioned_login_value(data)
         return mt5_pb2.ProvisionedAccount(
-            login=login if isinstance(login, int) else 0,
+            login=login_value,
             server=str(data.get("server") or ""),
             email=str(data.get("email") or ""),
             created_at=str(data.get("created_at") or ""),
@@ -963,9 +1105,9 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
         """Create a fresh demo account at runtime by running the wizard.
 
         Maps the request to the wizard's MT5_DEMO_* env and runs
-        open_demo_account.py headlessly, then returns the provisioned account. This
-        drives the MT5 GUI wizard (build-specific, best-effort); the zero-touch
-        env-at-launch path remains the primary creation mechanism.
+        open_demo_account.py headlessly on the Linux side, then returns the
+        provisioned account. This drives the MT5 GUI wizard and fails loudly when
+        the terminal does not confirm a live authorized login.
         """
         script = Path("/Metatrader/open_demo_account.py")
         if not script.exists():
@@ -978,7 +1120,6 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
                 "a demo creation is already in progress",
             )
         try:
-            env = dict(os.environ)
             overrides = {
                 "MT5_DEMO_SERVER": request.server,
                 "MT5_DEMO_EMAIL": request.email,
@@ -987,34 +1128,41 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
                 "MT5_DEMO_LAST": request.last_name,
                 "MT5_DEMO_DOB_YEAR": request.dob_year,
             }
-            env.update({key: value for key, value in overrides.items() if value})
-            # Force a fresh account: move the existing record aside to a TIMESTAMPED
-            # path so a prior backup is never clobbered (no data loss).
-            guard = Path(os.environ.get("CONFIG_DIR", "/config")) / "auto_demo.json"
-            if guard.exists():
-                stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
-                guard.replace(guard.with_name(f"auto_demo.{stamp}.json"))
-            proc = subprocess.run(  # noqa: S603  # fixed argv, no shell
-                [sys.executable, str(script)],
-                check=False,
-                capture_output=True,
-                text=True,
-                env=env,
+            env = {key: value for key, value in overrides.items() if value}
+            if "DISPLAY" in os.environ:
+                env["DISPLAY"] = os.environ["DISPLAY"]
+            if "CONFIG_DIR" in os.environ:
+                env["CONFIG_DIR"] = os.environ["CONFIG_DIR"]
+            if "WINEPREFIX" in os.environ:
+                env["WINEPREFIX"] = os.environ["WINEPREFIX"]
+            env["MT5_DEMO_FORCE_CREATE"] = "1"
+            env["PATH"] = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+            env["HOME"] = os.environ.get("HOME", "/config")
+            rc, stdout, stderr = _run_linux_wizard_from_wine(
+                script,
+                env,
                 timeout=300,
             )
-            if proc.returncode != 0:
+            if rc != 0:
                 # Log full stderr server-side; return a GENERIC error to the caller
                 # (never reflect raw subprocess output to RPC clients).
                 log.error(
-                    "CreateDemoAccount: wizard failed rc=%s: %s",
-                    proc.returncode,
-                    proc.stderr[-2000:],
+                    "CreateDemoAccount: wizard failed rc=%s stdout=%s stderr=%s",
+                    rc,
+                    _sanitize_wizard_output(stdout),
+                    _sanitize_wizard_output(stderr),
                 )
                 context.abort(
                     grpc.StatusCode.INTERNAL,
-                    f"demo wizard failed (rc={proc.returncode})",
+                    f"demo wizard failed (rc={rc})",
                 )
-            return self.GetProvisionedAccount(mt5_pb2.Empty(), context)
+            account = self.GetProvisionedAccount(mt5_pb2.Empty(), context)
+            if account.login <= 0 or not account.login_confirmed:
+                context.abort(
+                    grpc.StatusCode.INTERNAL,
+                    "demo wizard did not confirm an authorized login",
+                )
+            return account
         finally:
             self._wizard_lock.release()
 

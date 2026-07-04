@@ -37,7 +37,13 @@ class OpenDemoAccountModule(Protocol):
     def login_from_terminal_log(self) -> str | None:
         """Read the last MT5 login from terminal logs."""
 
-    def authorized_login_from_terminal_log(self) -> str | None:
+    def _terminal_log_cursor(self) -> tuple[str, int] | None:
+        """Capture the current terminal-log cursor."""
+
+    def authorized_login_from_terminal_log(
+        self,
+        cursor: tuple[str, int] | None = None,
+    ) -> str | None:
         """Read the last authorized MT5 login from terminal logs."""
 
     def confirmed_result_login(self) -> str | None:
@@ -623,16 +629,31 @@ class TestStartupScriptContent:
         )
         ast.parse(script.read_text(), feature_version=(3, 11))
 
-    def test_bridge_uses_current_python_for_demo_wizard(self) -> None:
-        """Verify CreateDemoAccount runs the wizard with the bridge interpreter."""
+    def test_bridge_runs_demo_wizard_on_linux_side(self) -> None:
+        """Verify CreateDemoAccount crosses from Wine Python to Linux X11 tools."""
         bridge = c.get_project_root() / c.Directory.CONTAINER / "metatrader/bridge.py"
         content = bridge.read_text()
-        assert "[sys.executable, str(script)]" in content, (
-            "CreateDemoAccount must use the active bridge interpreter"
-        )
+        assert '"C:\\\\windows\\\\system32\\\\cmd.exe"' in content
+        for arg in ('"/wait"', '"/unix"', '"/bin/sh"', '"-c"'):
+            assert arg in content, (
+                "CreateDemoAccount must launch the X11 wizard via Wine start /unix"
+            )
         assert '["python3", str(script)]' not in content, (
-            "CreateDemoAccount must not depend on an OS-level python3 binary"
+            "CreateDemoAccount must not assume python3 is on the Wine PATH"
         )
+        assert "[sys.executable, str(script)]" not in content, (
+            "CreateDemoAccount must not run Linux xdotool code under Wine Python"
+        )
+        assert "_provisioned_login_value" in content
+        assert "isinstance(login, str)" in content
+        assert "login.isdecimal()" in content
+        assert '"MT5_DEMO_FORCE_CREATE"' in content
+        assert "guard.replace" not in content
+        assert "startup_ini.replace" not in content
+        assert "except subprocess.TimeoutExpired" in content
+        assert "Linux wizard launcher timed out" in content
+        assert "_remove_wizard_run_files" in content
+        assert "cleanup failed" in content
 
     def test_wizard_login_from_terminal_log_parses_utf16(self, tmp_path: Path) -> None:
         """login_from_terminal_log() reads the login from the UTF-16 MT5 log.
@@ -661,9 +682,52 @@ class TestStartupScriptContent:
             "x\t0\t00:00:02\tNetwork\t'12345678': authorized on X\r\n"
         )
         (logdir / "20260628.log").write_bytes(lines.encode("utf-16"))
+        (logdir / "metaeditor.log").write_text(
+            "x\t0\t00:00:03\tNetwork\t'99999999': authorized on X\r\n",
+        )
         open_demo_account.MT5_LOG_DIR = logdir
         assert open_demo_account.login_from_terminal_log() == "12345678"
         assert open_demo_account.authorized_login_from_terminal_log() == "12345678"
+
+    def test_wizard_authorization_cursor_ignores_old_logins(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """CreateDemoAccount must wait for the authorization produced by this run."""
+        script = (
+            c.get_project_root()
+            / c.Directory.CONTAINER
+            / "metatrader/open_demo_account.py"
+        )
+        spec = importlib.util.spec_from_file_location("open_demo_account", script)
+        assert spec is not None
+        assert spec.loader is not None
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        open_demo_account = cast("OpenDemoAccountModule", mod)
+
+        logdir = tmp_path / "drive_c/Program Files/MetaTrader 5/logs"
+        logdir.mkdir(parents=True)
+        log_file = logdir / "20260628.log"
+        old_lines = (
+            "x\t0\t00:00:01\tTerminal\tMetaTrader 5 x64 build 5973 started for X\r\n"
+            "x\t0\t00:00:02\tNetwork\t'12345678': authorized on X\r\n"
+        )
+        log_file.write_bytes(old_lines.encode("utf-16"))
+        open_demo_account.MT5_LOG_DIR = logdir
+
+        cursor = open_demo_account._terminal_log_cursor()
+        assert open_demo_account.authorized_login_from_terminal_log(cursor) is None
+
+        new_lines = (
+            old_lines
+            + "x\t0\t00:00:03\tNetwork\tnew demo account '87654321' opened on X\r\n"
+            + "x\t0\t00:00:04\tNetwork\t'87654321': authorized on X\r\n"
+        )
+        log_file.write_bytes(new_lines.encode("utf-16"))
+        assert (
+            open_demo_account.authorized_login_from_terminal_log(cursor) == "87654321"
+        )
 
     def test_wizard_auto_demo_marker_must_be_authorized(
         self,
@@ -704,6 +768,68 @@ class TestStartupScriptContent:
         (logdir / "20260628.log").write_bytes(lines.encode("utf-16"))
         assert open_demo_account.confirmed_result_login() == "12345678"
 
+    def test_wizard_never_persists_unconfirmed_login(self) -> None:
+        """The wizard must fail loud instead of recording login=None as success."""
+        script = (
+            c.get_project_root()
+            / c.Directory.CONTAINER
+            / "metatrader/open_demo_account.py"
+        )
+        content = script.read_text()
+        assert "write_result(None" not in content
+        assert "not writing auto_demo.json" in content
+        assert "def _wait_for_authorized_login" in content
+        assert "cannot verify current-run authorization" in content
+        assert "without terminal log cursor" in content
+        assert (
+            "terminal log cursor unavailable; cannot prove current-run login" in content
+        )
+        assert '"login_confirmed": True' in content
+
+    def test_demo_provisioning_does_not_log_sensitive_identifiers(self) -> None:
+        """Runtime logs/artifacts must not expose account identifiers or secrets."""
+        root = c.get_project_root()
+        bridge = root / c.Directory.CONTAINER / "metatrader/bridge.py"
+        wizard = root / c.Directory.CONTAINER / "metatrader/open_demo_account.py"
+        service = (
+            root
+            / c.Directory.CONTAINER
+            / "metatrader/etc/s6-overlay/s6-rc.d/svc-mt5server/run"
+        )
+        bridge_content = bridge.read_text()
+        wizard_content = wizard.read_text()
+        service_content = service.read_text()
+
+        assert "server=%s" not in bridge_content
+        assert "server_present=%s" in bridge_content
+        assert "email={email}" not in wizard_content
+        assert "server={SERVER}" not in wizard_content
+        assert "final_page.xwd" not in wizard_content
+        assert "MT5_DEMO_DEBUG_SHOT" not in wizard_content
+        assert '_run(["xwd"' not in wizard_content
+        assert "${MT5_DEBUG:-0}" in service_content
+
+    def test_wizard_opens_account_dialog_with_calibrated_clicks(self) -> None:
+        """The real Wine desktop does not deliver Alt+F to MT5 reliably."""
+        script = (
+            c.get_project_root()
+            / c.Directory.CONTAINER
+            / "metatrader/open_demo_account.py"
+        )
+        content = script.read_text()
+        assert "FILE_MENU_XY" in content
+        assert "OPEN_ACCOUNT_MENU_XY" in content
+        assert "COPY_INFO_XY" in content
+        assert "_click(FILE_MENU_XY)" in content
+        assert "_click(OPEN_ACCOUNT_MENU_XY)" in content
+        assert "_clear_clipboard" in content
+        assert "_password_from_registration_clipboard" in content
+        assert "return _valid_password(text.strip())" not in content
+        assert "PASSWORD_FIELD_XY" not in content
+        assert "clipboard after copy" not in content
+        assert '"alt+f"' not in content
+        assert "MENU_DOWN_TO_OPEN_ACCOUNT" not in content
+
     def test_setup_sh_handles_mt5_installation(self) -> None:
         """Verify setup.sh handles MT5 installation."""
         content = (
@@ -722,6 +848,21 @@ class TestStartupScriptContent:
         )
         assert 'rm -f "$MT5_STARTUP_INI"' in content
         assert "No MT5 credentials provided, skipping config" in content
+
+    def test_svc_mt5server_fails_loud_on_auto_demo_failure(self) -> None:
+        """Auto-demo mode must not report a healthy bridge after wizard failure."""
+        content = (
+            c.get_project_root()
+            / c.Directory.CONTAINER
+            / "metatrader/etc/s6-overlay/s6-rc.d/svc-mt5server/run"
+        ).read_text()
+        assert "WARN: demo auto-creation failed" not in content
+        assert "ERROR: demo auto-creation failed" in content
+        assert "auto_create_demo_account || return 1" in content
+        assert "WARN: $script not found; skipping demo auto-creation" not in content
+        assert "ERROR: $script not found; cannot auto-create demo account" in content
+        assert "demo provisioning failed during startup" in content
+        assert "full_restart || exit 1" in content
 
     def test_health_monitor_uses_restart_token(self) -> None:
         """Verify health_monitor.sh uses restart token (not direct restart)."""
@@ -802,6 +943,9 @@ class TestS6Services:
         assert "auto_create_demo_account" in content, "must invoke the demo wizard"
         assert "provision_demo" in content, "must wrap provisioning + re-attach"
         assert "Re-attaching" in content, "must re-attach the bridge after login"
+        assert "start_bridge || return 1" in content, (
+            "must fail provisioning if the re-attached bridge cannot listen"
+        )
 
     def test_s6_service_has_inline_config(self) -> None:
         """Verify s6 service has inline configuration (no external deps)."""
@@ -839,6 +983,21 @@ class TestS6Services:
         assert "kill_bridge" in content, "Should be able to kill bridge"
         assert "start_mt5_terminal" in content, "Should be able to start MT5"
         assert "start_bridge" in content, "Should be able to start bridge"
+        assert "start_mt5_terminal || return 1" in content, (
+            "full_restart must propagate MT5 start failures"
+        )
+        assert "start_bridge || return 1" in content, (
+            "full_restart must propagate bridge start failures"
+        )
+        assert "start_mt5_terminal || exit 1" in content, (
+            "initial startup must fail if MT5 cannot start"
+        )
+        assert "start_bridge || exit 1" in content, (
+            "initial startup must fail if the bridge cannot listen"
+        )
+        assert "ERROR: MT5 terminal not installed" in content
+        assert "ERROR: MT5 terminal did not start within 30s" in content
+        assert "ERROR: Bridge process running but port did not listen" in content
 
     def test_s6_service_has_main_loop(self) -> None:
         """Verify svc-mt5server runs in main loop (not exec)."""

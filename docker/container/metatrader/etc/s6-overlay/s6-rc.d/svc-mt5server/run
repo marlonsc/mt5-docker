@@ -72,8 +72,8 @@ start_mt5_terminal() {
     fi
 
     if [ ! -f "$mt5file" ]; then
-        log "WARN: MT5 terminal not installed"
-        return 0
+        log "ERROR: MT5 terminal not installed"
+        return 1
     fi
 
     log "Starting MT5 terminal..."
@@ -104,8 +104,8 @@ start_mt5_terminal() {
         waited=$((waited + 2))
     done
 
-    log "WARN: MT5 terminal may not have started"
-    return 0
+    log "ERROR: MT5 terminal did not start within 30s"
+    return 1
 }
 
 is_port_listening() {
@@ -117,7 +117,7 @@ start_bridge() {
     log "Starting gRPC bridge server on port ${mt5server_port}..."
 
     bridge_args="--host 0.0.0.0 --port ${mt5server_port}"
-    if [ "${MT5_DEBUG:-1}" = "1" ]; then
+    if [ "${MT5_DEBUG:-0}" = "1" ]; then
         bridge_args="${bridge_args} --debug"
     fi
 
@@ -139,8 +139,8 @@ start_bridge() {
 
     # Check if process is at least running
     if is_bridge_running; then
-        log "WARN: Bridge process running but port not detected as listening yet"
-        return 0
+        log "ERROR: Bridge process running but port did not listen within ${max_wait}s"
+        return 1
     else
         log "ERROR: gRPC bridge server failed to start"
         return 1
@@ -161,15 +161,16 @@ auto_create_demo_account() {
 
     local script="/Metatrader/open_demo_account.py"
     if [ ! -f "$script" ]; then
-        log "WARN: $script not found; skipping demo auto-creation"
-        return 0
+        log "ERROR: $script not found; cannot auto-create demo account"
+        return 1
     fi
 
     log "Auto-creating MetaQuotes demo account (headless, no human needed)..."
     if run_as_abc python3 "$script"; then
         log "Demo account provisioning OK"
     else
-        log "WARN: demo auto-creation failed; create one manually via VNC (port 3000)"
+        log "ERROR: demo auto-creation failed"
+        return 1
     fi
 }
 
@@ -192,11 +193,11 @@ provision_demo() {
     # already logged in, so this is safe to call on startup AND after a
     # full_restart -- which covers an MT5 crash mid-wizard (before the result file
     # was written) that would otherwise leave the demo never created.
-    auto_create_demo_account
+    auto_create_demo_account || return 1
     if [ "${MT5_AUTO_CREATE_DEMO:-0}" = "1" ] && [ -z "${MT5_LOGIN:-}" ]; then
         log "Re-attaching gRPC bridge to the logged-in account..."
         kill_bridge
-        start_bridge
+        start_bridge || return 1
     fi
 }
 
@@ -206,9 +207,12 @@ full_restart() {
     kill_mt5
     clear_restart_token
     sleep 2
-    start_mt5_terminal
-    start_bridge
-    provision_demo
+    start_mt5_terminal || return 1
+    start_bridge || return 1
+    if ! provision_demo; then
+        log "ERROR: demo provisioning failed during restart"
+        return 1
+    fi
     log "Full restart complete"
 }
 
@@ -273,12 +277,15 @@ log "Components OK"
 # INITIAL STARTUP
 # =============================================================================
 clear_restart_token
-start_mt5_terminal
-start_bridge
+start_mt5_terminal || exit 1
+start_bridge || exit 1
 
 # Provision a demo account headlessly (zero-touch) once the terminal is up, then
 # re-attach the bridge to the freshly logged-in account.
-provision_demo
+if ! provision_demo; then
+    log "ERROR: demo provisioning failed during startup"
+    exit 1
+fi
 
 # =============================================================================
 # MAIN LOOP: Monitor restart token and process health
@@ -291,21 +298,21 @@ while true; do
     # Check for restart token from health_monitor
     if check_restart_token; then
         log "Restart token detected"
-        full_restart
+        full_restart || exit 1
         continue
     fi
 
     # Check if bridge is still running
     if ! is_bridge_running; then
         log "Bridge process died, restarting..."
-        full_restart
+        full_restart || exit 1
         continue
     fi
 
     # Check if MT5 is still running
     if ! is_mt5_running; then
         log "MT5 process died, restarting..."
-        full_restart
+        full_restart || exit 1
         continue
     fi
 done

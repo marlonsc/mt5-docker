@@ -223,18 +223,16 @@ The process is automatic and you should end up with MetaTrader5 running in your 
 
    On first boot, after the Wine prefix is built, the container drives the
    terminal's *File → Open an Account* wizard via `xdotool` and, on success,
-   writes the discovered login to `/config/auto_demo.json` (login / server /
-   email — **never the password**: the gRPC bridge attaches via
-   `mt5.initialize()` with no credentials and reads the login back from
-   `account_info()`).
+   writes the confirmed login to `/config/auto_demo.json` (login / server /
+   email / confirmation flags — **never the password**). The generated master
+   password is copied from the final wizard page and written only to
+   `startup.ini` so the terminal can reauthorize after restart.
 
-   **Honest caveat:** this is GUI automation of MT5's wizard, whose menus and
-   account dialog render unreliably under headless Wine. It is **best-effort** —
-   on failure it saves `/config/auto_demo_failure.xwd` and the gRPC bridge still
-   starts. If no account appears, create a demo **once** manually via the VNC web
-   UI (`http://localhost:3000` → *File → Open an Account*); the Wine prefix and
-   the account persist on the `/config` volume, so it is a one-time step and the
-   bridge then attaches automatically on every restart.
+   This is GUI automation of MT5's wizard, whose menus and account dialog can
+   change across builds. It is fail-loud: if the wizard does not produce an
+   authorized login or the generated password cannot be captured while
+   persistence is enabled, it exits non-zero without writing screenshots or
+   `/config/auto_demo.json` as a success marker.
 
    .NET Support
 
@@ -386,7 +384,7 @@ print(local_array)  # [1 2 3]
 | `AUTO_RECOVERY_ENABLED` | `1` | Auto-restart MT5/RPyC on failures |
 | `HEALTH_CHECK_INTERVAL` | `30` | Health check interval (seconds) |
 | `ENABLE_WIN_DOTNET` | `1` | Install .NET Framework 4.8 for .NET EAs |
-| `MT5_DEBUG` | `1` | Enable debug logging in RPyC bridge |
+| `MT5_DEBUG` | `0` | Enable debug logging in RPyC bridge |
 | `MT5_UPDATE` | `1` | Update MetaTrader5 pip package on startup |
 | **Container Settings** |||
 | `TZ` | `UTC` | Container timezone |
