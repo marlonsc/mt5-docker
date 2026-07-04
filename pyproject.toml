@@ -76,10 +76,35 @@ ignore-missing-imports = ["MetaTrader5"]
 python-version = "3.13"
 
 [tool.pyright]
-exclude = ["**/mt5_pb2.py", "**/mt5_pb2_grpc.py", "typings/"]
+exclude = [
+    "**/mt5_pb2.py",
+    "**/mt5_pb2_grpc.py",
+    "typings/",
+    "../.venv",
+    "../.venv/**",
+    "**/.venv",
+    "**/.venv/**",
+    "**/venv",
+    "**/venv/**",
+    "**/site-packages",
+    "**/site-packages/**",
+]
+ignore = [
+    "../.venv",
+    "../.venv/**",
+    "**/.venv",
+    "**/.venv/**",
+    "**/venv",
+    "**/venv/**",
+    "**/site-packages",
+    "**/site-packages/**",
+]
 pythonPlatform = "Linux"
 pythonVersion = "3.13"
 stubPath = "typings"
+venvPath = ".."
+venv = ".venv"
+useLibraryCodeForTypes = true
 typeCheckingMode = "strict"
 
 [tool.pytest.ini_options]
