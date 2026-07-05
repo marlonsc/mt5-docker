@@ -71,8 +71,21 @@ pytest-timeout = "^2.0.0"
 ruff = "0.11.13"
 
 [tool.pyrefly]
-project-excludes = ["typings", "typings/**"]
-replace-imports-with-any = ["mt5linux.mt5_pb2", "mt5linux.mt5_pb2_grpc"]
+project-excludes = [
+    "typings",
+    "typings/**",
+    "docker/container/metatrader/mt5_pb2.py",
+    "docker/container/metatrader/mt5_pb2_grpc.py",
+]
+search-path = [".", "docker/container", "typings"]
+replace-imports-with-any = [
+    "mt5linux.mt5_pb2",
+    "mt5linux.mt5_pb2_grpc",
+    "metatrader.mt5_pb2",
+    "metatrader.mt5_pb2_grpc",
+    "docker.container.metatrader.mt5_pb2",
+    "docker.container.metatrader.mt5_pb2_grpc",
+]
 ignore-missing-imports = ["MetaTrader5"]
 python-version = "3.13"
 
@@ -107,6 +120,7 @@ venvPath = ".."
 venv = ".venv"
 useLibraryCodeForTypes = true
 typeCheckingMode = "strict"
+executionEnvironments = [{ root = ".", extraPaths = ["docker/container"] }]
 
 [tool.pytest.ini_options]
 addopts = "-v --tb=short -s"
