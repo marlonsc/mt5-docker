@@ -46,6 +46,7 @@ from typing import TYPE_CHECKING, cast
 
 import grpc
 import MetaTrader5
+import numpy as np
 import orjson
 
 from . import mt5_pb2, mt5_pb2_grpc
@@ -54,9 +55,6 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Iterable
     from datetime import datetime
     from types import FrameType, ModuleType
-
-    import numpy as np
-    from numpy.typing import NDArray
 
 # Module logger
 log = logging.getLogger("mt5bridge")
@@ -369,7 +367,7 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
 
     def _numpy_to_proto(
         self,
-        arr: NDArray[np.void] | None,
+        arr: np.ndarray | None,
     ) -> mt5_pb2.NumpyArray:
         """Convert numpy array to protobuf NumpyArray message.
 
@@ -389,9 +387,9 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
         )
 
     @staticmethod
-    def _as_numpy_array(result: object) -> NDArray[np.void] | None:
+    def _as_numpy_array(result: object) -> np.ndarray | None:
         """Cast MT5 copy_* results to their numpy array contract."""
-        return cast("NDArray[np.void] | None", result)
+        return cast("np.ndarray | None", result)
 
     def _validate_symbol(self, symbol: str, func_name: str) -> bool:
         """Validate symbol is not empty.

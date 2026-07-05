@@ -22,6 +22,7 @@ from __future__ import annotations
 import logging
 import os
 import subprocess
+import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -49,8 +50,6 @@ _current_phase: str = ""
 
 def _log(message: str, *, phase: bool = False) -> None:
     """Log message to stderr (always visible in pytest)."""
-    import sys
-
     elapsed = time.time() - _timing_start
     if phase:
         sys.stderr.write(f"\n{'=' * 60}\n")

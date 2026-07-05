@@ -143,6 +143,15 @@ check: ## Run all code quality checks (lint + format + test)
 	@$(MAKE) test
 	@echo "$(GREEN)✓ All checks passed$(NC)"
 
+.PHONY: validate
+validate: ## Run full validation gate (lint + format-check + type-check + test-cov)
+	@echo "$(BLUE)Running full validation gate...$(NC)"
+	@$(POETRY) run ruff check .
+	@$(POETRY) run ruff format --check .
+	@$(POETRY) run mypy . --ignore-missing-imports
+	@$(POETRY) run pytest $(TESTS_DIR)/ -v --tb=short --cov=. --cov-report=term --cov-fail-under=90
+	@echo "$(GREEN)✓ Full validation passed$(NC)"
+
 # =============================================================================
 # Docker Operations
 # =============================================================================

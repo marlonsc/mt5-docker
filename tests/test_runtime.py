@@ -19,9 +19,11 @@ Categories:
 
 from __future__ import annotations
 
+import json
 import re
 import subprocess
 
+import grpc
 import pytest
 from mt5linux import mt5_pb2, mt5_pb2_grpc
 
@@ -379,8 +381,6 @@ class TestMT5AutoLogin:
         assert response is not None, "AccountInfo returned None - login failed"
         assert response.json_data, "json_data is empty"
 
-        import json
-
         account = json.loads(response.json_data)
         assert "login" in account, "Missing login field"
         assert "server" in account, "Missing server field"
@@ -397,8 +397,6 @@ class TestMT5AutoLogin:
 
         assert response is not None, "TerminalInfo returned None"
         assert response.json_data, "json_data is empty"
-
-        import json
 
         terminal = json.loads(response.json_data)
         assert "connected" in terminal, "Missing connected field"
@@ -565,8 +563,6 @@ class TestGRPCCompatibility:
         container_name: str,
     ) -> None:
         """Verify local gRPC version is compatible with container version."""
-        import grpc
-
         local_version = grpc.__version__
 
         result = wine_python(container_name, "import grpc; print(grpc.__version__)")
