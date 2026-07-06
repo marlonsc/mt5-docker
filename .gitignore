@@ -6,3 +6,6 @@ mt5
 data
 tmp
 *.pyc
+*.bak
+.coverage
+htmlcov/

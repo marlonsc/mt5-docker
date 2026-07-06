@@ -29,6 +29,7 @@ from __future__ import annotations
 
 # pylint: disable=no-member  # Protobuf generated code has dynamic members
 import argparse
+import asyncio
 import inspect
 import logging
 import operator
@@ -36,25 +37,30 @@ import os
 import re
 import shlex
 import signal
-import subprocess
 import sys
 import threading
 import time
 from concurrent import futures
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Protocol, cast
 
 import grpc
-import MetaTrader5
-import numpy as np
 import orjson
 
-from . import mt5_pb2, mt5_pb2_grpc
+from ._generated_protocols import (
+    MetaTrader5,
+    MetaTrader5Module,
+    MT5ServiceServicerBase,
+    add_MT5ServiceServicer_to_server,
+    mt5_pb2,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable
     from datetime import datetime
-    from types import FrameType, ModuleType
+    from types import FrameType
+
+    from . import _generated_protocols as gp
 
 # Module logger
 log = logging.getLogger("mt5bridge")
@@ -64,6 +70,13 @@ _server: grpc.Server | None = None  # pylint: disable=invalid-name  # Module-pri
 
 # Global MT5 call timeout (configurable via --mt5-timeout)
 _mt5_call_timeout: float = 30.0  # pylint: disable=invalid-name  # Module-private global
+
+
+class _GrpcRuntime(Protocol):
+    def server(self, thread_pool: futures.ThreadPoolExecutor) -> grpc.Server: ...
+
+
+_grpc_runtime = cast("_GrpcRuntime", grpc)
 
 
 def _read_text_tail(path: Path, *, limit: int = 2000) -> str:
@@ -84,6 +97,27 @@ def _remove_wizard_run_files(paths: tuple[Path, ...]) -> str:
         except OSError as exc:
             errors.append(f"{path.name}: {exc}")
     return "; ".join(errors)
+
+
+async def _run_wizard_process(command: str, limit: int) -> None:
+    process = await asyncio.create_subprocess_exec(
+        "C:\\windows\\system32\\cmd.exe",
+        "/c",
+        "start",
+        "/wait",
+        "/unix",
+        "/bin/sh",
+        "-c",
+        command,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    try:
+        await asyncio.wait_for(process.communicate(), timeout=limit)
+    except TimeoutError:
+        process.kill()
+        await process.communicate()
+        raise
 
 
 def _sanitize_wizard_output(text: str) -> str:
@@ -155,23 +189,8 @@ def _run_linux_wizard_from_wine(
         f"rc=$?; printf '%s' \"$rc\" > {shlex.quote(_linux_path(rc_path))}"
     )
     try:
-        subprocess.run(  # noqa: S603  # fixed bridge command; args are shell-quoted
-            [
-                "C:\\windows\\system32\\cmd.exe",
-                "/c",
-                "start",
-                "/wait",
-                "/unix",
-                "/bin/sh",
-                "-c",
-                command,
-            ],
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=timeout + 30,
-        )
-    except subprocess.TimeoutExpired:
+        asyncio.run(_run_wizard_process(command, timeout + 30))
+    except TimeoutError:
         stdout = _read_text_tail(stdout_path)
         stderr = _read_text_tail(stderr_path)
         message = "Linux wizard launcher timed out"
@@ -249,6 +268,23 @@ type JSONPrimitive = str | int | float | bool | None
 type JSONValue = JSONPrimitive | list[JSONValue] | dict[str, JSONValue]
 
 
+class _DtypeLike(Protocol):
+    """Protocol for numpy dtype objects that stringify to their type name."""
+
+    def __str__(self) -> str: ...
+
+
+class _NumpyArrayLike(Protocol):
+    """Protocol for numpy arrays consumed by the bridge serialization layer."""
+
+    def tobytes(self) -> bytes: ...
+    def __len__(self) -> int: ...
+    @property
+    def dtype(self) -> _DtypeLike: ...
+    @property
+    def shape(self) -> tuple[int, ...]: ...
+
+
 def _json_serialize(data: dict[str, JSONValue]) -> str:
     """Serialize dict to JSON string using orjson for high performance.
 
@@ -287,7 +323,7 @@ def _json_deserialize(json_str: str) -> dict[str, JSONValue]:
 # =============================================================================
 
 
-class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
+class MT5GRPCServicer(MT5ServiceServicerBase):
     """gRPC service implementation for MetaTrader5.
 
     Implements all RPC methods defined in mt5.proto, handling:
@@ -300,7 +336,7 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
     - Market depth (DOM)
     """
 
-    _mt5_module: ModuleType = MetaTrader5
+    _mt5_module: MetaTrader5Module = MetaTrader5
     _mt5_lock: threading.RLock = threading.RLock()
     # Only one demo-creation wizard may run at a time (it drives the shared GUI);
     # a non-blocking acquire lets CreateDemoAccount REJECT concurrent calls instead
@@ -313,15 +349,12 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
         log.info("MT5GRPCServicer initializing...")
 
         # Auto-initialize connection to MT5 terminal
-        if self._mt5_module is not None:
-            result = self._mt5_module.initialize()
-            if result:
-                log.info("MT5 auto-initialize: SUCCESS")
-            else:
-                error = self._mt5_module.last_error()
-                log.warning("MT5 auto-initialize: FAILED - %s", error)
+        result = self._mt5_module.initialize()
+        if result:
+            log.info("MT5 auto-initialize: SUCCESS")
         else:
-            log.warning("MT5 module not available for auto-initialize")
+            error = self._mt5_module.last_error()
+            log.warning("MT5 auto-initialize: FAILED - %s", error)
 
         log.info("MT5GRPCServicer initialized")
 
@@ -336,9 +369,7 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
             RuntimeError: If MT5 module is not available.
 
         """
-        if self._mt5_module is None:
-            msg = "MT5 module not loaded - initialize first"
-            raise RuntimeError(msg)
+        return
 
     def _namedtuple_to_dict(
         self,
@@ -355,20 +386,30 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
             Dictionary representation.
 
         """
-        if not hasattr(obj, "_asdict"):
+        asdict_fn = cast(
+            "Callable[[], dict[str, JSONValue]] | None",
+            getattr(obj, "_asdict", None),
+        )
+        if asdict_fn is None:
             return {}
-        data: dict[str, JSONValue] = obj._asdict()
+        data = asdict_fn()
         if nested_fields:
             for field in nested_fields:
                 nested = data.get(field)
-                if nested is not None and hasattr(nested, "_asdict"):
-                    data[field] = nested._asdict()
+                if nested is None:
+                    continue
+                nested_asdict = cast(
+                    "Callable[[], dict[str, JSONValue]] | None",
+                    getattr(nested, "_asdict", None),
+                )
+                if nested_asdict is not None:
+                    data[field] = nested_asdict()
         return data
 
     def _numpy_to_proto(
         self,
-        arr: np.ndarray | None,
-    ) -> mt5_pb2.NumpyArray:
+        arr: _NumpyArrayLike | None,
+    ) -> gp.NumpyArrayMessage:
         """Convert numpy array to protobuf NumpyArray message.
 
         Args:
@@ -387,9 +428,9 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
         )
 
     @staticmethod
-    def _as_numpy_array(result: object) -> np.ndarray | None:
+    def _as_numpy_array(result: object) -> _NumpyArrayLike | None:
         """Cast MT5 copy_* results to their numpy array contract."""
-        return cast("np.ndarray | None", result)
+        return cast("_NumpyArrayLike | None", result)
 
     def _validate_symbol(self, symbol: str, func_name: str) -> bool:
         """Validate symbol is not empty.
@@ -467,9 +508,9 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
 
     def HealthCheck(
         self,
-        request: mt5_pb2.Empty,
+        request: gp.EmptyMessage,
         context: grpc.ServicerContext,
-    ) -> mt5_pb2.HealthStatus:
+    ) -> gp.HealthStatusMessage:
         """Check MT5 service health status.
 
         Args:
@@ -481,17 +522,6 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
 
         """
         log.debug("HealthCheck: called")
-
-        if self._mt5_module is None:
-            log.debug("HealthCheck: MT5 module not loaded")
-            return mt5_pb2.HealthStatus(
-                healthy=False,
-                mt5_available=False,
-                connected=False,
-                trade_allowed=False,
-                build=0,
-                reason="MT5 module not loaded",
-            )
 
         # Service is healthy if MT5 module is loaded and responding
         # Terminal connection is separate - happens during Initialize/Login
@@ -527,9 +557,9 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
 
     def Initialize(
         self,
-        request: mt5_pb2.InitRequest,
+        request: gp.InitRequestMessage,
         context: grpc.ServicerContext,
-    ) -> mt5_pb2.BoolResponse:
+    ) -> gp.BoolResponseMessage:
         """Initialize MT5 terminal connection.
 
         Args:
@@ -571,9 +601,9 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
 
     def Login(
         self,
-        request: mt5_pb2.LoginRequest,
+        request: gp.LoginRequestMessage,
         context: grpc.ServicerContext,
-    ) -> mt5_pb2.BoolResponse:
+    ) -> gp.BoolResponseMessage:
         """Login to MT5 account.
 
         Args:
@@ -601,9 +631,9 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
 
     def Shutdown(
         self,
-        request: mt5_pb2.Empty,
+        request: gp.EmptyMessage,
         context: grpc.ServicerContext,
-    ) -> mt5_pb2.Empty:
+    ) -> gp.EmptyMessage:
         """Shutdown MT5 terminal connection.
 
         Args:
@@ -621,9 +651,9 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
 
     def Version(
         self,
-        request: mt5_pb2.Empty,
+        request: gp.EmptyMessage,
         context: grpc.ServicerContext,
-    ) -> mt5_pb2.MT5Version:
+    ) -> gp.MT5VersionMessage:
         """Get MT5 terminal version.
 
         Args:
@@ -647,9 +677,9 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
 
     def LastError(
         self,
-        request: mt5_pb2.Empty,
+        request: gp.EmptyMessage,
         context: grpc.ServicerContext,
-    ) -> mt5_pb2.ErrorInfo:
+    ) -> gp.ErrorInfoMessage:
         """Get last MT5 error code and description.
 
         Args:
@@ -667,9 +697,9 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
 
     def GetConstants(
         self,
-        request: mt5_pb2.Empty,
+        request: gp.EmptyMessage,
         context: grpc.ServicerContext,
-    ) -> mt5_pb2.Constants:
+    ) -> gp.ConstantsMessage:
         """Get all MT5 constants dynamically from the MetaTrader5 module.
 
         Extracts ALL integer constants from the MetaTrader5 module by
@@ -714,7 +744,9 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
         return mt5_pb2.Constants(values=constants)
 
     @staticmethod
-    def _get_tuple_field_order(tuple_type: type) -> list[str] | None:
+    def _get_tuple_field_order(
+        tuple_type: type[tuple[int, ...]],
+    ) -> list[str] | None:
         """Get field names in correct positional order from tuple subclass.
 
         Uses Python's built-in introspection - NO hardcoding.
@@ -731,12 +763,20 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
 
         """
         # Python 3.10+ structseq types have __match_args__ in positional order
-        if hasattr(tuple_type, "__match_args__"):
-            return list(tuple_type.__match_args__)
+        match_args = cast(
+            "tuple[str, ...] | None",
+            getattr(tuple_type, "__match_args__", None),
+        )
+        if match_args is not None:
+            return list(match_args)
 
         # Standard namedtuples have _fields
-        if hasattr(tuple_type, "_fields"):
-            return list(tuple_type._fields)
+        fields = cast(
+            "tuple[str, ...] | None",
+            getattr(tuple_type, "_fields", None),
+        )
+        if fields is not None:
+            return list(fields)
 
         # For types without either, create test instance and map indices
         member_fields = [
@@ -752,7 +792,7 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
         # Create instance with sentinel values to determine positional order
         try:
             n = len(member_fields)
-            instance = tuple_type.__new__(tuple_type, tuple(range(n)))
+            instance = tuple_type(tuple(range(n)))
 
             # Map each field to its positional index
             field_to_index: dict[str, int] = {}
@@ -857,9 +897,9 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
 
     def GetMethods(
         self,
-        request: mt5_pb2.Empty,
+        request: gp.EmptyMessage,
         context: grpc.ServicerContext,
-    ) -> mt5_pb2.MethodsResponse:
+    ) -> gp.MethodsResponseMessage:
         """Get all callable methods from the MetaTrader5 module.
 
         Introspects the real MetaTrader5 PyPI module to extract method signatures
@@ -877,7 +917,7 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
         self._ensure_mt5_loaded()
         log.debug("GetMethods: called")
         mt5 = self._mt5_module
-        methods: list[mt5_pb2.MethodInfo] = []
+        methods: list[gp.MethodInfoMessage] = []
 
         for name in dir(mt5):
             # Skip private/magic attributes
@@ -898,7 +938,7 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
             docstring = getattr(attr, "__doc__", None)
             parsed_params = self._parse_docstring_signature(docstring)
 
-            params: list[mt5_pb2.ParameterInfo] = []
+            params: list[gp.ParameterInfoMessage] = []
             for param_name, has_default, default_value in parsed_params:
                 kind = "KEYWORD_ONLY" if has_default else "POSITIONAL_OR_KEYWORD"
                 params.append(
@@ -925,9 +965,9 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
 
     def GetModels(
         self,
-        request: mt5_pb2.Empty,
+        request: gp.EmptyMessage,
         context: grpc.ServicerContext,
-    ) -> mt5_pb2.ModelsResponse:
+    ) -> gp.ModelsResponseMessage:
         """Get all model (tuple subclass) types from the MetaTrader5 module.
 
         Introspects the real MetaTrader5 PyPI module to extract model structures.
@@ -945,7 +985,7 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
         self._ensure_mt5_loaded()
         log.debug("GetModels: called")
         mt5 = self._mt5_module
-        models: list[mt5_pb2.ModelInfo] = []
+        models: list[gp.ModelInfoMessage] = []
 
         for name in dir(mt5):
             # Skip private/magic attributes
@@ -967,7 +1007,9 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
                 continue
 
             # Get fields in correct positional order (dynamic introspection)
-            field_order = self._get_tuple_field_order(attr)
+            field_order = self._get_tuple_field_order(
+                cast("type[tuple[int, ...]]", attr),
+            )
 
             if field_order is None:
                 # Log warning but skip this type if introspection fails
@@ -977,7 +1019,7 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
                 )
                 continue
 
-            fields: list[mt5_pb2.FieldInfo] = []
+            fields: list[gp.FieldInfoMessage] = []
             for idx, field_name in enumerate(field_order):
                 fields.append(
                     mt5_pb2.FieldInfo(
@@ -1006,9 +1048,9 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
 
     def TerminalInfo(
         self,
-        request: mt5_pb2.Empty,
+        request: gp.EmptyMessage,
         context: grpc.ServicerContext,
-    ) -> mt5_pb2.DictData:
+    ) -> gp.DictDataMessage:
         """Get terminal information.
 
         Args:
@@ -1031,9 +1073,9 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
 
     def AccountInfo(
         self,
-        request: mt5_pb2.Empty,
+        request: gp.EmptyMessage,
         context: grpc.ServicerContext,
-    ) -> mt5_pb2.DictData:
+    ) -> gp.DictDataMessage:
         """Get account information.
 
         Args:
@@ -1056,9 +1098,9 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
 
     def GetProvisionedAccount(
         self,
-        request: mt5_pb2.Empty,
+        request: gp.EmptyMessage,
         context: grpc.ServicerContext,
-    ) -> mt5_pb2.ProvisionedAccount:
+    ) -> gp.ProvisionedAccountMessage:
         """Recover the account this container provisioned (from auto_demo.json).
 
         Reads /config/auto_demo.json (written by the demo wizard) so a client can
@@ -1097,9 +1139,9 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
 
     def CreateDemoAccount(
         self,
-        request: mt5_pb2.CreateDemoRequest,
+        request: gp.CreateDemoRequestMessage,
         context: grpc.ServicerContext,
-    ) -> mt5_pb2.ProvisionedAccount:
+    ) -> gp.ProvisionedAccountMessage:
         """Create a fresh demo account at runtime by running the wizard.
 
         Maps the request to the wizard's MT5_DEMO_* env and runs
@@ -1170,9 +1212,9 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
 
     def SymbolsTotal(
         self,
-        request: mt5_pb2.Empty,
+        request: gp.EmptyMessage,
         context: grpc.ServicerContext,
-    ) -> mt5_pb2.IntResponse:
+    ) -> gp.IntResponseMessage:
         """Get total number of available symbols.
 
         Args:
@@ -1190,9 +1232,9 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
 
     def SymbolsGet(
         self,
-        request: mt5_pb2.SymbolsRequest,
+        request: gp.SymbolsRequestMessage,
         context: grpc.ServicerContext,
-    ) -> mt5_pb2.SymbolsResponse:
+    ) -> gp.SymbolsResponseMessage:
         """Get available symbols with optional group filter.
 
         Returns chunked JSON for large datasets to prevent memory issues.
@@ -1241,9 +1283,9 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
 
     def SymbolInfo(
         self,
-        request: mt5_pb2.SymbolRequest,
+        request: gp.SymbolRequestMessage,
         context: grpc.ServicerContext,
-    ) -> mt5_pb2.DictData:
+    ) -> gp.DictDataMessage:
         """Get detailed symbol information.
 
         Args:
@@ -1267,9 +1309,9 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
 
     def SymbolInfoTick(
         self,
-        request: mt5_pb2.SymbolRequest,
+        request: gp.SymbolRequestMessage,
         context: grpc.ServicerContext,
-    ) -> mt5_pb2.DictData:
+    ) -> gp.DictDataMessage:
         """Get current tick data for a symbol.
 
         Args:
@@ -1297,9 +1339,9 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
 
     def SymbolSelect(
         self,
-        request: mt5_pb2.SymbolSelectRequest,
+        request: gp.SymbolSelectRequestMessage,
         context: grpc.ServicerContext,
-    ) -> mt5_pb2.BoolResponse:
+    ) -> gp.BoolResponseMessage:
         """Select or deselect symbol in Market Watch.
 
         Args:
@@ -1327,9 +1369,9 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
 
     def CopyRatesFrom(
         self,
-        request: mt5_pb2.CopyRatesRequest,
+        request: gp.CopyRatesRequestMessage,
         context: grpc.ServicerContext,
-    ) -> mt5_pb2.NumpyArray:
+    ) -> gp.NumpyArrayMessage:
         """Copy OHLCV rates from a specific date.
 
         Args:
@@ -1367,9 +1409,9 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
 
     def CopyRatesFromPos(
         self,
-        request: mt5_pb2.CopyRatesPosRequest,
+        request: gp.CopyRatesPosRequestMessage,
         context: grpc.ServicerContext,
-    ) -> mt5_pb2.NumpyArray:
+    ) -> gp.NumpyArrayMessage:
         """Copy OHLCV rates from a bar position.
 
         Args:
@@ -1407,9 +1449,9 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
 
     def CopyRatesRange(
         self,
-        request: mt5_pb2.CopyRatesRangeRequest,
+        request: gp.CopyRatesRangeRequestMessage,
         context: grpc.ServicerContext,
-    ) -> mt5_pb2.NumpyArray:
+    ) -> gp.NumpyArrayMessage:
         """Copy OHLCV rates in a date range.
 
         Args:
@@ -1455,9 +1497,9 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
 
     def CopyTicksFrom(
         self,
-        request: mt5_pb2.CopyTicksRequest,
+        request: gp.CopyTicksRequestMessage,
         context: grpc.ServicerContext,
-    ) -> mt5_pb2.NumpyArray:
+    ) -> gp.NumpyArrayMessage:
         """Copy tick data from a specific date.
 
         Args:
@@ -1495,9 +1537,9 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
 
     def CopyTicksRange(
         self,
-        request: mt5_pb2.CopyTicksRangeRequest,
+        request: gp.CopyTicksRangeRequestMessage,
         context: grpc.ServicerContext,
-    ) -> mt5_pb2.NumpyArray:
+    ) -> gp.NumpyArrayMessage:
         """Copy tick data in a date range.
 
         Args:
@@ -1543,9 +1585,9 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
 
     def OrderCalcMargin(
         self,
-        request: mt5_pb2.MarginRequest,
+        request: gp.MarginRequestMessage,
         context: grpc.ServicerContext,
-    ) -> mt5_pb2.FloatResponse:
+    ) -> gp.FloatResponseMessage:
         """Calculate margin required for an order.
 
         Args:
@@ -1576,9 +1618,9 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
 
     def OrderCalcProfit(
         self,
-        request: mt5_pb2.ProfitRequest,
+        request: gp.ProfitRequestMessage,
         context: grpc.ServicerContext,
-    ) -> mt5_pb2.FloatResponse:
+    ) -> gp.FloatResponseMessage:
         """Calculate potential profit for an order.
 
         Args:
@@ -1611,9 +1653,9 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
 
     def OrderCheck(
         self,
-        request: mt5_pb2.OrderRequest,
+        request: gp.OrderRequestMessage,
         context: grpc.ServicerContext,
-    ) -> mt5_pb2.DictData:
+    ) -> gp.DictDataMessage:
         """Check order validity without sending.
 
         Args:
@@ -1645,9 +1687,9 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
 
     def OrderSend(
         self,
-        request: mt5_pb2.OrderRequest,
+        request: gp.OrderRequestMessage,
         context: grpc.ServicerContext,
-    ) -> mt5_pb2.DictData:
+    ) -> gp.DictDataMessage:
         """Send trading order to MT5.
 
         Args:
@@ -1679,9 +1721,9 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
 
     def PositionsTotal(
         self,
-        request: mt5_pb2.Empty,
+        request: gp.EmptyMessage,
         context: grpc.ServicerContext,
-    ) -> mt5_pb2.IntResponse:
+    ) -> gp.IntResponseMessage:
         """Get total number of open positions.
 
         Args:
@@ -1699,9 +1741,9 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
 
     def PositionsGet(
         self,
-        request: mt5_pb2.PositionsRequest,
+        request: gp.PositionsRequestMessage,
         context: grpc.ServicerContext,
-    ) -> mt5_pb2.DictList:
+    ) -> gp.DictListMessage:
         """Get open positions with optional filters.
 
         Args:
@@ -1746,9 +1788,9 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
 
     def OrdersTotal(
         self,
-        request: mt5_pb2.Empty,
+        request: gp.EmptyMessage,
         context: grpc.ServicerContext,
-    ) -> mt5_pb2.IntResponse:
+    ) -> gp.IntResponseMessage:
         """Get total number of pending orders.
 
         Args:
@@ -1766,9 +1808,9 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
 
     def OrdersGet(
         self,
-        request: mt5_pb2.OrdersRequest,
+        request: gp.OrdersRequestMessage,
         context: grpc.ServicerContext,
-    ) -> mt5_pb2.DictList:
+    ) -> gp.DictListMessage:
         """Get pending orders with optional filters.
 
         Args:
@@ -1813,9 +1855,9 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
 
     def HistoryOrdersTotal(
         self,
-        request: mt5_pb2.HistoryRequest,
+        request: gp.HistoryRequestMessage,
         context: grpc.ServicerContext,
-    ) -> mt5_pb2.IntResponse:
+    ) -> gp.IntResponseMessage:
         """Get total count of historical orders in date range.
 
         Args:
@@ -1844,9 +1886,9 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
 
     def HistoryOrdersGet(
         self,
-        request: mt5_pb2.HistoryRequest,
+        request: gp.HistoryRequestMessage,
         context: grpc.ServicerContext,
-    ) -> mt5_pb2.DictList:
+    ) -> gp.DictListMessage:
         """Get historical orders with filters.
 
         Args:
@@ -1895,9 +1937,9 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
 
     def HistoryDealsTotal(
         self,
-        request: mt5_pb2.HistoryRequest,
+        request: gp.HistoryRequestMessage,
         context: grpc.ServicerContext,
-    ) -> mt5_pb2.IntResponse:
+    ) -> gp.IntResponseMessage:
         """Get total count of historical deals in date range.
 
         Args:
@@ -1926,9 +1968,9 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
 
     def HistoryDealsGet(
         self,
-        request: mt5_pb2.HistoryRequest,
+        request: gp.HistoryRequestMessage,
         context: grpc.ServicerContext,
-    ) -> mt5_pb2.DictList:
+    ) -> gp.DictListMessage:
         """Get historical deals with filters.
 
         Args:
@@ -1981,9 +2023,9 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
 
     def MarketBookAdd(
         self,
-        request: mt5_pb2.SymbolRequest,
+        request: gp.SymbolRequestMessage,
         context: grpc.ServicerContext,
-    ) -> mt5_pb2.BoolResponse:
+    ) -> gp.BoolResponseMessage:
         """Subscribe to market depth (DOM) for a symbol.
 
         Must be called before MarketBookGet to receive updates.
@@ -2005,9 +2047,9 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
 
     def MarketBookGet(
         self,
-        request: mt5_pb2.SymbolRequest,
+        request: gp.SymbolRequestMessage,
         context: grpc.ServicerContext,
-    ) -> mt5_pb2.DictList:
+    ) -> gp.DictListMessage:
         """Get market depth (DOM) data for a symbol.
 
         Requires prior MarketBookAdd call.
@@ -2033,9 +2075,9 @@ class MT5GRPCServicer(mt5_pb2_grpc.MT5ServiceServicer):
 
     def MarketBookRelease(
         self,
-        request: mt5_pb2.SymbolRequest,
+        request: gp.SymbolRequestMessage,
         context: grpc.ServicerContext,
-    ) -> mt5_pb2.BoolResponse:
+    ) -> gp.BoolResponseMessage:
         """Unsubscribe from market depth (DOM) for a symbol.
 
         Args:
@@ -2105,17 +2147,18 @@ def serve(
     """
     global _server
 
-    _server = grpc.server(futures.ThreadPoolExecutor(max_workers=max_workers))
-    mt5_pb2_grpc.add_MT5ServiceServicer_to_server(MT5GRPCServicer(), _server)
+    server = _grpc_runtime.server(futures.ThreadPoolExecutor(max_workers=max_workers))
+    add_MT5ServiceServicer_to_server(MT5GRPCServicer(), server)
     server_address = f"{host}:{port}"
-    _server.add_insecure_port(server_address)
+    server.add_insecure_port(server_address)
+    _server = server
 
     log.info("Starting MT5 gRPC server on %s", server_address)
     log.info("Python %s", sys.version)
 
-    _server.start()
+    server.start()
     log.info("Server started, waiting for connections...")
-    _server.wait_for_termination()
+    server.wait_for_termination()
 
 
 def main(argv: list[str] | None = None) -> int:

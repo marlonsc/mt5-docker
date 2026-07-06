@@ -32,15 +32,19 @@ generated credentials on screen. All timings and form values are env-overridable
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import re
-import subprocess
 import sys
 import time
 import uuid
 from pathlib import Path
-from typing import cast
+from subprocess import CompletedProcess, SubprocessError
+from typing import TYPE_CHECKING, cast
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 JsonScalar = str | int | float | bool | None
 JsonValue = JsonScalar | list["JsonValue"] | dict[str, "JsonValue"]
@@ -116,32 +120,77 @@ LOG_AUTHORIZED_RE = re.compile(r"'(\d+)': authorized on")
 TERMINAL_DAILY_LOG_RE = re.compile(r"\d{8}\.log")
 
 LogCursor = tuple[str, int]
+_ALLOWED_COMMANDS = frozenset({"wmctrl", "xclip", "xdotool"})
 
 
 def log(msg: str) -> None:
     """Emit a structured-ish line to stdout (captured by the container logs)."""
-    print(f"[open_demo_account] {msg}", flush=True)  # noqa: T201
+    sys.stdout.write(f"[open_demo_account] {msg}\n")
+    sys.stdout.flush()
 
 
-def _run(
+async def _run_process_async(
+    args: list[str],
+    *,
+    capture: bool,
+    input_text: str | None,
+    env: Mapping[str, str],
+) -> CompletedProcess[str]:
+    process = await asyncio.create_subprocess_exec(
+        *args,
+        stdin=asyncio.subprocess.PIPE if input_text is not None else None,
+        stdout=asyncio.subprocess.PIPE if capture else None,
+        stderr=asyncio.subprocess.PIPE if capture else None,
+        env=env,
+    )
+    stdout, stderr = await process.communicate(
+        input=input_text.encode() if input_text is not None else None,
+    )
+    if process.returncode is None:
+        msg = f"process did not report a return code: {args!r}"
+        raise RuntimeError(msg)
+    return CompletedProcess(
+        args=args,
+        returncode=process.returncode,
+        stdout=stdout.decode() if stdout else "",
+        stderr=stderr.decode() if stderr else "",
+    )
+
+
+def run_process(
+    args: list[str],
+    *,
+    capture: bool,
+    input_text: str | None,
+    env: Mapping[str, str],
+) -> CompletedProcess[str]:
+    """Run a validated local process and return a CompletedProcess-like result."""
+    return asyncio.run(
+        _run_process_async(args, capture=capture, input_text=input_text, env=env),
+    )
+
+
+def run_command(
     args: list[str],
     *,
     capture: bool = False,
     input_text: str | None = None,
-) -> subprocess.CompletedProcess[str]:
+) -> CompletedProcess[str]:
     """Run a local X11 tool, always forcing DISPLAY for the headless server."""
-    return subprocess.run(  # noqa: S603
+    if not args or args[0] not in _ALLOWED_COMMANDS:
+        msg = f"unsupported command for demo-account automation: {args!r}"
+        raise ValueError(msg)
+    return run_process(
         args,
-        check=False,
-        text=True,
-        input=input_text,
-        capture_output=capture,
+        capture=capture,
+        input_text=input_text,
         env={**os.environ, "DISPLAY": DISPLAY},
     )
 
 
-def _xdotool(*args: str, capture: bool = False) -> subprocess.CompletedProcess[str]:
-    return _run(["xdotool", *args], capture=capture)
+def run_xdotool(*args: str, capture: bool = False) -> CompletedProcess[str]:
+    """Run xdotool with the shared DISPLAY-safe command wrapper."""
+    return run_command(["xdotool", *args], capture=capture)
 
 
 def find_terminal_window() -> str | None:
@@ -150,7 +199,7 @@ def find_terminal_window() -> str | None:
     The wizard/menus open child windows that also match a bare 'MetaTrader'
     search, so prefer the window whose title actually contains 'MetaTrader 5'.
     """
-    res = _xdotool("search", "--name", "MetaTrader", capture=True)
+    res = run_xdotool("search", "--name", "MetaTrader", capture=True)
     ids = [w for w in res.stdout.split() if w.strip()]
     for wid in ids:
         if "MetaTrader 5" in window_title(wid):
@@ -159,12 +208,12 @@ def find_terminal_window() -> str | None:
         return ids[-1]
     # Virtual-desktop mode: the single managed X window is "<name> - Wine Desktop"
     # and the MT5 title/login live INSIDE it; drive keys/clicks into that window.
-    desk = _xdotool("search", "--name", "Wine Desktop", capture=True)
+    desk = run_xdotool("search", "--name", "Wine Desktop", capture=True)
     desk_ids = [w for w in desk.stdout.split() if w.strip()]
     return desk_ids[-1] if desk_ids else None
 
 
-def _dismiss_popups() -> None:
+def dismiss_popups() -> None:
     """Close MT5 first-run popups that steal keyboard focus (best-effort).
 
     On first launch MT5 raises a 'Welcome to LiveUpdate' window (and, after a
@@ -173,24 +222,24 @@ def _dismiss_popups() -> None:
     cause of an empty/black wizard. We close LiveUpdate windows via wmctrl and
     press Escape a couple of times to dismiss any open menu. Never fatal here.
     """
-    res = _run(["wmctrl", "-l"], capture=True)
+    res = run_command(["wmctrl", "-l"], capture=True)
     for line in res.stdout.splitlines():
         # `wmctrl -l` lines are "<id> <desktop> <host> <title>"; the LiveUpdate
         # marker only ever appears in the title, so match the whole line and
         # close by the window id (first field).
         if "LiveUpdate" in line:
             wid = line.split(None, 1)[0]
-            _run(["wmctrl", "-ic", wid])
+            run_command(["wmctrl", "-ic", wid])
             log(f"closed LiveUpdate popup: {wid}")
     main_wid = find_terminal_window()
     if main_wid is not None:
-        _xdotool("key", "--window", main_wid, "Escape")
-        _xdotool("key", "--window", main_wid, "Escape")
+        run_xdotool("key", "--window", main_wid, "Escape")
+        run_xdotool("key", "--window", main_wid, "Escape")
 
 
 def window_title(wid: str) -> str:
     """Return the X11 title of the given window id."""
-    return _xdotool("getwindowname", wid, capture=True).stdout.strip()
+    return run_xdotool("getwindowname", wid, capture=True).stdout.strip()
 
 
 def current_login() -> str | None:
@@ -202,7 +251,7 @@ def current_login() -> str | None:
     return match.group(1) if match else None
 
 
-def _latest_terminal_log_path() -> Path | None:
+def latest_terminal_log_path() -> Path | None:
     """Return the latest daily MT5 terminal log, ignoring MetaEditor logs."""
     try:
         logs = [
@@ -218,7 +267,7 @@ def _latest_terminal_log_path() -> Path | None:
     return max(logs, key=lambda path: path.stat().st_mtime)
 
 
-def _read_terminal_log(path: Path) -> str:
+def read_terminal_log(path: Path) -> str:
     """Read an MT5 terminal log, decoded as UTF-16."""
     try:
         raw = path.read_bytes()
@@ -239,26 +288,26 @@ def _read_terminal_log(path: Path) -> str:
     return text
 
 
-def _latest_terminal_log_text() -> str | None:
+def latest_terminal_log_text() -> str | None:
     """Return the latest MT5 terminal log text, decoded as UTF-16."""
-    path = _latest_terminal_log_path()
-    return None if path is None else _read_terminal_log(path)
+    path = latest_terminal_log_path()
+    return None if path is None else read_terminal_log(path)
 
 
-def _terminal_log_cursor() -> LogCursor | None:
+def terminal_log_cursor() -> LogCursor | None:
     """Capture the current terminal-log position before starting the wizard."""
-    path = _latest_terminal_log_path()
+    path = latest_terminal_log_path()
     if path is None:
         return None
-    return str(path), len(_read_terminal_log(path).splitlines())
+    return str(path), len(read_terminal_log(path).splitlines())
 
 
-def _terminal_log_lines(cursor: LogCursor | None = None) -> list[str]:
+def terminal_log_lines(cursor: LogCursor | None = None) -> list[str]:
     """Return terminal-log lines, optionally only lines written after a cursor."""
-    path = _latest_terminal_log_path()
+    path = latest_terminal_log_path()
     if path is None:
         return []
-    lines = _read_terminal_log(path).splitlines()
+    lines = read_terminal_log(path).splitlines()
     if cursor is None:
         return lines
     cursor_path, cursor_count = cursor
@@ -278,7 +327,7 @@ def login_from_terminal_log() -> str | None:
     the log is absent/unreadable -- never invents a value.
     """
     login: str | None = None
-    for line in _terminal_log_lines():
+    for line in terminal_log_lines():
         match = LOG_NEW_ACCOUNT_RE.search(line) or LOG_AUTHORIZED_RE.search(line)
         if match:
             login = match.group(1)
@@ -288,7 +337,7 @@ def login_from_terminal_log() -> str | None:
 def authorized_login_from_terminal_log(cursor: LogCursor | None = None) -> str | None:
     """Read the last account that the terminal actively authorized."""
     login: str | None = None
-    for line in _terminal_log_lines(cursor):
+    for line in terminal_log_lines(cursor):
         line_lower = line.lower()
         if "metatrader 5 x64 build" in line_lower and "started for" in line_lower:
             login = None
@@ -325,44 +374,48 @@ def screenshot() -> None:
     )
 
 
-def _activate(wid: str) -> None:
-    _xdotool("windowactivate", "--sync", wid)
+def activate_window(wid: str) -> None:
+    """Activate the MT5 terminal window before sending GUI input."""
+    run_xdotool("windowactivate", "--sync", wid)
     time.sleep(STEP_DELAY)
 
 
-def _key(*keys: str) -> None:
+def send_keys(*keys: str) -> None:
+    """Send keyboard shortcuts to the focused MT5 Wine window."""
     # Send to the FOCUSED window (no `--window`): Wine menu accelerators only
     # fire for real keyboard focus, so synthetic per-window key events are
     # silently ignored -- this was a root cause of the wizard never opening.
     for k in keys:
-        _xdotool("key", k)
+        run_xdotool("key", k)
         time.sleep(STEP_DELAY)
 
 
-def _type(text: str) -> None:
-    _xdotool("type", "--delay", "80", text)
+def type_text(text: str) -> None:
+    """Type text into the focused MT5 Wine window."""
+    run_xdotool("type", "--delay", "80", text)
     time.sleep(STEP_DELAY)
 
 
-def _click(xy: tuple[int, int]) -> None:
+def click_at(xy: tuple[int, int]) -> None:
+    """Move to a calibrated coordinate and click once."""
     x, y = xy
-    _xdotool("mousemove", str(x), str(y), "click", "1")
+    run_xdotool("mousemove", str(x), str(y), "click", "1")
     time.sleep(STEP_DELAY)
 
 
-def _clipboard() -> str | None:
+def clipboard_text() -> str | None:
     """Read the X clipboard via xclip; None if empty/unavailable."""
-    res = _run(["xclip", "-selection", "clipboard", "-o"], capture=True)
+    res = run_command(["xclip", "-selection", "clipboard", "-o"], capture=True)
     text = res.stdout.strip()
     return text or None
 
 
-def _clear_clipboard() -> None:
+def clear_clipboard() -> None:
     """Clear stale clipboard content before clicking MT5's copy link."""
-    _run(["xclip", "-selection", "clipboard"], input_text="")
+    run_command(["xclip", "-selection", "clipboard"], input_text="")
 
 
-def _valid_password(password: str) -> str | None:
+def valid_password(password: str) -> str | None:
     """Return a password only when it has the expected MT5 token shape."""
     if (
         "\n" in password
@@ -373,12 +426,12 @@ def _valid_password(password: str) -> str | None:
     return password
 
 
-def _password_from_registration_clipboard(text: str) -> str | None:
+def password_from_registration_clipboard(text: str) -> str | None:
     """Extract the master password from MT5's copied registration payload."""
     for line in text.splitlines():
         match = re.match(r"(?i)^\s*password\s*[:\t ]+\s*(\S+)\s*$", line)
         if match:
-            return _valid_password(match.group(1))
+            return valid_password(match.group(1))
     return None
 
 
@@ -389,13 +442,13 @@ def capture_password_from_final_page() -> str | None:
     clipboard" link. Use that exact UI surface, then parse the master password
     from the clipboard text. The raw clipboard is never logged.
     """
-    _clear_clipboard()
-    _click(COPY_INFO_XY)
+    clear_clipboard()
+    click_at(COPY_INFO_XY)
     time.sleep(STEP_DELAY)
-    clipboard = _clipboard()
+    clipboard = clipboard_text()
     if clipboard is None:
         return None
-    password = _password_from_registration_clipboard(clipboard)
+    password = password_from_registration_clipboard(clipboard)
     if password is None:
         log(
             "clipboard registration payload did not include a valid master "
@@ -450,48 +503,48 @@ def run_wizard(wid: str, email: str) -> str | None:
     capture is disabled or the field yielded nothing) so the caller can persist
     it for restart-survival.
     """
-    _activate(wid)
+    activate_window(wid)
     # File -> Open an Account. The keyboard accelerator does not open the menu
     # under Wine /desktop= in the real container, so use calibrated clicks.
-    _click(FILE_MENU_XY)
-    _click(OPEN_ACCOUNT_MENU_XY)
+    click_at(FILE_MENU_XY)
+    click_at(OPEN_ACCOUNT_MENU_XY)
     time.sleep(STEP_DELAY * 3)
     # Page 1: explicitly select the MetaQuotes Ltd. row. It is NOT always
     # pre-selected -- a fresh dialog can open with the company list unfocused,
     # leaving Next disabled, which misaligns the entire downstream walk (the
     # form keystrokes then land in the company search box). Click, then advance.
-    _click(COMPANY_ROW_XY)
-    _key("alt+n")
+    click_at(COMPANY_ROW_XY)
+    send_keys("alt+n")
     time.sleep(STEP_DELAY * 2)
     # Page 2: "Open a demo account" radio is preselected -> Next.
-    _key("alt+n")
+    send_keys("alt+n")
     time.sleep(STEP_DELAY * 2)
     # Page 3: registration form (click each field; Tab order is unreliable here).
-    _click(FIRST_NAME_XY)
-    _type(FIRST_NAME)
-    _click(LAST_NAME_XY)
-    _type(LAST_NAME)
+    click_at(FIRST_NAME_XY)
+    type_text(FIRST_NAME)
+    click_at(LAST_NAME_XY)
+    type_text(LAST_NAME)
     # Date of birth: click the YEAR segment and overwrite with a past year
     # (month/day default to today, a valid birthday); blank/future year is
     # rejected and keeps Next disabled.
-    _click(DOB_YEAR_XY)
-    _type(DOB_YEAR)
-    _click(EMAIL_XY)
-    _type(email)
+    click_at(DOB_YEAR_XY)
+    type_text(DOB_YEAR)
+    click_at(EMAIL_XY)
+    type_text(email)
     # Mobile phone: national number only (the +country code is a separate combo);
     # too many digits turns the field red and blocks Next.
-    _click(PHONE_XY)
-    _xdotool("key", "ctrl+a")
-    _type(PHONE)
+    click_at(PHONE_XY)
+    run_xdotool("key", "ctrl+a")
+    type_text(PHONE)
     # Tick the terms checkbox (Next stays disabled until it is checked).
-    _click(AGREE_XY)
+    click_at(AGREE_XY)
     # Create the account (contacts MetaQuotes). The result page then shows the
     # login + master/investor passwords. Capture the master password BEFORE
     # Finish dismisses the page -- this is the ONLY place it is ever shown.
-    _key("alt+n")
+    send_keys("alt+n")
     time.sleep(STEP_DELAY * 6)
     password = capture_password_from_final_page() if PERSIST_CREDS else None
-    _click(FINISH_XY)
+    click_at(FINISH_XY)
     time.sleep(STEP_DELAY * 3)
     return password
 
@@ -526,7 +579,7 @@ def write_result(login: str, email: str, *, persisted: bool = False) -> None:
     log(f"wrote {RESULT_FILE} (server_present={bool(SERVER)})")
 
 
-def _result_file_login() -> str | None:
+def result_file_login() -> str | None:
     """Read a confirmed login from auto_demo.json, or None when it is stale."""
     try:
         raw_payload = cast("JsonValue", json.loads(RESULT_FILE.read_text()))
@@ -553,7 +606,7 @@ def _result_file_login() -> str | None:
 
 def confirmed_result_login() -> str | None:
     """Return the marker login only when the current terminal confirms it."""
-    marker_login = _result_file_login()
+    marker_login = result_file_login()
     if marker_login is None:
         return None
 
@@ -572,7 +625,8 @@ def confirmed_result_login() -> str | None:
     return None
 
 
-def _wait_for_login(timeout: int) -> str | None:
+def wait_for_login(timeout: int) -> str | None:
+    """Poll the terminal window title until a login appears."""
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         login = current_login()
@@ -582,7 +636,7 @@ def _wait_for_login(timeout: int) -> str | None:
     return None
 
 
-def _wait_for_authorized_login(
+def wait_for_authorized_login(
     timeout: int,
     *,
     cursor: LogCursor | None = None,
@@ -607,20 +661,20 @@ def provision_new_demo(wid: str) -> int:
     """Drive the wizard and persist only a confirmed, restart-surviving account."""
     email = gen_email()
     log("driving Open-an-Account wizard (email generated)")
-    log_cursor = _terminal_log_cursor()
+    log_cursor = terminal_log_cursor()
     if log_cursor is None:
         log("ERROR: terminal log cursor unavailable; cannot prove current-run login")
         return 1
     try:
         password = run_wizard(wid, email)
-    except (subprocess.SubprocessError, OSError) as exc:
+    except (SubprocessError, OSError) as exc:
         log(f"ERROR: wizard automation failed: {exc}")
         screenshot()
         return 1
 
     # Prefer the X title (instant when present); in /desktop= mode it is empty, so
     # fall back to the terminal log's explicit "authorized" marker.
-    login = _wait_for_authorized_login(LOGIN_WAIT, cursor=log_cursor)
+    login = wait_for_authorized_login(LOGIN_WAIT, cursor=log_cursor)
     if login is None:
         log(
             "ERROR: wizard completed without a terminal-authorized login; "
@@ -677,7 +731,7 @@ def main() -> int:
     # Let the first-run LiveUpdate settle, then clear focus-stealing popups so the
     # wizard keystrokes reach the terminal (not the LiveUpdate/web-view window).
     time.sleep(STEP_DELAY * 4)
-    _dismiss_popups()
+    dismiss_popups()
     time.sleep(STEP_DELAY * 2)
     wid = find_terminal_window() or wid
 

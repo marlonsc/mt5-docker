@@ -31,11 +31,13 @@ from typing import TYPE_CHECKING
 import grpc
 import pytest
 from dotenv import load_dotenv
-from mt5linux import mt5_pb2, mt5_pb2_grpc
 
-from tests.constants import TestConstants as c  # noqa: N813
+from tests.constants import TestConstants
+from tests.generated_protocols import MT5ServiceStubProtocol, mt5_pb2, mt5_pb2_grpc
 
 __all__: list[str] = ["c"]
+
+c = TestConstants
 
 if TYPE_CHECKING:
     from collections.abc import Generator
@@ -44,13 +46,13 @@ if TYPE_CHECKING:
 # TIMING INSTRUMENTATION
 # =============================================================================
 
-_timing_start: float = 0.0
+_timing_start: list[float] = [0.0]
 _current_phase: str = ""
 
 
 def _log(message: str, *, phase: bool = False) -> None:
     """Log message to stderr (always visible in pytest)."""
-    elapsed = time.time() - _timing_start
+    elapsed = time.time() - _timing_start[0]
     if phase:
         sys.stderr.write(f"\n{'=' * 60}\n")
         sys.stderr.write(f"[{elapsed:5.1f}s] PHASE: {message}\n")
@@ -214,8 +216,7 @@ def wait_for_grpc_service(
 
 def start_test_container() -> None:
     """Start test container if not already running."""
-    global _timing_start  # noqa: PLW0603
-    _timing_start = time.time()
+    _timing_start[0] = time.time()
 
     _log("CONTAINER VALIDATION START", phase=True)
     _log(f"Container: {_config.container_name}")
@@ -233,14 +234,14 @@ def start_test_container() -> None:
         _log("PHASE 2: Fast-path gRPC check (2s timeout)", phase=True)
         if is_grpc_service_ready(timeout=c.FAST_PATH_TIMEOUT):
             _log("FAST-PATH SUCCESS: gRPC already ready!")
-            _log(f"Total validation time: {time.time() - _timing_start:.1f}s")
+            _log(f"Total validation time: {time.time() - _timing_start[0]:.1f}s")
             return
 
         # PHASE 3: Wait for gRPC with progressive backoff
         _log("PHASE 3: Wait for gRPC (service not immediately ready)", phase=True)
         if not wait_for_grpc_service():
             _log("WARNING: gRPC not ready after full wait")
-        _log(f"Total validation time: {time.time() - _timing_start:.1f}s")
+        _log(f"Total validation time: {time.time() - _timing_start[0]:.1f}s")
         return
 
     # Container not running - need to start it
@@ -352,46 +353,51 @@ def docker_container() -> None:
 
 
 @pytest.fixture(scope="session")
-def container_name(docker_container: None) -> str:  # noqa: ARG001
+def container_name(docker_container: None) -> str:
     """Provide test container name (requires container)."""
+    _ = docker_container
     return _config.container_name
 
 
 @pytest.fixture(scope="session")
-def grpc_port(docker_container: None) -> int:  # noqa: ARG001
+def grpc_port(docker_container: None) -> int:
     """Provide test gRPC port (requires container)."""
+    _ = docker_container
     return _config.grpc_port
 
 
 @pytest.fixture(scope="session")
-def health_port(docker_container: None) -> int:  # noqa: ARG001
+def health_port(docker_container: None) -> int:
     """Provide test health port (requires container)."""
+    _ = docker_container
     return _config.health_port
 
 
 @pytest.fixture(scope="session")
-def vnc_port(docker_container: None) -> int:  # noqa: ARG001
+def vnc_port(docker_container: None) -> int:
     """Provide test VNC port (requires container)."""
+    _ = docker_container
     return _config.vnc_port
 
 
 @pytest.fixture
 def grpc_channel(
-    docker_container: None,  # noqa: ARG001
+    docker_container: None,
 ) -> Generator[grpc.Channel]:
     """Provide gRPC channel to test container."""
+    _ = docker_container
     channel = grpc.insecure_channel(f"localhost:{_config.grpc_port}")
     yield channel
     channel.close()
 
 
 @pytest.fixture
-def mt5_stub(grpc_channel: grpc.Channel) -> mt5_pb2_grpc.MT5ServiceStub:
+def mt5_stub(grpc_channel: grpc.Channel) -> MT5ServiceStubProtocol:
     """Provide MT5Service stub via gRPC."""
     return mt5_pb2_grpc.MT5ServiceStub(grpc_channel)
 
 
 @pytest.fixture
-def mt5_service(grpc_channel: grpc.Channel) -> mt5_pb2_grpc.MT5ServiceStub:
+def mt5_service(grpc_channel: grpc.Channel) -> MT5ServiceStubProtocol:
     """Provide MT5Service stub via gRPC (alias for mt5_stub)."""
     return mt5_pb2_grpc.MT5ServiceStub(grpc_channel)

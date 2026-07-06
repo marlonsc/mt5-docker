@@ -2,11 +2,12 @@
 
 Tests cover the helper functions, log parsing, credential persistence and the
 main entrypoint of the headless demo-account provisioning script. GUI actions
-are mocked at the ``_xdotool`` / ``subprocess.run`` boundary.
+are mocked at the process-runner boundary.
 """
 
 from __future__ import annotations
 
+import importlib
 import json
 import os
 import subprocess
@@ -21,17 +22,20 @@ import pytest
 if TYPE_CHECKING:
     from collections.abc import Generator
 
+    from metatrader import open_demo_account as oda
+
 # The module under test lives inside the container path; add it to sys.path so
 # pytest can import the package directly from the workspace.
 _CONTAINER_DIR = Path(__file__).resolve().parents[2] / "docker" / "container"
 if str(_CONTAINER_DIR) not in sys.path:
     sys.path.insert(0, str(_CONTAINER_DIR))
 
-from metatrader import open_demo_account as oda  # noqa: E402
+if not TYPE_CHECKING:
+    oda = importlib.import_module("metatrader.open_demo_account")
 
 
 @pytest.fixture(autouse=True)
-def _reset_module_env(tmp_path: Path) -> Generator[None]:
+def reset_module_env(tmp_path: Path) -> Generator[None]:
     """Isolate module-level paths and env vars for each test."""
     original_config_dir = oda.CONFIG_DIR
     original_result_file = oda.RESULT_FILE
@@ -40,6 +44,7 @@ def _reset_module_env(tmp_path: Path) -> Generator[None]:
     original_startup_ini = oda.STARTUP_INI
     original_display = os.environ.get("DISPLAY")
     original_module_display = oda.DISPLAY
+    original_force_create = oda.FORCE_CREATE
 
     oda.CONFIG_DIR = tmp_path
     oda.RESULT_FILE = tmp_path / "auto_demo.json"
@@ -57,6 +62,7 @@ def _reset_module_env(tmp_path: Path) -> Generator[None]:
     oda.MT5_LOG_DIR = original_mt5_log_dir
     oda.STARTUP_INI = original_startup_ini
     oda.DISPLAY = original_module_display
+    oda.FORCE_CREATE = original_force_create
     if original_display is None:
         os.environ.pop("DISPLAY", None)
     else:
@@ -65,9 +71,9 @@ def _reset_module_env(tmp_path: Path) -> Generator[None]:
 
 @pytest.fixture
 def mock_subprocess_run() -> Generator[MagicMock]:
-    """Patch subprocess.run with a controllable mock."""
+    """Patch the process runner with a controllable mock."""
     with patch(
-        "metatrader.open_demo_account.subprocess.run",
+        "metatrader.open_demo_account.run_process",
         autospec=True,
     ) as mock:
         yield mock
@@ -87,20 +93,20 @@ class TestLog:
 
 
 class TestRun:
-    """Tests for _run and the thin wrappers around subprocess."""
+    """Tests for run_command and the thin wrappers around process execution."""
 
     def test_run_forces_display_env(self, mock_subprocess_run: MagicMock) -> None:
-        """_run injects DISPLAY into the subprocess environment."""
+        """run_command injects DISPLAY into the process environment."""
         mock_subprocess_run.return_value = MagicMock(spec=subprocess.CompletedProcess)
-        oda._run(["echo", "hi"])
+        oda.run_command(["xdotool", "key", "Escape"])
         _, kwargs = mock_subprocess_run.call_args
         assert kwargs["env"]["DISPLAY"] == ":99"
-        assert kwargs["check"] is False
+        assert kwargs["capture"] is False
 
     def test_xdotool_invokes_tool(self, mock_subprocess_run: MagicMock) -> None:
-        """_xdotool builds an xdotool argument list."""
+        """run_xdotool builds an xdotool argument list."""
         mock_subprocess_run.return_value = MagicMock(spec=subprocess.CompletedProcess)
-        oda._xdotool("search", "foo")
+        oda.run_xdotool("search", "foo")
         args, _ = mock_subprocess_run.call_args
         assert args[0] == ["xdotool", "search", "foo"]
 
@@ -189,7 +195,7 @@ class TestWindowHelpers:
             MagicMock(stdout=""),  # xdotool key Escape
             MagicMock(stdout=""),  # xdotool key Escape
         ]
-        oda._dismiss_popups()
+        oda.dismiss_popups()
         calls = [c[0][0] for c in mock_subprocess_run.call_args_list]
         assert ["wmctrl", "-ic", "0x10"] in calls
         assert ["xdotool", "key", "--window", "0x10", "Escape"] in calls
@@ -222,30 +228,30 @@ class TestTerminalLog:
         old_log.touch()
         time.sleep(0.01)
         new_log.touch()
-        assert oda._latest_terminal_log_path() == new_log
+        assert oda.latest_terminal_log_path() == new_log
 
     def test_latest_terminal_log_path_empty(self) -> None:
         """_latest_terminal_log_path returns None when no logs exist."""
-        assert oda._latest_terminal_log_path() is None
+        assert oda.latest_terminal_log_path() is None
 
     def test_read_terminal_log_utf16(self, log_dir: Path) -> None:
         """_read_terminal_log decodes a UTF-16 log."""
         log_file = log_dir / "20250101.log"
         self._write_log(log_file, "hello world")
-        assert oda._read_terminal_log(log_file) == "hello world"
+        assert oda.read_terminal_log(log_file) == "hello world"
 
     def test_read_terminal_log_bad_encoding_raises(self, log_dir: Path) -> None:
         """_read_terminal_log raises RuntimeError for non-UTF-16 logs."""
         log_file = log_dir / "20250101.log"
         log_file.write_bytes(b"not utf16")
         with pytest.raises(RuntimeError, match="not UTF-16"):
-            oda._read_terminal_log(log_file)
+            oda.read_terminal_log(log_file)
 
     def test_terminal_log_cursor(self, log_dir: Path) -> None:
         """_terminal_log_cursor captures path and line count."""
         log_file = log_dir / "20250101.log"
         self._write_log(log_file, "line1\nline2\n")
-        cursor = oda._terminal_log_cursor()
+        cursor = oda.terminal_log_cursor()
         assert cursor is not None
         assert cursor[0] == str(log_file)
         assert cursor[1] == TestTerminalLog.EXPECTED_TWO_LINES
@@ -254,9 +260,9 @@ class TestTerminalLog:
         """_terminal_log_lines returns only new lines after a cursor."""
         log_file = log_dir / "20250101.log"
         self._write_log(log_file, "line1\nline2\n")
-        cursor = oda._terminal_log_cursor()
+        cursor = oda.terminal_log_cursor()
         self._write_log(log_file, "line1\nline2\nline3\n")
-        assert oda._terminal_log_lines(cursor) == ["line3"]
+        assert oda.terminal_log_lines(cursor) == ["line3"]
 
     def test_login_from_terminal_log(self, log_dir: Path) -> None:
         """login_from_terminal_log extracts the last login marker."""
@@ -286,36 +292,36 @@ class TestClipboardAndPassword:
 
     def test_valid_password_rejects_bad_values(self) -> None:
         """_valid_password enforces length and whitespace constraints."""
-        assert oda._valid_password("short") is None
-        assert oda._valid_password("has space") is None
-        assert oda._valid_password("has\nnewline") is None
-        assert oda._valid_password("validpass123") == "validpass123"
+        assert oda.valid_password("short") is None
+        assert oda.valid_password("has space") is None
+        assert oda.valid_password("has\nnewline") is None
+        assert oda.valid_password("validpass123") == "validpass123"
 
     def test_password_from_registration_clipboard(self) -> None:
         """_password_from_registration_clipboard parses the master password."""
         text = "Login: 123456\nPassword: secret123\nInvestor: other"
-        assert oda._password_from_registration_clipboard(text) == "secret123"
+        assert oda.password_from_registration_clipboard(text) == "secret123"
 
     def test_password_from_registration_clipboard_invalid(self) -> None:
         """_password_from_registration_clipboard returns None when no valid token."""
-        assert oda._password_from_registration_clipboard("no password here") is None
+        assert oda.password_from_registration_clipboard("no password here") is None
 
     def test_clipboard_reads_xclip(self, mock_subprocess_run: MagicMock) -> None:
         """_clipboard returns stripped stdout from xclip."""
         mock_subprocess_run.return_value.stdout = "  payload  \n"
-        assert oda._clipboard() == "payload"
+        assert oda.clipboard_text() == "payload"
 
     def test_clipboard_empty_returns_none(self, mock_subprocess_run: MagicMock) -> None:
         """_clipboard returns None for empty output."""
         mock_subprocess_run.return_value.stdout = "   \n"
-        assert oda._clipboard() is None
+        assert oda.clipboard_text() is None
 
     def test_clear_clipboard(self, mock_subprocess_run: MagicMock) -> None:
         """_clear_clipboard pipes an empty string to xclip."""
-        oda._clear_clipboard()
+        oda.clear_clipboard()
         args, kwargs = mock_subprocess_run.call_args
         assert args[0][:3] == ["xclip", "-selection", "clipboard"]
-        assert kwargs["input"] == ""
+        assert kwargs["input_text"] == ""
 
 
 class TestCredentials:
@@ -355,20 +361,20 @@ class TestCredentials:
         oda.RESULT_FILE.write_text(
             json.dumps({"login": "123456", "login_confirmed": True})
         )
-        assert oda._result_file_login() == "123456"
+        assert oda.result_file_login() == "123456"
 
     def test_result_file_login_unconfirmed(self) -> None:
         """_result_file_login returns None for unconfirmed entries."""
         oda.RESULT_FILE.write_text(
             json.dumps({"login": "123456", "login_confirmed": False})
         )
-        assert oda._result_file_login() is None
+        assert oda.result_file_login() is None
 
     def test_result_file_login_bad_json(self) -> None:
         """_result_file_login raises RuntimeError for invalid JSON."""
         oda.RESULT_FILE.write_text("not json")
         with pytest.raises(RuntimeError, match="not valid JSON"):
-            oda._result_file_login()
+            oda.result_file_login()
 
 
 class TestMainFlow:
@@ -400,7 +406,7 @@ class TestMainFlow:
         with (
             patch.object(oda, "wait_for_terminal", return_value="0x1"),
             patch.object(oda, "provision_new_demo", return_value=0),
-            patch.object(oda, "_dismiss_popups"),
+            patch.object(oda, "dismiss_popups"),
             patch.object(oda, "find_terminal_window", return_value="0x1"),
         ):
             assert oda.main() == 0
@@ -428,7 +434,7 @@ class TestProvisionNewDemo:
             patch.object(oda, "run_wizard", return_value="secret"),
             patch.object(
                 oda,
-                "_wait_for_authorized_login",
+                "wait_for_authorized_login",
                 return_value="123456",
             ),
             patch.object(oda, "persist_credentials") as persist_mock,
@@ -447,7 +453,7 @@ class TestProvisionNewDemo:
             patch.object(oda, "run_wizard", return_value=None),
             patch.object(
                 oda,
-                "_wait_for_authorized_login",
+                "wait_for_authorized_login",
                 return_value="123456",
             ),
             patch.object(oda, "screenshot"),
@@ -457,7 +463,7 @@ class TestProvisionNewDemo:
 
     def test_provision_new_demo_no_log_cursor(self) -> None:
         """provision_new_demo fails when terminal log cursor is unavailable."""
-        with patch.object(oda, "_terminal_log_cursor", return_value=None):
+        with patch.object(oda, "terminal_log_cursor", return_value=None):
             assert oda.provision_new_demo("0x1") == 1
 
 
@@ -473,28 +479,28 @@ class TestWizardHelpers:
     def test_activate(self, mock_subprocess_run: MagicMock) -> None:
         """_activate calls xdotool windowactivate and sleeps."""
         with patch.object(oda.time, "sleep"):
-            oda._activate("0x1")
+            oda.activate_window("0x1")
         args, _ = mock_subprocess_run.call_args
         assert args[0] == ["xdotool", "windowactivate", "--sync", "0x1"]
 
     def test_key(self, mock_subprocess_run: MagicMock) -> None:
         """_key sends keys to the focused window."""
         with patch.object(oda.time, "sleep"):
-            oda._key("Return")
+            oda.send_keys("Return")
         args, _ = mock_subprocess_run.call_args
         assert args[0] == ["xdotool", "key", "Return"]
 
     def test_type(self, mock_subprocess_run: MagicMock) -> None:
         """_type types text with a delay."""
         with patch.object(oda.time, "sleep"):
-            oda._type("hello")
+            oda.type_text("hello")
         args, _ = mock_subprocess_run.call_args
         assert args[0] == ["xdotool", "type", "--delay", "80", "hello"]
 
     def test_click(self, mock_subprocess_run: MagicMock) -> None:
         """_click moves the mouse and clicks at the given coordinate."""
         with patch.object(oda.time, "sleep"):
-            oda._click((100, 200))
+            oda.click_at((100, 200))
         args, _ = mock_subprocess_run.call_args
         assert args[0] == ["xdotool", "mousemove", "100", "200", "click", "1"]
 
@@ -605,7 +611,7 @@ class TestWaitForLogin:
             patch.object(oda, "current_login", side_effect=[None, "123456"]),
             patch.object(oda.time, "sleep"),
         ):
-            assert oda._wait_for_login(10) == "123456"
+            assert oda.wait_for_login(10) == "123456"
 
     def test_wait_for_login_timeout(self) -> None:
         """_wait_for_login returns None on timeout."""
@@ -613,11 +619,11 @@ class TestWaitForLogin:
             patch.object(oda, "current_login", return_value=None),
             patch.object(oda.time, "sleep"),
         ):
-            assert oda._wait_for_login(0) is None
+            assert oda.wait_for_login(0) is None
 
     def test_wait_for_authorized_login_no_cursor(self) -> None:
         """_wait_for_authorized_login errors when cursor is missing."""
-        assert oda._wait_for_authorized_login(10, cursor=None) is None
+        assert oda.wait_for_authorized_login(10, cursor=None) is None
 
     def test_wait_for_authorized_login_finds(self) -> None:
         """_wait_for_authorized_login returns authorized login."""
@@ -629,4 +635,4 @@ class TestWaitForLogin:
             ),
             patch.object(oda.time, "sleep"),
         ):
-            assert oda._wait_for_authorized_login(10, cursor=("path", 0)) == "123456"
+            assert oda.wait_for_authorized_login(10, cursor=("path", 0)) == "123456"

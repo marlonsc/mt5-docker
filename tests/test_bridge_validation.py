@@ -11,13 +11,22 @@ from __future__ import annotations
 
 import subprocess
 import time
-from typing import Any
+from typing import Final, TypedDict
 
 import grpc
 import pytest
-from mt5linux import mt5_pb2, mt5_pb2_grpc
 
 from tests.conftest import c
+from tests.generated_protocols import MT5ServiceStubProtocol, mt5_pb2, mt5_pb2_grpc
+
+
+class OfficialFunction(TypedDict):
+    """Expected public MetaTrader5 Python API function metadata."""
+
+    params: list[str]
+    optional: list[str]
+    returns: str
+
 
 # =============================================================================
 # OFFICIAL MT5 API FUNCTION SIGNATURES
@@ -25,7 +34,7 @@ from tests.conftest import c
 # =============================================================================
 
 # Official MetaTrader5 Python module functions and their parameter signatures
-OFFICIAL_MT5_FUNCTIONS = {
+OFFICIAL_MT5_FUNCTIONS: Final[dict[str, OfficialFunction]] = {
     # Connection functions
     "initialize": {
         "params": ["path", "login", "password", "server", "timeout", "portable"],
@@ -306,7 +315,7 @@ def docker_exec(
 
 def get_grpc_stub(
     port: int = c.TEST_GRPC_PORT,
-) -> tuple[grpc.Channel, mt5_pb2_grpc.MT5ServiceStub]:
+) -> tuple[grpc.Channel, MT5ServiceStubProtocol]:
     """Get gRPC channel and stub to bridge server."""
     channel = grpc.insecure_channel(f"localhost:{port}")
     stub = mt5_pb2_grpc.MT5ServiceStub(channel)
@@ -323,7 +332,7 @@ class TestBridgeFunctionSignatures:
 
     def test_health_check_function(
         self,
-        mt5_stub: mt5_pb2_grpc.MT5ServiceStub,
+        mt5_stub: MT5ServiceStubProtocol,
     ) -> None:
         """Verify HealthCheck is available (bridge-specific)."""
         result = mt5_stub.HealthCheck(mt5_pb2.Empty())
@@ -333,7 +342,7 @@ class TestBridgeFunctionSignatures:
 
     def test_get_constants_function(
         self,
-        mt5_stub: mt5_pb2_grpc.MT5ServiceStub,
+        mt5_stub: MT5ServiceStubProtocol,
     ) -> None:
         """Verify GetConstants is available (bridge-specific)."""
         result = mt5_stub.GetConstants(mt5_pb2.Empty())
@@ -345,7 +354,7 @@ class TestBridgeFunctionSignatures:
 
     def test_initialize_function(
         self,
-        mt5_stub: mt5_pb2_grpc.MT5ServiceStub,
+        mt5_stub: MT5ServiceStubProtocol,
     ) -> None:
         """Verify Initialize is available."""
         result = mt5_stub.Initialize(mt5_pb2.InitRequest())
@@ -354,7 +363,7 @@ class TestBridgeFunctionSignatures:
 
     def test_version_function(
         self,
-        mt5_stub: mt5_pb2_grpc.MT5ServiceStub,
+        mt5_stub: MT5ServiceStubProtocol,
     ) -> None:
         """Verify Version is available."""
         result = mt5_stub.Version(mt5_pb2.Empty())
@@ -362,7 +371,7 @@ class TestBridgeFunctionSignatures:
 
     def test_last_error_function(
         self,
-        mt5_stub: mt5_pb2_grpc.MT5ServiceStub,
+        mt5_stub: MT5ServiceStubProtocol,
     ) -> None:
         """Verify LastError is available."""
         result = mt5_stub.LastError(mt5_pb2.Empty())
@@ -377,13 +386,13 @@ class TestBridgeConstants:
     @pytest.fixture
     def bridge_constants(
         self,
-        mt5_stub: mt5_pb2_grpc.MT5ServiceStub,
-    ) -> dict[str, Any]:
+        mt5_stub: MT5ServiceStubProtocol,
+    ) -> dict[str, int]:
         """Get constants from bridge."""
         response = mt5_stub.GetConstants(mt5_pb2.Empty())
         return dict(response.values)
 
-    def test_constants_not_empty(self, bridge_constants: dict[str, Any]) -> None:
+    def test_constants_not_empty(self, bridge_constants: dict[str, int]) -> None:
         """Verify constants dict is not empty."""
         assert len(bridge_constants) > c.MIN_LOGIN_VALUE, "Constants dict is empty"
 
@@ -393,7 +402,7 @@ class TestBridgeConstants:
     )
     def test_category_constants_present(
         self,
-        bridge_constants: dict[str, Any],
+        bridge_constants: dict[str, int],
         category: str,
         constants: list[str],
     ) -> None:
@@ -403,7 +412,7 @@ class TestBridgeConstants:
 
     def test_timeframe_values_are_integers(
         self,
-        bridge_constants: dict[str, Any],
+        bridge_constants: dict[str, int],
     ) -> None:
         """Verify timeframe constants are integers."""
         for tf in OFFICIAL_MT5_CONSTANTS["timeframes"]:
@@ -414,7 +423,7 @@ class TestBridgeConstants:
 
     def test_order_type_values_are_integers(
         self,
-        bridge_constants: dict[str, Any],
+        bridge_constants: dict[str, int],
     ) -> None:
         """Verify order type constants are integers."""
         for ot in OFFICIAL_MT5_CONSTANTS["order_types"]:
@@ -468,10 +477,10 @@ class TestServiceRecovery:
             assert health is not None, f"Failed on iteration {i}"
             channel.close()
 
-    def test_restart_token_creation(self, container_name: str) -> None:
-        """Test that restart token mechanism works (non-destructive)."""
+    def test_restart_marker_creation(self, container_name: str) -> None:
+        """Test that restart marker mechanism works (non-destructive)."""
         # Test using a different file to avoid triggering actual restart
-        test_token = f"{c.TMP_PATH}/{c.RESTART_TEST_TOKEN_FILE}"
+        test_token = f"{c.TMP_PATH}/{c.RESTART_MARKER_FILE}"
         result = docker_exec(
             container_name,
             ["touch", test_token],
@@ -601,7 +610,7 @@ class TestBridgeAPICompleteness:
 
     def test_version_returns_response(
         self,
-        mt5_stub: mt5_pb2_grpc.MT5ServiceStub,
+        mt5_stub: MT5ServiceStubProtocol,
     ) -> None:
         """Test Version() returns expected type."""
         result = mt5_stub.Version(mt5_pb2.Empty())
@@ -609,7 +618,7 @@ class TestBridgeAPICompleteness:
 
     def test_last_error_returns_response(
         self,
-        mt5_stub: mt5_pb2_grpc.MT5ServiceStub,
+        mt5_stub: MT5ServiceStubProtocol,
     ) -> None:
         """Test LastError() returns expected type."""
         result = mt5_stub.LastError(mt5_pb2.Empty())
@@ -619,7 +628,7 @@ class TestBridgeAPICompleteness:
 
     def test_symbols_total_returns_response(
         self,
-        mt5_stub: mt5_pb2_grpc.MT5ServiceStub,
+        mt5_stub: MT5ServiceStubProtocol,
     ) -> None:
         """Test SymbolsTotal() returns response."""
         result = mt5_stub.SymbolsTotal(mt5_pb2.Empty())
@@ -628,7 +637,7 @@ class TestBridgeAPICompleteness:
 
     def test_positions_total_returns_response(
         self,
-        mt5_stub: mt5_pb2_grpc.MT5ServiceStub,
+        mt5_stub: MT5ServiceStubProtocol,
     ) -> None:
         """Test PositionsTotal() returns response."""
         result = mt5_stub.PositionsTotal(mt5_pb2.Empty())
@@ -637,7 +646,7 @@ class TestBridgeAPICompleteness:
 
     def test_orders_total_returns_response(
         self,
-        mt5_stub: mt5_pb2_grpc.MT5ServiceStub,
+        mt5_stub: MT5ServiceStubProtocol,
     ) -> None:
         """Test OrdersTotal() returns response."""
         result = mt5_stub.OrdersTotal(mt5_pb2.Empty())
@@ -659,7 +668,7 @@ class TestFailureSimulation:
 
     def test_bridge_recovers_from_invalid_symbol(
         self,
-        mt5_stub: mt5_pb2_grpc.MT5ServiceStub,
+        mt5_stub: MT5ServiceStubProtocol,
     ) -> None:
         """Test bridge handles invalid symbol gracefully."""
         # Try to get info for a non-existent symbol
@@ -671,7 +680,7 @@ class TestFailureSimulation:
 
     def test_bridge_handles_empty_positions(
         self,
-        mt5_stub: mt5_pb2_grpc.MT5ServiceStub,
+        mt5_stub: MT5ServiceStubProtocol,
     ) -> None:
         """Test bridge handles empty positions list."""
         result = mt5_stub.PositionsGet(mt5_pb2.PositionsRequest())
@@ -680,7 +689,7 @@ class TestFailureSimulation:
 
     def test_bridge_handles_empty_orders(
         self,
-        mt5_stub: mt5_pb2_grpc.MT5ServiceStub,
+        mt5_stub: MT5ServiceStubProtocol,
     ) -> None:
         """Test bridge handles empty orders list."""
         result = mt5_stub.OrdersGet(mt5_pb2.OrdersRequest())
@@ -689,7 +698,7 @@ class TestFailureSimulation:
 
     def test_health_check_after_many_operations(
         self,
-        mt5_stub: mt5_pb2_grpc.MT5ServiceStub,
+        mt5_stub: MT5ServiceStubProtocol,
     ) -> None:
         """Test health check still works after many operations."""
         # Perform many operations

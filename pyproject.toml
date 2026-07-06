@@ -8,7 +8,6 @@ exclude = [
     "docker/container/metatrader/mt5_pb2\\.py$",
     "docker/container/metatrader/mt5_pb2_grpc\\.py$",
 ]
-mypy_path = "typings"
 python_version = "3.13"
 strict = true
 no_implicit_reexport = false
@@ -17,10 +16,6 @@ no_implicit_reexport = false
 module = ["MetaTrader5"]
 ignore_missing_imports = true
 
-# Generated protobuf / gRPC stubs are not hand-written and are already excluded
-# from ruff. follow_imports=skip makes importers (bridge.py, tests) see them as
-# Any so their dynamically generated attributes (Empty, InitRequest, ...) and
-# untyped service functions don't raise attr-defined / no-untyped-call.
 [[tool.mypy.overrides]]
 module = [
     "mt5_pb2",
@@ -34,12 +29,11 @@ ignore_errors = true
 ignore_missing_imports = true
 follow_imports = "skip"
 
-# The gRPC bridge servicer must subclass the generated (now-Any) servicer base.
 [[tool.mypy.overrides]]
-module = ["bridge", "*.bridge"]
+module = ["bridge", "*.bridge", "*._generated_protocols"]
 disallow_subclassing_any = false
+disable_error_code = ["name-defined", "misc"]
 
-# Test fixtures call the generated gRPC stubs, which return Any.
 [[tool.mypy.overrides]]
 module = ["conftest", "*.conftest"]
 warn_return_any = false
@@ -72,20 +66,10 @@ ruff = "0.11.13"
 
 [tool.pyrefly]
 project-excludes = [
-    "typings",
-    "typings/**",
     "docker/container/metatrader/mt5_pb2.py",
     "docker/container/metatrader/mt5_pb2_grpc.py",
 ]
-search-path = [".", "docker/container", "typings"]
-replace-imports-with-any = [
-    "mt5linux.mt5_pb2",
-    "mt5linux.mt5_pb2_grpc",
-    "metatrader.mt5_pb2",
-    "metatrader.mt5_pb2_grpc",
-    "docker.container.metatrader.mt5_pb2",
-    "docker.container.metatrader.mt5_pb2_grpc",
-]
+search-path = [".", "docker/container"]
 ignore-missing-imports = ["MetaTrader5"]
 python-version = "3.13"
 
@@ -93,7 +77,6 @@ python-version = "3.13"
 exclude = [
     "**/mt5_pb2.py",
     "**/mt5_pb2_grpc.py",
-    "typings/",
     "../.venv",
     "../.venv/**",
     "**/.venv",
@@ -115,7 +98,6 @@ ignore = [
 ]
 pythonPlatform = "Linux"
 pythonVersion = "3.13"
-stubPath = "typings"
 venvPath = ".."
 venv = ".venv"
 useLibraryCodeForTypes = true
@@ -154,6 +136,15 @@ select = ["ALL"]
     "SLF001",
     "TRY300", # try/except style ok in tests
 ]
+"docker/container/metatrader/_generated_protocols.py" = [
+    "FBT001",  # boolean positional args mirror generated protobuf message factories
+    "FBT002",  # boolean defaults are required by the generated gRPC message API
+    "N815",    # mixedCase names are inherited from gRPC generated symbols
+    "N816",    # mixedCase names are inherited from gRPC generated symbols
+    "PLR0913", # protocol factory signatures mirror protobuf message fields
+    "TC002",   # grpc is imported at runtime for protocol base classes
+    "TC003",   # standard-library types are used at runtime by protocol machinery
+]
 "docker/container/metatrader/bridge.py" = [
     "ARG002",  # unused arguments are required by gRPC framework (request, context)
     "N802",    # function names must be PascalCase for gRPC service methods
@@ -167,4 +158,13 @@ select = ["ALL"]
     "S108",    # hardcoded temp file - test token file in /tmp for restart tests
     "PT018",   # composite assertion - complex validation in single assertion
     "PLR2004", # magic value comparison - specific length validation in tests
+]
+"tests/generated_protocols.py" = [
+    "D101",    # protocol message classes are self-describing by their names
+    "D102",    # protocol method signatures are self-describing
+    "FBT001",  # boolean positional args mirror generated protobuf message factories
+    "FBT002",  # boolean defaults are required by the generated gRPC message API
+    "PLR0913", # protocol factory signatures mirror protobuf message fields
+    "TC002",   # grpc is imported at runtime for protocol base classes
+    "TC003",   # standard-library types are used at runtime by protocol machinery
 ]

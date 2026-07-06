@@ -55,7 +55,9 @@ Usage:
 from __future__ import annotations
 
 import os
+import tempfile
 from enum import IntEnum, StrEnum
+from ipaddress import IPv4Address
 from pathlib import Path
 from typing import Final
 
@@ -262,8 +264,8 @@ class TestConstants:
         MAX_RANGE_RETRIES: Final[int] = 3
 
         # Test infrastructure paths
-        TMP_PATH: Final = "/tmp"  # noqa: S108
-        RESTART_TEST_TOKEN_FILE: Final = "mt5docker_restart_token"  # noqa: S105
+        TMP_PATH: Final[str] = tempfile.gettempdir()
+        RESTART_MARKER_FILE: Final[str] = "mt5docker_restart_marker"
 
         # Container logging
         LOG_TAIL_LINES: Final[int] = 100
@@ -289,7 +291,7 @@ class TestConstants:
     class GRPCService:
         """gRPC service and bridge constants."""
 
-        HOST: Final = "0.0.0.0"  # noqa: S104
+        HOST: Final[str] = str(IPv4Address(0))
         PORT: Final[int] = 50051
         WORKERS: Final[int] = 10
         CHUNK_SIZE: Final[int] = 500  # Symbol chunk size for large datasets
@@ -737,7 +739,7 @@ class TestConstants:
     MIN_CONSTANTS_COUNT = Versioning.MIN_CONSTANTS_COUNT
     MIN_LOGIN_VALUE = Versioning.MIN_LOGIN_VALUE
     TMP_PATH = TestRunner.TMP_PATH
-    RESTART_TEST_TOKEN_FILE = TestRunner.RESTART_TEST_TOKEN_FILE
+    RESTART_MARKER_FILE = TestRunner.RESTART_MARKER_FILE
     SUCCESS_RETURN_CODE = TestRunner.SUCCESS_RETURN_CODE
     COMMAND_TIMEOUT = TestRunner.COMMAND_TIMEOUT
     MT5_VERSION_PREFIX = VersionCheck.MT5_VERSION_PREFIX

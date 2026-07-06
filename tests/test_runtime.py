@@ -25,9 +25,9 @@ import subprocess
 
 import grpc
 import pytest
-from mt5linux import mt5_pb2, mt5_pb2_grpc
 
 from tests.conftest import c
+from tests.generated_protocols import MT5ServiceStubProtocol, mt5_pb2
 
 # =============================================================================
 # HELPER FUNCTIONS
@@ -192,14 +192,14 @@ class TestGRPCService:
 
     def test_grpc_stub_created(
         self,
-        mt5_stub: mt5_pb2_grpc.MT5ServiceStub,
+        mt5_stub: MT5ServiceStubProtocol,
     ) -> None:
         """Verify gRPC stub can be created."""
         assert mt5_stub is not None
 
     def test_grpc_health_check_returns_valid_response(
         self,
-        mt5_stub: mt5_pb2_grpc.MT5ServiceStub,
+        mt5_stub: MT5ServiceStubProtocol,
     ) -> None:
         """Verify gRPC health check returns valid status structure.
 
@@ -312,14 +312,14 @@ class TestMT5Integration:
 
     def test_mt5_stub_accessible(
         self,
-        mt5_stub: mt5_pb2_grpc.MT5ServiceStub,
+        mt5_stub: MT5ServiceStubProtocol,
     ) -> None:
         """Verify MT5 stub is accessible via gRPC."""
         assert mt5_stub is not None
 
     def test_mt5_version_callable(
         self,
-        mt5_stub: mt5_pb2_grpc.MT5ServiceStub,
+        mt5_stub: MT5ServiceStubProtocol,
     ) -> None:
         """Verify MT5 Version() is callable."""
         response = mt5_stub.Version(mt5_pb2.Empty())
@@ -328,7 +328,7 @@ class TestMT5Integration:
 
     def test_mt5_last_error_callable(
         self,
-        mt5_stub: mt5_pb2_grpc.MT5ServiceStub,
+        mt5_stub: MT5ServiceStubProtocol,
     ) -> None:
         """Verify MT5 LastError() is callable."""
         response = mt5_stub.LastError(mt5_pb2.Empty())
@@ -336,7 +336,7 @@ class TestMT5Integration:
 
     def test_mt5_constants_accessible(
         self,
-        mt5_stub: mt5_pb2_grpc.MT5ServiceStub,
+        mt5_stub: MT5ServiceStubProtocol,
     ) -> None:
         """Verify MT5 trading constants are accessible via GetConstants()."""
         response = mt5_stub.GetConstants(mt5_pb2.Empty())
@@ -364,7 +364,7 @@ class TestMT5AutoLogin:
 
     def test_mt5_initialize_succeeds(
         self,
-        mt5_stub: mt5_pb2_grpc.MT5ServiceStub,
+        mt5_stub: MT5ServiceStubProtocol,
     ) -> None:
         """Verify MT5 Initialize() succeeds."""
         response = mt5_stub.Initialize(mt5_pb2.InitRequest())
@@ -372,7 +372,7 @@ class TestMT5AutoLogin:
 
     def test_mt5_account_info_available(
         self,
-        mt5_stub: mt5_pb2_grpc.MT5ServiceStub,
+        mt5_stub: MT5ServiceStubProtocol,
     ) -> None:
         """Verify account info is available after login."""
         mt5_stub.Initialize(mt5_pb2.InitRequest())
@@ -389,7 +389,7 @@ class TestMT5AutoLogin:
 
     def test_mt5_terminal_connected(
         self,
-        mt5_stub: mt5_pb2_grpc.MT5ServiceStub,
+        mt5_stub: MT5ServiceStubProtocol,
     ) -> None:
         """Verify terminal is connected to server."""
         mt5_stub.Initialize(mt5_pb2.InitRequest())

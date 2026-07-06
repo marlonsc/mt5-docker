@@ -37,7 +37,7 @@ class OpenDemoAccountModule(Protocol):
     def login_from_terminal_log(self) -> str | None:
         """Read the last MT5 login from terminal logs."""
 
-    def _terminal_log_cursor(self) -> tuple[str, int] | None:
+    def terminal_log_cursor(self) -> tuple[str, int] | None:
         """Capture the current terminal-log cursor."""
 
     def authorized_login_from_terminal_log(
@@ -650,7 +650,7 @@ class TestStartupScriptContent:
         assert '"MT5_DEMO_FORCE_CREATE"' in content
         assert "guard.replace" not in content
         assert "startup_ini.replace" not in content
-        assert "except subprocess.TimeoutExpired" in content
+        assert "except TimeoutError" in content
         assert "Linux wizard launcher timed out" in content
         assert "_remove_wizard_run_files" in content
         assert "cleanup failed" in content
@@ -716,7 +716,7 @@ class TestStartupScriptContent:
         log_file.write_bytes(old_lines.encode("utf-16"))
         open_demo_account.MT5_LOG_DIR = logdir
 
-        cursor = open_demo_account._terminal_log_cursor()
+        cursor = open_demo_account.terminal_log_cursor()
         assert open_demo_account.authorized_login_from_terminal_log(cursor) is None
 
         new_lines = (
@@ -778,7 +778,7 @@ class TestStartupScriptContent:
         content = script.read_text()
         assert "write_result(None" not in content
         assert "not writing auto_demo.json" in content
-        assert "def _wait_for_authorized_login" in content
+        assert "def wait_for_authorized_login" in content
         assert "cannot verify current-run authorization" in content
         assert "without terminal log cursor" in content
         assert (
@@ -806,7 +806,7 @@ class TestStartupScriptContent:
         assert "server={SERVER}" not in wizard_content
         assert "final_page.xwd" not in wizard_content
         assert "MT5_DEMO_DEBUG_SHOT" not in wizard_content
-        assert '_run(["xwd"' not in wizard_content
+        assert 'run_command(["xwd"' not in wizard_content
         assert "${MT5_DEBUG:-0}" in service_content
 
     def test_wizard_opens_account_dialog_with_calibrated_clicks(self) -> None:
@@ -820,11 +820,11 @@ class TestStartupScriptContent:
         assert "FILE_MENU_XY" in content
         assert "OPEN_ACCOUNT_MENU_XY" in content
         assert "COPY_INFO_XY" in content
-        assert "_click(FILE_MENU_XY)" in content
-        assert "_click(OPEN_ACCOUNT_MENU_XY)" in content
-        assert "_clear_clipboard" in content
-        assert "_password_from_registration_clipboard" in content
-        assert "return _valid_password(text.strip())" not in content
+        assert "click_at(FILE_MENU_XY)" in content
+        assert "click_at(OPEN_ACCOUNT_MENU_XY)" in content
+        assert "clear_clipboard" in content
+        assert "password_from_registration_clipboard" in content
+        assert "return valid_password(text.strip())" not in content
         assert "PASSWORD_FIELD_XY" not in content
         assert "clipboard after copy" not in content
         assert '"alt+f"' not in content
