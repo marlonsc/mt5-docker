@@ -570,8 +570,10 @@ class TestUpgrade:
                 "-",
                 "abc",
                 "-c",
-                "wine /config/.wine/drive_c/Python/python.exe -c "
-                "'import MetaTrader5; print(MetaTrader5.__version__)'",
+                (
+                    "wine /config/.wine/drive_c/Python/python.exe -c "
+                    "'import MetaTrader5; print(MetaTrader5.__version__)'"
+                ),
             ],
             timeout=c.COMMAND_TIMEOUT,
         )
@@ -587,8 +589,10 @@ class TestUpgrade:
                 "-",
                 "abc",
                 "-c",
-                "wine /config/.wine/drive_c/Python/python.exe -c "
-                "'import grpc; print(grpc.__version__)'",
+                (
+                    "wine /config/.wine/drive_c/Python/python.exe -c "
+                    "'import grpc; print(grpc.__version__)'"
+                ),
             ],
             timeout=c.COMMAND_TIMEOUT,
         )
