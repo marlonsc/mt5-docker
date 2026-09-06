@@ -125,7 +125,17 @@ exclude = [
     "docker/container/metatrader/mt5_pb2_grpc.py",
     "typings/",
 ]
-ignore = ["COM812", "ISC001", "D203", "D213", "N802"]
+ignore = [
+    "COM812",
+    "ISC001",
+    "D203",
+    "D213",
+    "N802",
+    # CPY001 missing-copyright-notice: licensing is declared once by the repository-level
+    # MIT LICENSE; per-file notices are not a convention of this workspace (the flext-infra
+    # generated ruff policy of the invest root ignores the same rule).
+    "CPY001",
+]
 select = ["ALL"]
 
 [tool.ruff.lint.per-file-ignores]

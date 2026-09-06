@@ -85,6 +85,7 @@ class _EmptyFactory(Protocol):
 class _InitRequestFactory(Protocol):
     def __call__(
         self,
+        *,
         path: str = "",
         login: int = 0,
         password: str = "",

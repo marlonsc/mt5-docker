@@ -348,6 +348,7 @@ class _SymbolsResponseFactory(Protocol):
 class _HealthStatusFactory(Protocol):
     def __call__(
         self,
+        *,
         healthy: bool = False,
         mt5_available: bool = False,
         connected: bool = False,
@@ -360,6 +361,7 @@ class _HealthStatusFactory(Protocol):
 class _InitRequestFactory(Protocol):
     def __call__(
         self,
+        *,
         path: str = "",
         login: int = 0,
         password: str = "",
@@ -482,6 +484,7 @@ class _ProfitRequestFactory(Protocol):
 class _ProvisionedAccountFactory(Protocol):
     def __call__(
         self,
+        *,
         login: int = 0,
         server: str = "",
         email: str = "",
@@ -496,6 +499,7 @@ class _ProvisionedAccountFactory(Protocol):
 class _CreateDemoRequestFactory(Protocol):
     def __call__(
         self,
+        *,
         server: str = "",
         email: str = "",
         phone: str = "",

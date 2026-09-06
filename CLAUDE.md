@@ -6,7 +6,7 @@ These rules are loaded before any agent action and are not negotiable. Absolute 
 
 # CLAUDE.md
 
-Canonical governance lives in this repo's `AGENTS.md` (the ai-hub-managed universal-core block,
+Canonical governance lives in this repo's `AGENTS.md` (the aihub-managed universal-core block,
 mirrored from `~/.agents/UNIVERSAL_CORE.md`) and in `~/.ai-hub`. **Do not duplicate rules here** —
 keep only project-specific notes below.
 
