@@ -313,7 +313,7 @@ pip install git+https://github.com/marlonsc/mt5linux.git@main
 ```python
 from mt5linux import MetaTrader5
 
-mt5 = MetaTrader5(host='host-running-docker', port=8001)
+mt5 = MetaTrader5(host="host-running-docker", port=8001)
 mt5.initialize()
 print(mt5.version())
 ```
@@ -337,8 +337,9 @@ For async operations, use `mt5linux.AsyncMetaTrader5` (when available):
 import asyncio
 from mt5linux import AsyncMetaTrader5
 
+
 async def main():
-    mt5 = AsyncMetaTrader5(host='localhost', port=8001)
+    mt5 = AsyncMetaTrader5(host="localhost", port=8001)
     await mt5.initialize()
 
     # Parallel data fetching (non-blocking)
@@ -347,6 +348,7 @@ async def main():
         mt5.symbol_info_tick("EURUSD"),
     )
     print(f"Balance: {account.balance}, EURUSD: {tick.ask}")
+
 
 asyncio.run(main())
 ```
@@ -359,7 +361,7 @@ RPyC 6.x blocks `__array__` access for security. Use `rpyc.classic.obtain()` for
 import rpyc
 from rpyc.utils.classic import connect
 
-conn = connect('localhost', 8001)
+conn = connect("localhost", 8001)
 np = conn.modules.numpy
 
 # Create remote array
