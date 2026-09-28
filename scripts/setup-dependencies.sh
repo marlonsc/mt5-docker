@@ -25,12 +25,15 @@ set -euo pipefail
 # Configuration
 # =============================================================================
 
-readonly SCRIPT_NAME="$(basename "$0")"
-readonly SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-readonly PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+SCRIPT_NAME="$(basename "$0")"
+readonly SCRIPT_NAME
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+readonly SCRIPT_DIR
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+readonly PROJECT_ROOT
 
 # mt5linux paths
-readonly MT5LINUX_LOCAL_PATH="${MT5LINUX_LOCAL_PATH:-$PROJECT_ROOT/../mt5linux}"
+readonly MT5LINUX_LOCAL_PATH="${MT5LINUX_LOCAL_PATH:-${PROJECT_ROOT}/../mt5linux}"
 readonly MT5LINUX_PACKAGE_NAME="mt5linux"
 
 # Colors (disabled if not a terminal)
@@ -70,7 +73,7 @@ log_error() {
 
 show_help() {
     cat << EOF
-Usage: $SCRIPT_NAME [OPTIONS]
+Usage: ${SCRIPT_NAME} [OPTIONS]
 
 Configure mt5linux dependency for mt5docker project.
 
@@ -83,9 +86,9 @@ Environment Variables:
     MT5LINUX_LOCAL_PATH    Override local mt5linux path (default: ../mt5linux)
 
 Examples:
-    $SCRIPT_NAME              # Auto-detect and configure
-    $SCRIPT_NAME --check      # Check without changes
-    $SCRIPT_NAME --force      # Force reinstall
+    ${SCRIPT_NAME}              # Auto-detect and configure
+    ${SCRIPT_NAME} --check      # Check without changes
+    ${SCRIPT_NAME} --force      # Force reinstall
 
 EOF
 }
@@ -99,7 +102,7 @@ command_exists() {
 get_mt5linux_location() {
     python3 -c "
 import importlib.util
-spec = importlib.util.find_spec('$MT5LINUX_PACKAGE_NAME')
+spec = importlib.util.find_spec('${MT5LINUX_PACKAGE_NAME}')
 if spec and spec.origin:
     print(spec.origin)
 " 2>/dev/null || true
@@ -110,16 +113,16 @@ is_local_editable_install() {
     local location
     location="$(get_mt5linux_location)"
 
-    if [[ -z "$location" ]]; then
+    if [[ -z "${location}" ]]; then
         return 1
     fi
 
     # Resolve both paths to absolute for comparison
     local resolved_local
-    resolved_local="$(cd "$MT5LINUX_LOCAL_PATH" 2>/dev/null && pwd)" || return 1
+    resolved_local="$(cd "${MT5LINUX_LOCAL_PATH}" 2>/dev/null && pwd)" || return 1
 
     # Check if installed location is within the local path
-    [[ "$location" == "$resolved_local"* ]]
+    [[ "${location}" == "${resolved_local}"* ]]
 }
 
 # Check if mt5linux is installed from git/pypi
@@ -127,24 +130,24 @@ is_git_install() {
     local location
     location="$(get_mt5linux_location)"
 
-    if [[ -z "$location" ]]; then
+    if [[ -z "${location}" ]]; then
         return 1
     fi
 
     # If it's in site-packages and not in our local path, it's from git/pypi
-    [[ "$location" == *"site-packages"* ]]
+    [[ "${location}" == *"site-packages"* ]]
 }
 
 # Validate local mt5linux directory
 validate_local_path() {
     local path="$1"
 
-    if [[ ! -d "$path" ]]; then
+    if [[ ! -d "${path}" ]]; then
         return 1
     fi
 
     # Check for valid Python package (pyproject.toml or setup.py)
-    if [[ -f "$path/pyproject.toml" ]] || [[ -f "$path/setup.py" ]]; then
+    if [[ -f "${path}/pyproject.toml" ]] || [[ -f "${path}/setup.py" ]]; then
         return 0
     fi
 
@@ -188,12 +191,12 @@ show_status() {
 
     local version
     version="$(get_mt5linux_version)"
-    echo "  Version: $version"
+    echo "  Version: ${version}"
 
     local location
     location="$(get_mt5linux_location)"
-    if [[ -n "$location" ]]; then
-        echo "  Location: $location"
+    if [[ -n "${location}" ]]; then
+        echo "  Location: ${location}"
     fi
 
     if is_local_editable_install; then
@@ -205,10 +208,10 @@ show_status() {
     fi
 
     echo ""
-    if [[ -d "$MT5LINUX_LOCAL_PATH" ]]; then
-        log_info "Local mt5linux found at: $(cd "$MT5LINUX_LOCAL_PATH" && pwd)"
+    if [[ -d "${MT5LINUX_LOCAL_PATH}" ]]; then
+        log_info "Local mt5linux found at: $(cd "${MT5LINUX_LOCAL_PATH}" && pwd || true)"
     else
-        log_info "Local mt5linux not found (path: $MT5LINUX_LOCAL_PATH)"
+        log_info "Local mt5linux not found (path: ${MT5LINUX_LOCAL_PATH})"
     fi
 }
 
@@ -217,18 +220,18 @@ install_local_editable() {
     local force="${2:-false}"
 
     # Check if already installed correctly (idempotent)
-    if [[ "$force" != "true" ]] && is_local_editable_install; then
+    if [[ "${force}" != "true" ]] && is_local_editable_install; then
         log_success "mt5linux already installed as local editable - skipping (use --force to reinstall)"
         return 0
     fi
 
-    log_info "Installing mt5linux from local path: $local_path"
+    log_info "Installing mt5linux from local path: ${local_path}"
 
     # Use pip to install editable
     # --no-deps: Don't install dependencies (they're managed by poetry)
     # --force-reinstall: Ensure we override any existing installation
-    if pip3 install -e "$local_path" --no-deps --force-reinstall --quiet 2>/dev/null || \
-       pip install -e "$local_path" --no-deps --force-reinstall --quiet 2>/dev/null; then
+    if pip3 install -e "${local_path}" --no-deps --force-reinstall --quiet 2>/dev/null || \
+       pip install -e "${local_path}" --no-deps --force-reinstall --quiet 2>/dev/null; then
         log_success "Local mt5linux installed (editable mode)"
     else
         log_error "Failed to install local mt5linux"
@@ -238,7 +241,7 @@ install_local_editable() {
     # Verify installation
     if is_local_editable_install; then
         log_success "Verified: mt5linux is now using local path"
-        log_warning "Note: Changes to $local_path will be reflected immediately"
+        log_warning "Note: Changes to ${local_path} will be reflected immediately"
     else
         log_error "Installation verification failed"
         return 1
@@ -280,7 +283,7 @@ main() {
     check_prerequisites
 
     # Check-only mode
-    if [[ "$check_only" == "true" ]]; then
+    if [[ "${check_only}" == "true" ]]; then
         show_status
         exit 0
     fi
@@ -290,9 +293,9 @@ main() {
     echo ""
 
     # Check if local mt5linux exists and is valid
-    if validate_local_path "$MT5LINUX_LOCAL_PATH"; then
+    if validate_local_path "${MT5LINUX_LOCAL_PATH}"; then
         log_info "Development environment detected"
-        install_local_editable "$MT5LINUX_LOCAL_PATH" "$force"
+        install_local_editable "${MT5LINUX_LOCAL_PATH}" "${force}"
     else
         log_info "CI/Production environment detected"
         log_success "Using mt5linux from GitHub (configured in pyproject.toml)"
