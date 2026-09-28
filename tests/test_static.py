@@ -559,7 +559,7 @@ class TestStartupScriptContent:
         content = (
             c.get_project_root() / c.Directory.CONTAINER / "metatrader/setup.sh"
         ).read_text()
-        assert "$WINEPREFIX/.build-complete" in content, (
+        assert "${WINEPREFIX}/.build-complete" in content, (
             "init_wine_prefix must use the .build-complete idempotency marker"
         )
         assert "retry_with_backoff 2 init_wine_prefix" in content, (
@@ -846,7 +846,7 @@ class TestStartupScriptContent:
         assert (
             "Removing stale MT5 config because no credentials were provided" in content
         )
-        assert 'rm -f "$MT5_STARTUP_INI"' in content
+        assert 'rm -f "${MT5_STARTUP_INI}"' in content
         assert "No MT5 credentials provided, skipping config" in content
 
     def test_svc_mt5server_fails_loud_on_auto_demo_failure(self) -> None:
