@@ -1,7 +1,9 @@
 
 .devcontainer/
 .env
-config/
+# Ignore runtime config contents, but keep the documented example committable.
+config/*
+!config/.env.example
 mt5
 data
 tmp
