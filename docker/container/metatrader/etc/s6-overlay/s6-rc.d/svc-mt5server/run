@@ -1,4 +1,5 @@
 #!/usr/bin/with-contenv bash
+# shellcheck shell=bash
 # s6 service: MT5 Terminal + gRPC Bridge Manager
 # =============================================================================
 # Manages both MT5 terminal and gRPC bridge server lifecycle.
@@ -84,6 +85,10 @@ start_mt5_terminal() {
         MT5_ARGS="$MT5_ARGS /config:C:\\MT5Config\\startup.ini"
         log "Using config file for auto-login"
     fi
+
+    # Upstream passthrough (v1.1.x): extra terminal command options via env.
+    # Unquoted by design — word-splitting is the option-separator contract.
+    MT5_ARGS="$MT5_ARGS ${MT5_CMD_OPTIONS:-}"
 
     # Launch inside a Wine virtual desktop (`explorer /desktop=`). Without it,
     # each MT5 child window (menus, the "Open an Account" dialog) is a separate
